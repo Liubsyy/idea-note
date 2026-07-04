@@ -21,7 +21,7 @@
 ![](./doc/assets/sample1.png)
 
 
-![](doc/assets/image.png)
+![](doc/assets/sample2.png)
 
 
 ## 功能特性
