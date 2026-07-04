@@ -82,7 +82,7 @@ function parseArgs(argv) {
     }
   }
 
-  options.repo ||= process.env.GITHUB_REPOSITORY || 'Liubsyy/idea-note;
+  options.repo ||= process.env.GITHUB_REPOSITORY || 'Liubsyy/idea-note';
   options.releaseId ||= process.env.RELEASE_ID || process.env.GITHUB_RELEASE_ID;
   options.tag ||= process.env.RELEASE_TAG || process.env.GITHUB_REF_NAME;
 
