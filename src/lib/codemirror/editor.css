@@ -1,0 +1,738 @@
+/* Rendered styling for the live-preview markdown classes added by
+   livePreview.ts. The editor is plain markdown text; these rules give the
+   "rendered" look to lines the cursor isn't on. */
+
+.cm-host {
+  height: 100%;
+}
+.cm-host .cm-editor {
+  height: 100%;
+  font-size: var(--editor-font-size);
+}
+
+/* Compact editor — toggled by the `html.editor-compact` class that the editor
+   settings flip. Tightens the vertical rhythm: line spacing scales down from
+   the user's chosen line-height (so the stepper still has relative effect), and
+   the heading bottom padding is trimmed. The extra `.cm-host` in the selector
+   outranks CodeMirror's own injected `.cm-scroller { line-height }` rule. */
+.editor-compact .cm-host .cm-scroller {
+  line-height: calc(var(--editor-line-height) * 0.78);
+}
+.editor-compact .cm-md-h1 {
+  padding-bottom: 0.15em;
+}
+.editor-compact .cm-md-h2 {
+  padding-bottom: 0.12em;
+}
+
+/* Paragraph-separator blank lines (tagged `cm-md-blank` by livePreview.ts)
+   collapse from a full empty row to a compact gap, so two paragraphs read as a
+   single clean break — the way a real renderer shows them — instead of looking
+   double-spaced. The `.cm-content` prefix outranks CodeMirror's own `.cm-line`
+   rule. Blank lines that are real content (code / HTML / math blocks) and the
+   line the cursor is on are never tagged, so they keep full height. */
+.cm-content .cm-md-blank {
+  height: 0.55em;
+  line-height: 0.55em;
+}
+.editor-compact .cm-content .cm-md-blank {
+  height: 0.4em;
+  line-height: 0.4em;
+}
+/* The line right after a heading — body text OR a following (sub)heading — gets
+   extra top padding, scaled by the heading level, so the heading sits apart from
+   whatever comes next, even with no blank line between them. `padding` (not
+   margin) keeps CodeMirror's caret geometry correct. The gap is anchored to
+   `--editor-font-size` (not `em`) so it's the same whether the next line is body
+   text or a large heading — the gap below an H1 is always the H1-sized gap. */
+.cm-content .cm-md-after-h1 {
+  padding-top: calc(var(--editor-font-size) * 1.2);
+}
+.cm-content .cm-md-after-h2 {
+  padding-top: calc(var(--editor-font-size) * 1);
+}
+.cm-content .cm-md-after-h3 {
+  padding-top: calc(var(--editor-font-size) * 0.75);
+}
+.cm-content .cm-md-after-h4 {
+  padding-top: calc(var(--editor-font-size) * 0.55);
+}
+.cm-content .cm-md-after-h5 {
+  padding-top: calc(var(--editor-font-size) * 0.45);
+}
+.cm-content .cm-md-after-h6 {
+  padding-top: calc(var(--editor-font-size) * 0.4);
+}
+.editor-compact .cm-content .cm-md-after-h1 {
+  padding-top: calc(var(--editor-font-size) * 0.75);
+}
+.editor-compact .cm-content .cm-md-after-h2 {
+  padding-top: calc(var(--editor-font-size) * 0.62);
+}
+.editor-compact .cm-content .cm-md-after-h3 {
+  padding-top: calc(var(--editor-font-size) * 0.47);
+}
+.editor-compact .cm-content .cm-md-after-h4 {
+  padding-top: calc(var(--editor-font-size) * 0.34);
+}
+.editor-compact .cm-content .cm-md-after-h5 {
+  padding-top: calc(var(--editor-font-size) * 0.28);
+}
+.editor-compact .cm-content .cm-md-after-h6 {
+  padding-top: calc(var(--editor-font-size) * 0.25);
+}
+
+/* Top gap above a heading that follows non-heading content (set by livePreview
+   as `cm-md-before-hN`, never combined with `after-hN`). Sized by the heading's
+   own level and a touch smaller than the below-gap, so a section reads as
+   grouped with the heading that opens it rather than the text above it. */
+.cm-content .cm-md-before-h1 {
+  padding-top: calc(var(--editor-font-size) * 0.9);
+}
+.cm-content .cm-md-before-h2 {
+  padding-top: calc(var(--editor-font-size) * 0.75);
+}
+.cm-content .cm-md-before-h3 {
+  padding-top: calc(var(--editor-font-size) * 0.6);
+}
+.cm-content .cm-md-before-h4 {
+  padding-top: calc(var(--editor-font-size) * 0.45);
+}
+.cm-content .cm-md-before-h5 {
+  padding-top: calc(var(--editor-font-size) * 0.38);
+}
+.cm-content .cm-md-before-h6 {
+  padding-top: calc(var(--editor-font-size) * 0.35);
+}
+.editor-compact .cm-content .cm-md-before-h1 {
+  padding-top: calc(var(--editor-font-size) * 0.55);
+}
+.editor-compact .cm-content .cm-md-before-h2 {
+  padding-top: calc(var(--editor-font-size) * 0.46);
+}
+.editor-compact .cm-content .cm-md-before-h3 {
+  padding-top: calc(var(--editor-font-size) * 0.37);
+}
+.editor-compact .cm-content .cm-md-before-h4 {
+  padding-top: calc(var(--editor-font-size) * 0.28);
+}
+.editor-compact .cm-content .cm-md-before-h5 {
+  padding-top: calc(var(--editor-font-size) * 0.24);
+}
+.editor-compact .cm-content .cm-md-before-h6 {
+  padding-top: calc(var(--editor-font-size) * 0.22);
+}
+
+/* Headings — a ~1.2 modular scale. Weight is a single 700 across all levels:
+   the system fonts (PingFang SC caps at Semibold, SF rounds to Bold) can't
+   render the in-between weights, so the hierarchy comes from size plus a color
+   step on the lowest two levels (H5 softened, H6 muted). */
+/* All six levels are scaled together by `--editor-heading-scale` (Settings ›
+   编辑器, default 1) on top of their per-level modular ratio, so one control
+   grows/shrinks every heading while keeping the hierarchy. */
+.cm-md-h1 {
+  font-size: calc(var(--editor-font-size) * 2.2 * var(--editor-heading-scale, 1));
+  font-weight: 700;
+  line-height: 1.25;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--border);
+}
+.cm-md-h2 {
+  font-size: calc(var(--editor-font-size) * 1.8 * var(--editor-heading-scale, 1));
+  font-weight: 700;
+  line-height: 1.3;
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid var(--border);
+}
+.cm-md-h3 {
+  font-size: calc(var(--editor-font-size) * 1.5 * var(--editor-heading-scale, 1));
+  font-weight: 700;
+  line-height: 1.3;
+}
+.cm-md-h4 {
+  font-size: calc(var(--editor-font-size) * 1.3 * var(--editor-heading-scale, 1));
+  font-weight: 700;
+}
+.cm-md-h5 {
+  font-size: calc(var(--editor-font-size) * 1.1 * var(--editor-heading-scale, 1));
+  font-weight: 700;
+  color: var(--text-soft);
+}
+.cm-md-h6 {
+  font-size: calc(var(--editor-font-size) * 0.95 * var(--editor-heading-scale, 1));
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+/* Inline marks */
+.cm-md-strong {
+  font-weight: 700;
+}
+.cm-md-em {
+  font-style: italic;
+}
+.cm-md-strike {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+.cm-md-code {
+  font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
+  font-size: calc(var(--editor-font-size) * 0.88);
+  background: var(--inline-code-bg);
+  color: var(--text);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+}
+.cm-md-link {
+  color: var(--accent);
+}
+
+/* Pointer only while Cmd/Ctrl is held (cm-mod-down, see linkClick.ts) —
+   that's when a click actually opens the link instead of moving the cursor. */
+.cm-mod-down .cm-md-link {
+  cursor: pointer;
+}
+
+/* Block-level visual indent: lists, code blocks and quotes are rendered inset
+   by ~two characters from the text margin. Cosmetic only — the markdown source
+   gains no real spaces (the indent lives on the rendered line, not the text). */
+:root {
+  --md-block-indent: 0.6em;
+}
+
+/* Blockquote — margin-left (set inline per line in livePreview, for nesting
+   depth) moves the whole block in AND includes the 1em bar→text gap. The gap is
+   margin, not padding, so a native multi-line selection (which fills each line's
+   box) does not highlight the empty space to the left of the text. The bar is
+   drawn as a ::before sitting in that margin (left: -1em from the text). */
+.cm-content .cm-md-quote {
+  position: relative;
+  color: var(--text-muted);
+}
+.cm-content .cm-md-quote::before {
+  content: "";
+  position: absolute;
+  left: -1em;
+  top: 0;
+  bottom: 0;
+  border-left: 3px solid var(--border);
+}
+
+/* Fenced / indented code — a rounded block with a left line-number gutter.
+   Each code line carries a data-ln; the gutter is drawn as an absolutely
+   positioned ::before inside the line's left padding, with a divider rule.
+   Fence (```) lines are collapsed unless the cursor is on them. */
+.cm-md-codeblock {
+  font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
+  font-size: calc(var(--editor-font-size) * 0.9);
+  background: var(--code-bg);
+}
+/* `.cm-content` prefix raises specificity above CodeMirror's own `.cm-line`
+   rules; without it the `display:none` is overridden and the collapsed fence
+   lines linger as empty rows at the top and bottom of the block. */
+.cm-content .cm-code-fence {
+  display: none;
+}
+/* Language-less code blocks: the body is tagged `monospace`, which the
+   highlight style paints orange. These blocks usually hold plain prose/output
+   rather than source, so paint them in the primary text color (not the bluish
+   `--code-text`) — that keeps long CJK passages crisp and high-contrast.
+   Language-highlighted blocks are unaffected. Inline `code` keeps its accent
+   because it isn't inside a .cm-code-plain line. */
+.cm-content .cm-code-plain,
+.cm-content .cm-code-plain span {
+  color: var(--text);
+}
+/* Fully collapsed lines (e.g. `[ref]: url` link definitions). */
+.cm-content .cm-md-hidden {
+  display: none;
+}
+/* `.cm-content` prefix raises specificity above CodeMirror's own
+   `.cm-line { padding: … }` shorthand, which otherwise wins and resets our
+   left padding (numbers would then overlap the code). */
+.cm-content .cm-code-line {
+  position: relative;
+  padding-left: 3.1em;
+  padding-right: 4.5em;
+}
+.cm-content .cm-code-line::before {
+  content: attr(data-ln);
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2em;
+  padding-right: 0.6em;
+  text-align: right;
+  color: var(--text-muted);
+  opacity: 0.7;
+  border-right: 1px solid var(--border);
+  -webkit-user-select: none;
+  user-select: none;
+  pointer-events: none;
+}
+/* The code-bg is painted per line; rounding only the first/last lines makes the
+   edges look broken against the square middle lines. Keep the band flat and
+   continuous — the 1.75 line-height already gives each line its own padding. */
+
+/* Breathing room at the block's top/bottom edges (the ``` fences are collapsed,
+   so the first/last code lines are the visual edges). The first line's gutter
+   number is padded by the same amount so it stays aligned with its code. */
+.cm-content .cm-code-first {
+  padding-top: 0.7em;
+}
+.cm-content .cm-code-first::before {
+  padding-top: 0.7em;
+}
+.cm-content .cm-code-last {
+  padding-bottom: 0.7em;
+}
+
+/* Copy button floated in the code block's top-right corner. It's a widget on the
+   first code line (already position:relative for the line-number gutter), so it
+   sits in the block's top padding. Always visible and styled as a solid,
+   obviously-clickable button — a faint/ghosted chip reads as disabled. */
+.cm-md-copy-btn {
+  position: absolute;
+  top: 0.3em;
+  right: 0.5em;
+  z-index: 2;
+  padding: 2px 9px;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-soft);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.cm-md-copy-btn:hover {
+  color: var(--text);
+  background: var(--hover);
+  border-color: var(--text-muted);
+}
+.cm-md-copy-btn:active {
+  background: var(--active);
+  border-color: var(--accent);
+}
+.cm-md-copy-btn-done {
+  opacity: 1;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* List items — indent is set inline per line (padding-left, derived from the
+   nesting depth in livePreview.ts); inline styles already beat CodeMirror's
+   own `.cm-line` padding, so no rule is needed here. */
+
+/* Bullet replacement */
+.cm-md-bullet {
+  color: var(--accent);
+  padding-right: 0.15em;
+  font-size: calc(var(--editor-font-size) * 1.8);
+  line-height: 1;
+  vertical-align: -0.08em;
+}
+
+/* Ordered list marker (`1.`): add a gap so it matches the bullet spacing. */
+.cm-md-ol-mark {
+  padding-right: 0.2em;
+}
+
+/* Level ≥ 2 hollow bullet: thin border-circle instead of the ◦ glyph. */
+.cm-md-bullet-hollow {
+  display: inline-block;
+  width: 0.22em;
+  height: 0.22em;
+  border: 1px solid var(--accent);
+  border-radius: 50%;
+  box-sizing: border-box;
+  vertical-align: 0.04em;
+  margin-right: 0.12em;
+}
+
+/* Task-list checkbox (GFM `- [x]`) */
+.cm-md-task {
+  accent-color: var(--accent);
+  width: 1em;
+  height: 1em;
+  margin: 0 0.4em 0 0;
+  vertical-align: -0.1em;
+  cursor: pointer;
+}
+
+/* Horizontal rule */
+.cm-md-hr {
+  display: inline-block;
+  width: 100%;
+  height: 0;
+  border-top: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+/* Images */
+.cm-md-image-wrap {
+  display: inline-block;
+  margin: 0;
+  padding: 0;
+  vertical-align: middle;
+}
+
+.cm-md-image {
+  max-width: 100%;
+  border-radius: 6px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* Inline images inside HTML/table widgets (e.g. shields-style badges that sit
+   in a paragraph alongside raw HTML). Markdown image widgets use the same
+   inline flow so a single source newline inside one paragraph stays soft.
+   `display: inline-block` is required: Tailwind's preflight resets every <img>
+   to `display: block`, which would otherwise put each badge on its own row. */
+.cm-md-inline-img {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: middle;
+  border-radius: 4px;
+}
+
+.cm-md-image-caption {
+  display: block;
+  margin-top: 0.3em;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: calc(var(--editor-font-size) * 0.9);
+  line-height: 1.4;
+}
+
+/* On a line rendered as an image, CodeMirror brackets the image widget with
+   zero-width <img class="cm-widgetBuffer"> helpers. Being inline, each still
+   claims a line box at the editor's line-height, so the leading buffer floats
+   the (block) image roughly one text line below the preceding content. Hiding
+   them collapses that gap to the image wrap's own padding. The line keeps its
+   block layout, so large images still clamp to the editor width. (Tagged by
+   livePreview only when the cursor is off the line; the line being edited shows
+   raw source and has no widget/buffer.) */
+.cm-content .cm-md-image-line .cm-widgetBuffer {
+  display: none;
+}
+
+/* KaTeX math (math.ts) */
+.cm-md-math-inline {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.cm-md-math-block {
+  display: block;
+  margin: 0;
+  padding: 0.6em 0;
+  text-align: center;
+  overflow-x: auto;
+  cursor: pointer;
+}
+
+.cm-md-math-block .katex-display {
+  margin: 0;
+}
+
+.cm-md-math-error {
+  color: var(--text-muted);
+  font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+/* Mermaid diagrams (diagram.ts)
+   Block-flow (not flex) centering on purpose: WKWebView miscomputes the height
+   of an SVG flex item sized only by max-width + height:auto, collapsing the
+   container. Worse, overflow-x:auto promotes overflow-y to auto (per spec, a
+   non-visible axis forces the other off `visible`), so the overflow gets
+   clipped instead of growing the box — tall `flowchart TD` diagrams lose their
+   bottom rows. A block box grows to its content height, so nothing is cut. */
+.cm-md-mermaid {
+  display: block;
+  text-align: center;
+  margin: 0;
+  padding: 1em 0;
+  overflow-x: auto;
+  cursor: pointer;
+}
+
+.cm-md-mermaid svg {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+}
+
+.cm-md-mermaid-error {
+  display: block;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: var(--code-bg);
+  color: var(--text-muted);
+  padding: 1em 0.65em;
+  font-size: calc(var(--editor-font-size) * 0.9);
+  white-space: pre-wrap;
+  cursor: pointer;
+}
+
+.cm-md-image-error {
+  display: inline-block;
+  max-width: 100%;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: var(--code-bg);
+  color: var(--text-muted);
+  padding: 0.45em 0.65em;
+  font-size: calc(var(--editor-font-size) * 0.9);
+  overflow-wrap: anywhere;
+}
+
+/* GFM tables (rendered block widget from tablePreview.ts). Keep vertical
+   spacing on the wrapper as padding, not table margin: CodeMirror measures the
+   widget's bounding box for click-to-position mapping, and margins are outside
+   that box. */
+.cm-md-table-wrap {
+  padding: 0.6em 0;
+  cursor: text;
+  overflow-x: auto;
+  /* Allow selecting the rendered cell text. Needed for read-only mode in
+     WKWebView, which won't select text in non-editable content without this.
+     In editable mode the widget's mousedown handler still intercepts first
+     (click-to-edit), so this doesn't change that behavior. */
+  -webkit-user-select: text;
+  user-select: text;
+}
+.cm-md-table {
+  border-collapse: collapse;
+  margin: 0;
+  font-size: calc(var(--editor-font-size) * 0.95);
+  /* Keep the table within the editor width so a wide column is forced to wrap
+     rather than stretching the whole table off-screen. */
+  max-width: 100%;
+}
+.cm-md-table th,
+.cm-md-table td {
+  border: 1px solid var(--border);
+  padding: 0.4em 0.85em;
+  text-align: left;
+  /* Narrow columns never wrap, so a long column gives up width first (see the
+     cm-md-cell-wrap columns below) instead of every column breaking. */
+  white-space: nowrap;
+}
+/* Wide columns (tagged in tablePreview.ts) absorb the wrapping: they break onto
+   multiple lines — including long unbreakable strings like URLs — while the
+   single-line columns keep their natural width. */
+.cm-md-table th.cm-md-cell-wrap,
+.cm-md-table td.cm-md-cell-wrap {
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.cm-md-table th {
+  background: var(--code-bg);
+  font-weight: 600;
+}
+.cm-md-table tbody tr:nth-child(even) td {
+  background: var(--bg-elev);
+}
+
+/* Embedded raw HTML (rendered widget from htmlPreview.ts) */
+.cm-md-html,
+.cm-md-html-inline {
+  cursor: text;
+  /* The widget lives inside `.cm-content`, which lineWrapping sets to
+     `white-space: break-spaces` — that would turn the source newlines kept
+     between inline elements (e.g. a row of badge images) into hard line breaks,
+     stacking them one per row. Reset to `normal` so newlines collapse to spaces
+     and inline content flows + wraps by width, the way HTML/GitHub render it.
+     Nested <pre>/<code> keep their own explicit `white-space`. */
+  white-space: normal;
+}
+.cm-md-html {
+  display: flow-root;
+}
+.cm-md-html > :first-child {
+  margin-top: 0;
+}
+.cm-md-html > :last-child {
+  margin-bottom: 0;
+}
+.cm-md-html img {
+  /* Restore the HTML default `inline` flow (Tailwind preflight forces <img> to
+     `display: block`) so raw <img>/<a><img> badges sit on the same row as the
+     markdown ones instead of each breaking to its own line. */
+  display: inline-block;
+  vertical-align: middle;
+  max-width: 100%;
+}
+.cm-md-html table {
+  border-collapse: collapse;
+}
+.cm-md-html th,
+.cm-md-html td {
+  border: 1px solid var(--border);
+  padding: 0.4em 0.85em;
+}
+
+/* File-history diff (HistoryModal, @codemirror/merge MergeView) */
+.cm-history-diff .cm-mergeView {
+  height: 100%;
+}
+.cm-history-diff .cm-editor {
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12.5px;
+}
+.cm-history-diff .cm-gutters {
+  background: var(--bg-elev);
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+.cm-history-diff .cm-collapsedLines {
+  background: var(--bg-elev);
+  color: var(--text-muted);
+}
+.cm-history-diff .cm-merge-a .cm-changedText,
+.cm-history-diff .cm-deletedChunk .cm-deletedText {
+  background: rgba(229, 72, 77, 0.18);
+  background-image: none;
+  border-bottom: none;
+  text-decoration: none;
+}
+.cm-history-diff .cm-merge-b .cm-changedText {
+  background: rgba(70, 167, 88, 0.18);
+  background-image: none;
+  border-bottom: none;
+  text-decoration: none;
+}
+.cm-history-diff .cm-merge-b .cm-deletedText {
+  border-bottom: none;
+  text-decoration: none;
+}
+/* Dark theme: merge's default pastel tints are unreadable on dark bg. */
+.dark .cm-history-diff .cm-changedLine {
+  background: rgba(229, 72, 77, 0.14);
+}
+.dark .cm-history-diff .cm-merge-b .cm-changedLine {
+  background: rgba(70, 167, 88, 0.14);
+}
+.dark .cm-history-diff .cm-changedText {
+  background: rgba(229, 72, 77, 0.32);
+}
+.dark .cm-history-diff .cm-merge-b .cm-changedText {
+  background: rgba(70, 167, 88, 0.32);
+}
+
+/* ---- Find & replace panel (searchPanel.ts) ---- */
+.cm-host .cm-panels.cm-panels-top {
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  z-index: 30;
+}
+.cm-find-panel {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+.cm-find-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.cm-find-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.cm-find-field {
+  width: 200px;
+  padding: 3px 8px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+}
+.cm-find-field:focus {
+  border-color: var(--accent);
+}
+.cm-find-field.invalid {
+  border-color: #e5484d;
+}
+.cm-find-field::placeholder {
+  color: var(--text-muted);
+}
+.cm-find-btn,
+.cm-find-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  color: var(--text-soft);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.cm-find-btn:hover,
+.cm-find-toggle:hover {
+  background: var(--hover);
+}
+.cm-find-toggle {
+  font-size: 11px;
+  font-weight: 600;
+}
+.cm-find-toggle.active {
+  color: var(--accent);
+  background: var(--active);
+}
+.cm-find-mode {
+  margin-top: 3px;
+}
+.cm-find-count {
+  flex-shrink: 0;
+  min-width: 56px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.cm-find-text-btn {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  font-size: 12px;
+  border-radius: 5px;
+  color: var(--text-soft);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+.cm-find-text-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* Search match highlighting — amber tints that read on both themes. */
+.cm-host .cm-searchMatch {
+  background: rgba(255, 193, 64, 0.3);
+  border-radius: 2px;
+}
+.cm-host .cm-searchMatch.cm-searchMatch-selected {
+  background: rgba(255, 145, 0, 0.5);
+}
+/* Passive highlight of other occurrences of the current selection. */
+.cm-host .cm-selectionMatch {
+  background: rgba(125, 150, 201, 0.22);
+  border-radius: 2px;
+}

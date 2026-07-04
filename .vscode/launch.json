@@ -1,0 +1,38 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Default (F5): just launches the app. Needs no extra extension —
+      // uses VSCode's built-in JavaScript debugger to run the command.
+      "type": "node-terminal",
+      "request": "launch",
+      "name": "Tauri Dev (按 F5 启动)",
+      "command": "npm run tauri dev",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      // Optional: debug the Rust backend with breakpoints.
+      // Requires the "CodeLLDB" extension (vadimcn.vscode-lldb).
+      "type": "lldb",
+      "request": "launch",
+      "name": "Tauri Development Debug (Rust)",
+      "cargo": {
+        "args": [
+          "build",
+          "--manifest-path=./src-tauri/Cargo.toml",
+          "--no-default-features"
+        ]
+      },
+      "preLaunchTask": "ui:dev"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Tauri Production Debug (Rust)",
+      "cargo": {
+        "args": ["build", "--release", "--manifest-path=./src-tauri/Cargo.toml"]
+      },
+      "preLaunchTask": "ui:build"
+    }
+  ]
+}

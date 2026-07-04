@@ -1,0 +1,28 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the main and settings windows",
+  "windows": ["main", "main-*", "settings"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-minimize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-close",
+    "core:window:allow-set-focus",
+    "core:window:allow-center",
+    "core:webview:allow-create-webview-window",
+    "core:webview:allow-set-webview-zoom",
+    "core:event:allow-emit",
+    "core:event:allow-listen",
+    "opener:default",
+    "dialog:default",
+    "fs:default",
+    {
+      "identifier": "http:default",
+      "allow": [{ "url": "https://**" }, { "url": "http://**" }]
+    }
+  ]
+}

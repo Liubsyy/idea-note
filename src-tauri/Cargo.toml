@@ -1,0 +1,86 @@
+[package]
+name = "idea-note"
+version = "1.0.0"
+description = "Idea Note - a Typora-like Markdown notebook"
+authors = ["liubsyy"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "idea_note_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-http = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+portable-pty = "0.9.0"
+regex = "1"
+# Open/search non-UTF-8 text files (GBK txt/log are common for zh users):
+# encoding_rs decodes/encodes, chardetng detects the charset.
+encoding_rs = "0.8"
+chardetng = "0.1"
+# In-process system clipboard (text / image / file lists) on all three desktop
+# platforms — replaces the old osascript/PowerShell subprocess bridges.
+# wayland-data-control: native Wayland support instead of going through XWayland.
+arboard = { version = "3.6", features = ["wayland-data-control"] }
+# Encode arboard's RGBA clipboard images as PNG files.
+png = "0.17"
+
+# Desktop-only: remember window size/position across restarts, and route a
+# second "Open With" launch (Windows/Linux pass the file path as a CLI arg) back
+# to the already-running instance.
+[target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
+tauri-plugin-window-state = "2"
+tauri-plugin-single-instance = "2"
+
+# export_pdf (print.rs): silent print-to-PDF talks straight to each platform's
+# webview. Versions must stay in lock-step with what wry uses, or the handle
+# types from `with_webview` won't line up — check wry's Cargo.toml on upgrades.
+[target."cfg(target_os = \"macos\")".dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSDictionary", "NSEnumerator", "NSGeometry", "NSArray"] }
+objc2-app-kit = { version = "0.3", features = [
+    "NSPrintInfo",
+    "NSPrintOperation",
+    "NSResponder",
+    "NSView",
+    "NSWindow",
+    "NSGraphics",
+    "objc2-core-foundation",
+] }
+objc2-web-kit = { version = "0.3", features = ["WKWebView", "objc2-app-kit", "objc2-core-foundation", "block2"] }
+objc2-pdf-kit = { version = "0.3", features = ["PDFDocument", "PDFOutline", "PDFDestination", "PDFSelection", "PDFPage"] }
+
+[target."cfg(target_os = \"windows\")".dependencies]
+webview2-com = "0.38"
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[target."cfg(target_os = \"linux\")".dependencies]
+webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }
+gtk = "0.18"
+
+# 极致压缩 release 产物体积
+[profile.release]
+opt-level = "z"   # 以最小体积为目标优化
+lto = true        # 全量链接时优化，跨 crate 去重内联
+codegen-units = 1 # 单编译单元，最大化优化空间（编译会变慢）
+strip = true      # 去掉符号表和调试信息
+panic = "abort"   # 去掉 unwind 展开代码
+debug = false
+incremental = false

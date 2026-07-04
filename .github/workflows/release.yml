@@ -1,0 +1,232 @@
+name: Release
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  resolve-release:
+    name: Resolve release metadata
+    runs-on: ubuntu-22.04
+    outputs:
+      release_id: ${{ steps.create-release.outputs.release_id || steps.event-release.outputs.release_id }}
+      tag_name: ${{ steps.create-release.outputs.tag_name || steps.event-release.outputs.tag_name }}
+      prerelease: ${{ steps.create-release.outputs.prerelease || steps.event-release.outputs.prerelease }}
+
+    steps:
+      - name: Checkout repository
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Create GitHub Release
+        if: github.event_name == 'workflow_dispatch'
+        id: create-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node .github/scripts/create-release.mjs
+
+      - name: Use published release metadata
+        if: github.event_name == 'release'
+        id: event-release
+        run: |
+          echo "release_id=${{ github.event.release.id }}" >> "$GITHUB_OUTPUT"
+          echo "tag_name=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          echo "prerelease=${{ github.event.release.prerelease }}" >> "$GITHUB_OUTPUT"
+
+  publish-tauri:
+    needs: resolve-release
+    if: needs.resolve-release.outputs.tag_name != ''
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            os_name: windows
+            arch: x64
+            target: ""
+            args: --config src-tauri/tauri.windows.conf.json
+          - platform: windows-latest
+            os_name: windows
+            arch: x86
+            target: i686-pc-windows-msvc
+            args: --target i686-pc-windows-msvc --config src-tauri/tauri.windows.conf.json
+          - platform: macos-latest
+            os_name: macos
+            arch: aarch64
+            target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin --bundles app,dmg
+          - platform: macos-latest
+            os_name: macos
+            arch: x64
+            target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin --bundles app,dmg
+          - platform: ubuntu-22.04
+            os_name: linux
+            arch: amd64
+            target: ""
+            args: --bundles appimage,deb,rpm
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-release.outputs.tag_name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Rust stable on Windows with 32-bit target
+        if: matrix.platform == 'windows-latest'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: i686-pc-windows-msvc
+
+      - name: Install Rust stable on Linux
+        if: matrix.platform == 'ubuntu-22.04'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Rust stable with macOS targets
+        if: matrix.platform == 'macos-latest'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf rpm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build and upload Tauri bundles
+        uses: tauri-apps/tauri-action@action-v0.6.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          releaseId: ${{ needs.resolve-release.outputs.release_id }}
+          tagName: ${{ needs.resolve-release.outputs.tag_name }}
+          releaseDraft: false
+          prerelease: ${{ needs.resolve-release.outputs.prerelease }}
+          assetNamePattern: "[name]_[version]_${{ matrix.os_name }}_[arch][_setup][ext]"
+          args: ${{ matrix.args }}
+
+      - name: Resolve portable archive metadata
+        if: matrix.os_name == 'windows'
+        id: portable-meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          product_name="$(sed -nE 's/.*"productName": "([^"]+)".*/\1/p' src-tauri/tauri.conf.json | head -n 1)"
+          asset_name_prefix="${product_name// /.}"
+          version="$(sed -nE 's/^version = "([^"]+)".*/\1/p' src-tauri/Cargo.toml | head -n 1)"
+          target_dir="src-tauri/target"
+
+          if [ -n "${{ matrix.target }}" ]; then
+            target_dir="${target_dir}/${{ matrix.target }}/release"
+          else
+            target_dir="${target_dir}/release"
+          fi
+
+          echo "target_dir=${target_dir}" >> "$GITHUB_OUTPUT"
+          echo "asset_base=${asset_name_prefix}_${version}_${{ matrix.os_name }}_${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+
+      - name: Create Windows portable archive
+        if: matrix.os_name == 'windows'
+        id: portable-windows
+        shell: pwsh
+        run: |
+          $targetDir = "${{ steps.portable-meta.outputs.target_dir }}"
+          $stageRoot = Join-Path $env:RUNNER_TEMP "portable"
+          $packageDir = Join-Path $stageRoot "${{ steps.portable-meta.outputs.asset_base }}"
+          $excludeNames = @(".fingerprint", "build", "bundle", "deps", "examples", "incremental")
+
+          if (-not (Test-Path $targetDir)) {
+            Write-Error "Target directory not found: $targetDir"
+          }
+
+          New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
+
+          Get-ChildItem -LiteralPath $targetDir | Where-Object { $excludeNames -notcontains $_.Name -and $_.Extension -ne ".pdb" } | ForEach-Object {
+            Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $packageDir $_.Name) -Recurse -Force
+          }
+
+          $archivePath = Join-Path $stageRoot "${{ steps.portable-meta.outputs.asset_base }}.zip"
+          if (Test-Path $archivePath) {
+            Remove-Item -LiteralPath $archivePath -Force
+          }
+
+          Compress-Archive -LiteralPath $packageDir -DestinationPath $archivePath -Force
+          "archive_path=$archivePath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Upload Windows portable archive
+        if: matrix.os_name == 'windows'
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ needs.resolve-release.outputs.tag_name }}
+          files: ${{ steps.portable-windows.outputs.archive_path }}
+
+  update-readme-download-links:
+    name: Update README download links
+    needs:
+      - resolve-release
+      - publish-tauri
+    if: needs.resolve-release.outputs.prerelease == 'false'
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Update README download links
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RELEASE_ID: ${{ needs.resolve-release.outputs.release_id }}
+          RELEASE_TAG: ${{ needs.resolve-release.outputs.tag_name }}
+        run: node .github/scripts/update-readme-download-links.mjs
+
+      - name: Commit README changes
+        env:
+          RELEASE_TAG: ${{ needs.resolve-release.outputs.tag_name }}
+        run: |
+          if git diff --quiet -- README.md; then
+            echo "README download links are already up to date."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs: update release download links to ${RELEASE_TAG}"
+          git push

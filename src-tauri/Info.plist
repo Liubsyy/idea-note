@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Register Idea Note as an "Open With" handler for any file. public.data is
+       the universal UTI every regular file conforms to, so Finder's Open With
+       submenu lists the app for all of them. LSHandlerRank=Alternate means we
+       offer to open files without claiming to be the default app for any type.
+       The file path is delivered to the app as an "Opened" Apple event, which
+       the Rust side forwards to the frontend (see src/lib.rs / src/App.tsx). -->
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>All Files</string>
+      <key>CFBundleTypeRole</key>
+      <string>Editor</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>public.data</string>
+      </array>
+    </dict>
+  </array>
+</dict>
+</plist>
