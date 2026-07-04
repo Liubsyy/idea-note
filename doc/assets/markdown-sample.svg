@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="240" viewBox="0 0 640 240" role="img" aria-labelledby="title desc">
+  <title id="title">Idea Note Markdown Sample</title>
+  <desc id="desc">A local SVG image used by the Markdown syntax test document.</desc>
+  <rect width="640" height="240" rx="20" fill="#f6f7fb"/>
+  <rect x="32" y="32" width="576" height="176" rx="16" fill="#ffffff" stroke="#d8deea" stroke-width="2"/>
+  <path d="M80 80h200M80 116h320M80 152h260" stroke="#64748b" stroke-width="14" stroke-linecap="round"/>
+  <circle cx="500" cy="120" r="48" fill="#0f766e"/>
+  <path d="M476 120l16 16 34-40" fill="none" stroke="#ffffff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="80" y="196" fill="#0f172a" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700">Markdown image preview</text>
+</svg>
