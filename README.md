@@ -14,11 +14,19 @@
   <a href="https://github.com/Liubsyy/idea-note/releases"><img src="https://img.shields.io/github/downloads/Liubsyy/idea-note/total?style=flat-square&logo=github&label=downloads&color=10b981" alt="Total downloads" /></a>
 </p>
 
-**Idea Note** 是一款轻量、简洁的所见即所得 **Markdown** 笔记应用，内置 **AI 笔记助手**，可理解、检索并编辑你的笔记，支持**Git远程同步**，兼容 Windows、MacOS 和 Linux 平台。
+**Idea Note** 是一款轻量、简洁的所见即所得 **Markdown** 笔记应用，内置 **AI 笔记助手**，可用自然语言编辑你的笔记，支持**Git远程同步**，兼容 Windows、MacOS 和 Linux 平台。
+
+
+主界面效果图：
 
 
 
 ![](./doc/assets/sample1.png)
+
+
+
+
+AI 笔记助手效果图：
 
 
 ![](doc/assets/sample2.png)
@@ -28,18 +36,18 @@
 
 - **AI 笔记助手**：可结合当前笔记进行问答、总结、润色，并通过工具直接读取、搜索、新建、编辑或删除笔记。
 - **Markdown 编辑**：所见即所得实时预览，支持 CommonMark + GFM、KaTeX 公式、Mermaid 图表、HTML / SVG 渲染、源码模式、多标签页和格式工具栏。
+- **文件管理**：除markdown外还可管理其他文件，可作为轻量级项目文件管理器，支持文件树、文件夹浏览、普通文本编辑和图片查看。
 - **笔记管理**：提供笔记模式、大纲和全局搜索，方便整理、定位和回看内容。
-- **文件管理**：可作为轻量级项目文件管理器，支持文件树、文件夹浏览、普通文本编辑和图片查看。
 - **Git 同步与历史**：支持自动提交、远程推拉、本地版本记录、单文件 / 全局历史和 diff 对比。
 - **内置终端**：集成终端，可在应用内直接执行命令。
 - **导出与系统集成**：可导出带书签大纲的 PDF，支持系统级“打开方式”关联常见文本、代码与图片文件。
-- **其他特性**：支持切换主题和自定义主题、字体设置。
+- **其他特性**：支持切换主题和自定义主题、自定义字体字号间距。
 
 ## 使用说明
 
 ### 安装
 
-可在 [GitHub Releases](https://github.com/Liubsyy/idea-note/releases) 页面下载对应的桌面安装包或发行文件，下方文件链接可直接下载：
+根据平台下载桌面安装包或发行文件
 
 | 系统 | 文件 | 说明 |
 | :--- | :--- | :--- |
