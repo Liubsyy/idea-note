@@ -66,6 +66,13 @@ function findClose(text: string, marker: string, start: number): number {
   return -1;
 }
 
+/** Unwrap a CommonMark <…>-wrapped destination (used to allow spaces). */
+function unwrapDest(url: string): string {
+  return url.startsWith("<") && url.endsWith(">")
+    ? url.slice(1, -1).trim()
+    : url;
+}
+
 /** Match a `[label](url)` link at `i`; returns the label, url and end offset. */
 function linkAt(
   text: string,
@@ -78,7 +85,7 @@ function linkAt(
   if (paren < 0) return null;
   return {
     label: text.slice(i + 1, close),
-    url: text.slice(close + 2, paren).trim(),
+    url: unwrapDest(text.slice(close + 2, paren).trim()),
     end: paren + 1,
   };
 }
@@ -89,10 +96,11 @@ function linkAt(
  *  otherwise grab `[![alt](url)` as a plain link. */
 function imageAt(text: string, i: number): { alt: string; url: string; end: number } | null {
   const rest = text.slice(i);
-  let m = /^\[!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/.exec(rest);
-  if (m) return { alt: m[1], url: m[2], end: i + m[0].length };
-  m = /^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/.exec(rest);
-  if (m) return { alt: m[1], url: m[2], end: i + m[0].length };
+  // Destination: either a <…>-wrapped path (may contain spaces) or a bare one.
+  let m = /^\[!\[([^\]]*)\]\((?:<([^<>]*)>|([^)\s]+))(?:\s+"[^"]*")?\)\]\((?:<[^<>]*>|[^)\s]+)(?:\s+"[^"]*")?\)/.exec(rest);
+  if (m) return { alt: m[1], url: (m[2] ?? m[3]).trim(), end: i + m[0].length };
+  m = /^!\[([^\]]*)\]\((?:<([^<>]*)>|([^)\s]+))(?:\s+"[^"]*")?\)/.exec(rest);
+  if (m) return { alt: m[1], url: (m[2] ?? m[3]).trim(), end: i + m[0].length };
   return null;
 }
 

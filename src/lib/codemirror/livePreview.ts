@@ -481,10 +481,21 @@ function buildDecorations(view: EditorView): DecorationSet {
             );
             break;
           }
-          case "URL":
-            // hide the (url) part of links, but not bare autolinks
-            if (node.node.parent?.name === "Link") hideMark(nFrom, nTo);
+          case "URL": {
+            // Hide the (url) destination of links, but not bare autolinks and
+            // not a URL that is itself the link label — GFM autolink also
+            // matches inside the label ([https://a](https://a)), giving the
+            // Link two URL children. The destination is the one right after
+            // the "(" mark.
+            const prev = node.node.prevSibling;
+            if (
+              node.node.parent?.name === "Link" &&
+              prev?.name === "LinkMark" &&
+              state.doc.sliceString(prev.from, prev.to) === "("
+            )
+              hideMark(nFrom, nTo);
             break;
+          }
           case "ListMark": {
             const list = node.node.parent?.parent; // ListItem -> Bullet/OrderedList
             if (

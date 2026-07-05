@@ -48,14 +48,25 @@ function linkTargetAt(view: EditorView, pos: number): string | null {
     n = n.parent
   ) {
     if (n.name === "Link" || n.name === "Image") {
-      const url = n.getChild("URL");
+      // A GFM autolink in the label adds an extra URL child; the destination
+      // is the URL right after the "(" mark, so prefer that one.
+      const urls = n.getChildren("URL");
+      const url =
+        urls.find(
+          (u) =>
+            u.prevSibling?.name === "LinkMark" &&
+            view.state.sliceDoc(u.prevSibling.from, u.prevSibling.to) === "(",
+        ) ?? urls[0];
       return url ? view.state.sliceDoc(url.from, url.to) : null;
     }
     if (n.name === "Autolink") {
       const t = view.state.sliceDoc(n.from, n.to);
       return t.startsWith("<") && t.endsWith(">") ? t.slice(1, -1) : t;
     }
-    if (n.name === "URL") return view.state.sliceDoc(n.from, n.to);
+    // A bare URL opens itself — unless it's a link label, where the click
+    // should open the link's destination (handled by the Link ancestor).
+    if (n.name === "URL" && n.parent?.name !== "Link")
+      return view.state.sliceDoc(n.from, n.to);
   }
   return null;
 }
@@ -64,6 +75,9 @@ function linkTargetAt(view: EditorView, pos: number): string | null {
 export async function openLinkTarget(raw: string): Promise<void> {
   const store = useAppStore.getState();
   let target = raw.trim();
+  // A <…>-wrapped destination is CommonMark's way to allow spaces; unwrap it.
+  if (target.startsWith("<") && target.endsWith(">"))
+    target = target.slice(1, -1).trim();
   if (EXTERNAL.test(target)) {
     await openUrl(target);
     return;

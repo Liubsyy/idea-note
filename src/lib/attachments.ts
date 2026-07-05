@@ -130,11 +130,13 @@ interface Ref {
   isImage: boolean;
 }
 
-/** Insert image embeds / attachment links at the cursor, one per line. */
+/** Insert image embeds / attachment links at the cursor, one per line. The
+ *  destination is <>-wrapped (CommonMark) so a link stays valid even when the
+ *  configured directory or note path contains spaces. */
 function insertRefs(view: EditorView, refs: Ref[]): void {
   if (refs.length === 0) return;
   const text = refs
-    .map((r) => (r.isImage ? `![](${r.link})` : `[${r.name}](${r.link})`))
+    .map((r) => (r.isImage ? `![](<${r.link}>)` : `[${r.name}](<${r.link}>)`))
     .join("\n");
   const range = view.state.selection.main;
   view.dispatch({
