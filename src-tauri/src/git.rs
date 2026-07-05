@@ -157,30 +157,53 @@ fn command_output_with_timeout(
         .spawn()
         .map_err(|e| format!("git 执行失败: {e}"))?;
 
+    // Drain both pipes on background threads while polling for exit. Without
+    // this, output beyond the OS pipe buffer blocks git's writes and it never
+    // exits — try_wait spins until the timeout kills a perfectly healthy
+    // process (this is exactly what `Command::output()` does internally).
+    fn drain(pipe: Option<impl std::io::Read + Send + 'static>) -> std::thread::JoinHandle<Vec<u8>> {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut pipe) = pipe {
+                let _ = std::io::Read::read_to_end(&mut pipe, &mut buf);
+            }
+            buf
+        })
+    }
+    let stdout_reader = drain(child.stdout.take());
+    let stderr_reader = drain(child.stderr.take());
+
     let start = Instant::now();
     loop {
-        if child
+        if let Some(status) = child
             .try_wait()
             .map_err(|e| format!("git 执行失败: {e}"))?
-            .is_some()
         {
-            let output = child
-                .wait_with_output()
-                .map_err(|e| format!("git 执行失败: {e}"))?;
+            let stdout = stdout_reader.join().unwrap_or_default();
+            let stderr = stderr_reader.join().unwrap_or_default();
             return Ok(GitOutput {
-                code: output.status.code().unwrap_or(-1),
-                stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                code: status.code().unwrap_or(-1),
+                stdout: String::from_utf8_lossy(&stdout).to_string(),
+                stderr: String::from_utf8_lossy(&stderr).to_string(),
             });
         }
 
         if start.elapsed() >= timeout {
             let _ = child.kill();
             let _ = child.wait();
+            // Killing the child closes the pipes, so the readers finish promptly.
+            let _ = stdout_reader.join();
+            let stderr = stderr_reader.join().unwrap_or_default();
+            let stderr = String::from_utf8_lossy(&stderr);
+            let stderr = stderr.trim();
             return Ok(GitOutput {
                 code: -1,
                 stdout: String::new(),
-                stderr: timeout_message.to_string(),
+                stderr: if stderr.is_empty() {
+                    timeout_message.to_string()
+                } else {
+                    format!("{timeout_message}\n{stderr}")
+                },
             });
         }
 
