@@ -2,14 +2,14 @@
 // frontend's src/lib/git.ts; this side only locates the binary and runs it.
 
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use tauri::async_runtime::Mutex as AsyncMutex;
+use tauri::async_runtime::RwLock as AsyncRwLock;
 
 /// Result of one git invocation. A non-zero exit code is a normal business
 /// outcome (e.g. merge conflict) — only spawn failures become an `Err`.
@@ -74,12 +74,12 @@ fn git_binary() -> Result<String, String> {
     .ok_or_else(|| "git not found".to_string())
 }
 
-/// One async lock per repository directory. All windows share this single
-/// backend process, so serializing here makes concurrent syncs (auto-sync timer
-/// vs. a manual click, or the same repo open in two windows) queue instead of
-/// racing each other's `.git/index.lock`. Different repos stay parallel.
-fn dir_lock(dir: &str) -> Arc<AsyncMutex<()>> {
-    static LOCKS: OnceLock<Mutex<HashMap<String, Arc<AsyncMutex<()>>>>> = OnceLock::new();
+/// One async read/write lock per repository directory. Read-only history and
+/// inspection calls can run together; commands that mutate refs, the index, or
+/// the working tree still take the exclusive side so sync/rollback operations
+/// do not race each other's `.git/index.lock`.
+fn dir_lock(dir: &str) -> Arc<AsyncRwLock<()>> {
+    static LOCKS: OnceLock<Mutex<HashMap<String, Arc<AsyncRwLock<()>>>>> = OnceLock::new();
     let key = std::fs::canonicalize(dir)
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|_| dir.to_string());
@@ -88,8 +88,113 @@ fn dir_lock(dir: &str) -> Arc<AsyncMutex<()>> {
         .lock()
         .unwrap()
         .entry(key)
-        .or_insert_with(|| Arc::new(AsyncMutex::new(())))
+        .or_insert_with(|| Arc::new(AsyncRwLock::new(())))
         .clone()
+}
+
+#[derive(Clone, Copy)]
+enum GitLockMode {
+    Read,
+    Write,
+}
+
+fn git_subcommand(args: &[String]) -> Option<(&str, &[String])> {
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-c" | "--config" | "-C" | "--git-dir" | "--work-tree" | "--namespace" => {
+                i += 2;
+            }
+            "--no-pager" | "--bare" | "--version" | "--help" => {
+                i += 1;
+            }
+            arg if arg.starts_with("--git-dir=")
+                || arg.starts_with("--work-tree=")
+                || arg.starts_with("--namespace=") =>
+            {
+                i += 1;
+            }
+            arg if arg.starts_with('-') => {
+                i += 1;
+            }
+            _ => return Some((&args[i], &args[i + 1..])),
+        }
+    }
+    None
+}
+
+fn lock_mode_for_args(args: &[String]) -> GitLockMode {
+    let Some((cmd, rest)) = git_subcommand(args) else {
+        return GitLockMode::Read;
+    };
+
+    match cmd {
+        "add" | "am" | "apply" | "bisect" | "checkout" | "cherry-pick" | "clean" | "clone"
+        | "commit" | "fetch" | "gc" | "init" | "merge" | "mv" | "pull" | "push" | "rebase"
+        | "reset" | "restore" | "revert" | "rm" | "stash" | "switch" | "tag" | "worktree" => {
+            GitLockMode::Write
+        }
+        "branch" => {
+            if rest.iter().any(|a| {
+                matches!(
+                    a.as_str(),
+                    "-d" | "-D"
+                        | "-m"
+                        | "-M"
+                        | "-c"
+                        | "-C"
+                        | "--delete"
+                        | "--move"
+                        | "--copy"
+                        | "--set-upstream-to"
+                        | "--unset-upstream"
+                )
+            }) {
+                GitLockMode::Write
+            } else {
+                GitLockMode::Read
+            }
+        }
+        "config" => {
+            if rest.iter().any(|a| {
+                matches!(
+                    a.as_str(),
+                    "--unset"
+                        | "--unset-all"
+                        | "--rename-section"
+                        | "--remove-section"
+                        | "--add"
+                        | "--replace-all"
+                )
+            }) || rest.len() >= 2
+            {
+                GitLockMode::Write
+            } else {
+                GitLockMode::Read
+            }
+        }
+        "remote" => {
+            if matches!(
+                rest.first().map(String::as_str),
+                Some("add" | "remove" | "rm" | "rename" | "set-url" | "set-branches" | "set-head")
+            ) {
+                GitLockMode::Write
+            } else {
+                GitLockMode::Read
+            }
+        }
+        "symbolic-ref" => {
+            if rest.iter().any(|a| a == "--delete")
+                || rest.iter().filter(|a| !a.starts_with('-')).count() > 1
+            {
+                GitLockMode::Write
+            } else {
+                GitLockMode::Read
+            }
+        }
+        "update-index" | "update-ref" => GitLockMode::Write,
+        _ => GitLockMode::Read,
+    }
 }
 
 /// Run a git command in `dir`. Token login uses a temporary askpass helper.
@@ -157,6 +262,7 @@ fn command_output_with_timeout(
         .spawn()
         .map_err(|e| format!("git 执行失败: {e}"))?;
 
+<<<<<<< HEAD
     // Drain both pipes on background threads while polling for exit. Without
     // this, output beyond the OS pipe buffer blocks git's writes and it never
     // exits — try_wait spins until the timeout kills a perfectly healthy
@@ -186,16 +292,38 @@ fn command_output_with_timeout(
                 stdout: String::from_utf8_lossy(&stdout).to_string(),
                 stderr: String::from_utf8_lossy(&stderr).to_string(),
             });
+=======
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "git 执行失败: 无法读取 stdout".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "git 执行失败: 无法读取 stderr".to_string())?;
+    let stdout_reader = std::thread::spawn(move || read_pipe(stdout));
+    let stderr_reader = std::thread::spawn(move || read_pipe(stderr));
+
+    let start = Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait().map_err(|e| format!("git 执行失败: {e}"))? {
+            break status;
+>>>>>>> origin/master
         }
 
         if start.elapsed() >= timeout {
             let _ = child.kill();
             let _ = child.wait();
+<<<<<<< HEAD
             // Killing the child closes the pipes, so the readers finish promptly.
             let _ = stdout_reader.join();
             let stderr = stderr_reader.join().unwrap_or_default();
             let stderr = String::from_utf8_lossy(&stderr);
             let stderr = stderr.trim();
+=======
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
+>>>>>>> origin/master
             return Ok(GitOutput {
                 code: -1,
                 stdout: String::new(),
@@ -208,7 +336,27 @@ fn command_output_with_timeout(
         }
 
         std::thread::sleep(Duration::from_millis(200));
-    }
+    };
+
+    let stdout = stdout_reader
+        .join()
+        .map_err(|_| "git 执行失败: stdout 读取线程异常退出".to_string())??;
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| "git 执行失败: stderr 读取线程异常退出".to_string())??;
+
+    Ok(GitOutput {
+        code: status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&stdout).to_string(),
+        stderr: String::from_utf8_lossy(&stderr).to_string(),
+    })
+}
+
+fn read_pipe<R: Read>(mut pipe: R) -> Result<Vec<u8>, String> {
+    let mut buf = Vec::new();
+    pipe.read_to_end(&mut buf)
+        .map_err(|e| format!("git 执行失败: {e}"))?;
+    Ok(buf)
 }
 
 fn run_git_blocking(
@@ -271,14 +419,23 @@ async fn git_run_inner(
     if !Path::new(&dir).is_dir() {
         return Err(format!("目录不存在: {dir}"));
     }
-    // Serialize all git calls to this repo (held across the whole invocation,
-    // including a network fetch) so no two processes touch the index at once.
+    // Read-only history/inspection commands share the repo lock. Commands that
+    // mutate refs, the index, or the working tree still run exclusively.
     let lock = dir_lock(&dir);
-    let _guard = lock.lock().await;
-
-    tauri::async_runtime::spawn_blocking(move || run_git_blocking(dir, args, credential))
-        .await
-        .map_err(|e| format!("git 执行失败: {e}"))?
+    match lock_mode_for_args(&args) {
+        GitLockMode::Read => {
+            let _guard = lock.read().await;
+            tauri::async_runtime::spawn_blocking(move || run_git_blocking(dir, args, credential))
+                .await
+                .map_err(|e| format!("git 执行失败: {e}"))?
+        }
+        GitLockMode::Write => {
+            let _guard = lock.write().await;
+            tauri::async_runtime::spawn_blocking(move || run_git_blocking(dir, args, credential))
+                .await
+                .map_err(|e| format!("git 执行失败: {e}"))?
+        }
+    }
 }
 
 #[tauri::command]
@@ -306,7 +463,7 @@ pub async fn git_credential_approve(
     }
     let git = git_binary()?;
     let lock = dir_lock(&dir);
-    let _guard = lock.lock().await;
+    let _guard = lock.write().await;
 
     tauri::async_runtime::spawn_blocking(move || {
         let mut child = crate::proc::command(&git)
