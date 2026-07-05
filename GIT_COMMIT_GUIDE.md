@@ -82,34 +82,3 @@ feat(settings)!: rename sync config keys
 
 BREAKING CHANGE: old sync config files need migration.
 ```
-
-## 自动同步提交
-
-应用自动生成的本地快照提交可保持现有格式：
-
-```text
-sync: 2026/7/5 09:34:25
-```
-
-这类提交只用于笔记库内容快照，不建议用于代码功能开发提交。
-
-## CHANGELOG 规则
-
-面向用户的功能、修复和发布相关变更，应同步更新 `CHANGELOG.md`：
-
-- 新功能使用清晰的用户视角描述。
-- 修复项说明修复了什么场景。
-- 避免空 bullet。
-- 同一版本下按重要程度从高到低排列。
-
-## 提交前检查
-
-根据改动范围选择运行：
-
-```bash
-npm run build
-cargo check --manifest-path src-tauri/Cargo.toml
-cargo fmt --manifest-path src-tauri/Cargo.toml --check
-```
-
-只改文档时可以不运行完整构建，但提交说明中应能看出这是文档变更。
