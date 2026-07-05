@@ -1,7 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Idea Note",
-  "version": "1.0.0",
   "identifier": "com.liubs.idea-note",
   "build": {
     "beforeDevCommand": "npm run dev",
