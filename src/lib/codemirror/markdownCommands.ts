@@ -114,10 +114,11 @@ export const md = {
   bulletList: (v: EditorView) => setLinePrefix(v, "- ", BULLET_RE),
   orderedList: (v: EditorView) => setLinePrefix(v, "1. ", ORDERED_RE),
 
-  link: (v: EditorView, href: string) => {
+  link: (v: EditorView, href: string, label?: string) => {
     const { state } = v;
     const changes = state.changeByRange((range) => {
-      const text = state.sliceDoc(range.from, range.to) || "链接";
+      const text =
+        label?.trim() || state.sliceDoc(range.from, range.to) || "链接";
       const insert = `[${text}](${href})`;
       return {
         changes: { from: range.from, to: range.to, insert },

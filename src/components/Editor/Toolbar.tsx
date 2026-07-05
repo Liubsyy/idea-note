@@ -293,6 +293,12 @@ export function Toolbar() {
     const v = getActiveView();
     if (v) fn(v);
   };
+  const selectedText = () => {
+    const v = getActiveView();
+    if (!v) return "";
+    const range = v.state.selection.main;
+    return v.state.sliceDoc(range.from, range.to).trim();
+  };
 
   return (
     <div className="flex items-center gap-0.5 overflow-x-auto px-2">
@@ -382,10 +388,26 @@ export function Toolbar() {
         active={active.link}
         onClick={() =>
           openPrompt({
-            title: "链接地址",
+            title: "插入链接",
             defaultValue: "https://",
-            onSubmit: (href) => {
-              if (href.trim()) run((v) => md.link(v, href.trim()));
+            fields: [
+              {
+                name: "label",
+                label: "显示文本",
+                defaultValue: selectedText(),
+                placeholder: "链接",
+              },
+              {
+                name: "href",
+                label: "链接地址",
+                defaultValue: "https://",
+                placeholder: "https://example.com",
+              },
+            ],
+            onSubmit: (_value, values) => {
+              const href = values.href?.trim();
+              if (!href) throw "请填写链接地址";
+              run((v) => md.link(v, href, values.label));
             },
           })
         }

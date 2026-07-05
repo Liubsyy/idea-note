@@ -189,7 +189,16 @@ const RIGHT_PANEL_MAX_RATIO = 0.9;
 export interface PromptRequest {
   title: string;
   defaultValue: string;
-  onSubmit: (value: string) => void | Promise<void>;
+  fields?: Array<{
+    name: string;
+    label: string;
+    defaultValue: string;
+    placeholder?: string;
+  }>;
+  onSubmit: (
+    value: string,
+    values: Record<string, string>,
+  ) => void | Promise<void>;
 }
 
 export interface GitCredentialPromptRequest {

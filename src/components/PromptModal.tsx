@@ -10,6 +10,7 @@ export function PromptModal() {
   const closePrompt = useAppStore((s) => s.closePrompt);
 
   const [value, setValue] = useState("");
+  const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -17,6 +18,14 @@ export function PromptModal() {
   useEffect(() => {
     if (!prompt) return;
     setValue(prompt.defaultValue);
+    setValues(
+      Object.fromEntries(
+        (prompt.fields ?? []).map((field) => [
+          field.name,
+          field.defaultValue,
+        ]),
+      ),
+    );
     setError(null);
     setBusy(false);
     // Focus and select after the input has mounted.
@@ -34,7 +43,7 @@ export function PromptModal() {
     setBusy(true);
     setError(null);
     try {
-      await prompt.onSubmit(value);
+      await prompt.onSubmit(value, values);
       closePrompt();
     } catch (e) {
       setError(typeof e === "string" ? e : (e as Error)?.message ?? "操作失败");
@@ -63,26 +72,67 @@ export function PromptModal() {
         >
           {prompt.title}
         </div>
-        <input
-          ref={inputRef}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              submit();
-            } else if (e.key === "Escape") {
-              e.preventDefault();
-              closePrompt();
-            }
-          }}
-          className="w-full rounded-md px-2.5 py-1.5 text-sm outline-none"
-          style={{
-            background: "var(--bg)",
-            border: `1px solid ${error ? "#e5484d" : "var(--border)"}`,
-            color: "var(--text)",
-          }}
-        />
+        {prompt.fields?.length ? (
+          <div className="space-y-3">
+            {prompt.fields.map((field, index) => (
+              <label key={field.name} className="block">
+                <div
+                  className="mb-1 text-xs"
+                  style={{ color: "var(--text-soft)" }}
+                >
+                  {field.label}
+                </div>
+                <input
+                  ref={index === 0 ? inputRef : undefined}
+                  value={values[field.name] ?? ""}
+                  placeholder={field.placeholder}
+                  onChange={(e) =>
+                    setValues((prev) => ({
+                      ...prev,
+                      [field.name]: e.target.value,
+                    }))
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      submit();
+                    } else if (e.key === "Escape") {
+                      e.preventDefault();
+                      closePrompt();
+                    }
+                  }}
+                  className="w-full rounded-md px-2.5 py-1.5 text-sm outline-none"
+                  style={{
+                    background: "var(--bg)",
+                    border: `1px solid ${error ? "#e5484d" : "var(--border)"}`,
+                    color: "var(--text)",
+                  }}
+                />
+              </label>
+            ))}
+          </div>
+        ) : (
+          <input
+            ref={inputRef}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                submit();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                closePrompt();
+              }
+            }}
+            className="w-full rounded-md px-2.5 py-1.5 text-sm outline-none"
+            style={{
+              background: "var(--bg)",
+              border: `1px solid ${error ? "#e5484d" : "var(--border)"}`,
+              color: "var(--text)",
+            }}
+          />
+        )}
         {error && (
           <div className="mt-1.5 text-xs" style={{ color: "#e5484d" }}>
             {error}
