@@ -129,10 +129,10 @@ export const md = {
     v.focus();
   },
 
-  image: (v: EditorView, src: string) => {
+  image: (v: EditorView, src: string, alt = "") => {
     const { state } = v;
     const changes = state.changeByRange((range) => {
-      const insert = `![](${src})`;
+      const insert = `![${alt.trim()}](${src})`;
       return {
         changes: { from: range.from, to: range.to, insert },
         range: EditorSelection.cursor(range.from + insert.length),

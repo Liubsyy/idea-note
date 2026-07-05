@@ -13,6 +13,7 @@ export function PromptModal() {
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -28,6 +29,7 @@ export function PromptModal() {
     );
     setError(null);
     setBusy(false);
+    setActionBusy(null);
     // Focus and select after the input has mounted.
     const id = requestAnimationFrame(() => {
       inputRef.current?.focus();
@@ -51,6 +53,27 @@ export function PromptModal() {
     }
   };
 
+  const runFieldAction = async (
+    field: NonNullable<typeof prompt.fields>[number],
+  ) => {
+    if (!field.onAction || actionBusy) return;
+    setActionBusy(field.name);
+    setError(null);
+    try {
+      const nextValue = await field.onAction();
+      if (nextValue) {
+        setValues((prev) => ({
+          ...prev,
+          [field.name]: nextValue,
+        }));
+      }
+    } catch (e) {
+      setError(typeof e === "string" ? e : (e as Error)?.message ?? "操作失败");
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 z-[60] flex items-start justify-center"
@@ -58,8 +81,11 @@ export function PromptModal() {
       onMouseDown={closePrompt}
     >
       <div
-        className="mt-32 w-80 rounded-xl p-4"
+        className="mt-32 rounded-xl p-4"
         style={{
+          width: prompt.fields?.length
+            ? "min(420px, calc(100vw - 32px))"
+            : "20rem",
           background: "var(--bg-elev)",
           border: "1px solid var(--border)",
           boxShadow: "0 12px 40px var(--shadow)",
@@ -75,40 +101,60 @@ export function PromptModal() {
         {prompt.fields?.length ? (
           <div className="space-y-3">
             {prompt.fields.map((field, index) => (
-              <label key={field.name} className="block">
+              <div key={field.name}>
                 <div
                   className="mb-1 text-xs"
                   style={{ color: "var(--text-soft)" }}
                 >
                   {field.label}
                 </div>
-                <input
-                  ref={index === 0 ? inputRef : undefined}
-                  value={values[field.name] ?? ""}
-                  placeholder={field.placeholder}
-                  onChange={(e) =>
-                    setValues((prev) => ({
-                      ...prev,
-                      [field.name]: e.target.value,
-                    }))
-                  }
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      submit();
-                    } else if (e.key === "Escape") {
-                      e.preventDefault();
-                      closePrompt();
+                <div className="flex gap-2">
+                  <input
+                    ref={index === 0 ? inputRef : undefined}
+                    value={values[field.name] ?? ""}
+                    placeholder={field.placeholder}
+                    onChange={(e) =>
+                      setValues((prev) => ({
+                        ...prev,
+                        [field.name]: e.target.value,
+                      }))
                     }
-                  }}
-                  className="w-full rounded-md px-2.5 py-1.5 text-sm outline-none"
-                  style={{
-                    background: "var(--bg)",
-                    border: `1px solid ${error ? "#e5484d" : "var(--border)"}`,
-                    color: "var(--text)",
-                  }}
-                />
-              </label>
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        submit();
+                      } else if (e.key === "Escape") {
+                        e.preventDefault();
+                        closePrompt();
+                      }
+                    }}
+                    className="min-w-0 flex-1 rounded-md px-2.5 py-1.5 text-sm outline-none"
+                    style={{
+                      background: "var(--bg)",
+                      border: `1px solid ${
+                        error ? "#e5484d" : "var(--border)"
+                      }`,
+                      color: "var(--text)",
+                    }}
+                  />
+                  {field.actionLabel && field.onAction && (
+                    <button
+                      type="button"
+                      disabled={actionBusy === field.name}
+                      onClick={() => runFieldAction(field)}
+                      className="shrink-0 rounded-md px-2.5 py-1.5 text-sm transition-colors"
+                      style={{
+                        background: "var(--bg)",
+                        border: "1px solid var(--border)",
+                        color: "var(--text-soft)",
+                        opacity: actionBusy === field.name ? 0.65 : 1,
+                      }}
+                    >
+                      {field.actionLabel}
+                    </button>
+                  )}
+                </div>
+              </div>
             ))}
           </div>
         ) : (

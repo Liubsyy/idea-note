@@ -194,6 +194,12 @@ export interface PromptRequest {
     label: string;
     defaultValue: string;
     placeholder?: string;
+    actionLabel?: string;
+    onAction?: () =>
+      | string
+      | null
+      | undefined
+      | Promise<string | null | undefined>;
   }>;
   onSubmit: (
     value: string,

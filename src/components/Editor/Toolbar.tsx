@@ -12,7 +12,6 @@ import {
   Minus,
   Link as LinkIcon,
   Image as ImageIcon,
-  ImagePlus,
   Undo2,
   Redo2,
   Heading,
@@ -415,22 +414,31 @@ export function Toolbar() {
         <LinkIcon size={iconSize} />
       </Btn>
       <Btn
-        title="本地图片"
-        onClick={async () => {
-          const path = await pickImage();
-          if (path) run((v) => md.image(v, path));
-        }}
-      >
-        <ImagePlus size={iconSize} />
-      </Btn>
-      <Btn
-        title="网络图片"
+        title="图片"
         onClick={() =>
           openPrompt({
-            title: "图片地址",
-            defaultValue: "https://",
-            onSubmit: (src) => {
-              if (src.trim()) run((v) => md.image(v, src.trim()));
+            title: "插入图片",
+            defaultValue: "",
+            fields: [
+              {
+                name: "alt",
+                label: "替代文本",
+                defaultValue: selectedText(),
+                placeholder: "图片说明",
+              },
+              {
+                name: "src",
+                label: "图片地址或本地路径",
+                defaultValue: "",
+                placeholder: "https://example.com/image.png",
+                actionLabel: "选择本地图片",
+                onAction: pickImage,
+              },
+            ],
+            onSubmit: (_value, values) => {
+              const src = values.src?.trim();
+              if (!src) throw "请选择本地图片或填写图片地址";
+              run((v) => md.image(v, src, values.alt));
             },
           })
         }
