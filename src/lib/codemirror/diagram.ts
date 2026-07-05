@@ -21,6 +21,16 @@ import {
 
 const svgCache = new Map<string, string>();
 let idCounter = 0;
+const PAN_STEP = 48;
+const ZOOM_STEP = 0.2;
+const MIN_ZOOM = 0.4;
+const MAX_ZOOM = 3;
+
+type DiagramTransform = {
+  x: number;
+  y: number;
+  zoom: number;
+};
 
 const currentTheme = (): "dark" | "default" =>
   document.documentElement.classList.contains("dark") ? "dark" : "default";
@@ -46,6 +56,7 @@ async function renderDiagram(
   view: EditorView,
   code: string,
   theme: string,
+  svgHost: HTMLElement,
   wrap: HTMLElement,
 ) {
   const renderId = `mermaid-${idCounter++}`;
@@ -60,7 +71,7 @@ async function renderDiagram(
     const { svg } = await mermaid.render(renderId, code);
     svgCache.set(cacheKey(theme, code), svg);
     if (!wrap.isConnected) return;
-    wrap.innerHTML = svg;
+    svgHost.innerHTML = svg;
   } catch (e) {
     // On a parse error mermaid 10 draws its "Syntax error in text" bomb into
     // a temp <div id="d{id}"> appended to document.body and throws BEFORE its
@@ -72,6 +83,91 @@ async function renderDiagram(
   }
   // The async fill changes the widget height; ask CodeMirror to re-measure.
   view.requestMeasure();
+}
+
+function iconSvg(name: "up" | "down" | "left" | "right" | "zoomIn" | "zoomOut" | "reset") {
+  const paths: Record<typeof name, string> = {
+    up: '<path d="m6 15 6-6 6 6" />',
+    down: '<path d="m6 9 6 6 6-6" />',
+    left: '<path d="m15 18-6-6 6-6" />',
+    right: '<path d="m9 18 6-6-6-6" />',
+    zoomIn:
+      '<circle cx="11" cy="11" r="7" /><path d="m20 20-4.5-4.5" /><path d="M11 8v6" /><path d="M8 11h6" />',
+    zoomOut:
+      '<circle cx="11" cy="11" r="7" /><path d="m20 20-4.5-4.5" /><path d="M8 11h6" />',
+    reset:
+      '<path d="M3 12a9 9 0 0 1 15.5-6.2" /><path d="M18 2v5h-5" /><path d="M21 12a9 9 0 0 1-15.5 6.2" /><path d="M6 22v-5h5" />',
+  };
+  return `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${paths[name]}</svg>`;
+}
+
+function applyDiagramTransform(svgHost: HTMLElement, transform: DiagramTransform) {
+  svgHost.style.transform = `translate(${transform.x}px, ${transform.y}px) scale(${transform.zoom})`;
+}
+
+function createControlButton(
+  icon: Parameters<typeof iconSvg>[0],
+  label: string,
+  onClick: () => void,
+) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "cm-md-mermaid-control-btn";
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.innerHTML = iconSvg(icon);
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onClick();
+  });
+  return button;
+}
+
+function createMermaidControls(svgHost: HTMLElement) {
+  const transform: DiagramTransform = { x: 0, y: 0, zoom: 1 };
+  const update = () => applyDiagramTransform(svgHost, transform);
+  const move = (dx: number, dy: number) => {
+    transform.x += dx;
+    transform.y += dy;
+    update();
+  };
+  const zoom = (delta: number) => {
+    transform.zoom = Math.min(
+      MAX_ZOOM,
+      Math.max(MIN_ZOOM, Number((transform.zoom + delta).toFixed(2))),
+    );
+    update();
+  };
+  const reset = () => {
+    transform.x = 0;
+    transform.y = 0;
+    transform.zoom = 1;
+    update();
+  };
+
+  const controls = document.createElement("div");
+  controls.className = "cm-md-mermaid-controls";
+  controls.setAttribute("aria-label", "Mermaid 图表视图控制");
+  for (const type of ["pointerdown", "mousedown", "mouseup", "dblclick", "touchstart"] as const)
+    controls.addEventListener(type, (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+
+  controls.append(
+    document.createElement("span"),
+    createControlButton("up", "上移图表", () => move(0, -PAN_STEP)),
+    createControlButton("zoomIn", "放大图表", () => zoom(ZOOM_STEP)),
+    createControlButton("left", "左移图表", () => move(-PAN_STEP, 0)),
+    createControlButton("reset", "重置图表视图", reset),
+    createControlButton("right", "右移图表", () => move(PAN_STEP, 0)),
+    document.createElement("span"),
+    createControlButton("down", "下移图表", () => move(0, PAN_STEP)),
+    createControlButton("zoomOut", "缩小图表", () => zoom(-ZOOM_STEP)),
+  );
+  update();
+  return controls;
 }
 
 class MermaidWidget extends WidgetType {
@@ -89,6 +185,12 @@ class MermaidWidget extends WidgetType {
   toDOM(view: EditorView) {
     const wrap = document.createElement("div");
     wrap.className = "cm-md-mermaid";
+    const stage = document.createElement("div");
+    stage.className = "cm-md-mermaid-stage";
+    const svgHost = document.createElement("div");
+    svgHost.className = "cm-md-mermaid-svg";
+    stage.append(svgHost);
+    wrap.append(stage, createMermaidControls(svgHost));
     // Click to edit: drop the caret into the source so the block reveals.
     wrap.addEventListener("mousedown", (e) => {
       e.preventDefault();
@@ -96,8 +198,8 @@ class MermaidWidget extends WidgetType {
       view.focus();
     });
     const cached = svgCache.get(cacheKey(this.theme, this.code));
-    if (cached) wrap.innerHTML = cached;
-    else void renderDiagram(view, this.code, this.theme, wrap);
+    if (cached) svgHost.innerHTML = cached;
+    else void renderDiagram(view, this.code, this.theme, svgHost, wrap);
     return wrap;
   }
   ignoreEvent() {
