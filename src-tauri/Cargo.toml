@@ -27,6 +27,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 portable-pty = "0.9.0"
 regex = "1"
+tempfile = "3"
 # Open/search non-UTF-8 text files (GBK txt/log are common for zh users):
 # encoding_rs decodes/encodes, chardetng detects the charset.
 encoding_rs = "0.8"

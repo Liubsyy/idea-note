@@ -2,10 +2,13 @@
 // frontend's src/lib/git.ts; this side only locates the binary and runs it.
 
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::Path;
+use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::async_runtime::Mutex as AsyncMutex;
 
 /// Result of one git invocation. A non-zero exit code is a normal business
@@ -15,6 +18,12 @@ pub struct GitOutput {
     code: i32,
     stdout: String,
     stderr: String,
+}
+
+#[derive(Deserialize)]
+pub struct GitCredential {
+    username: String,
+    password: String,
 }
 
 /// Places to look for git besides PATH. GUI apps launched from Finder get a
@@ -83,23 +92,112 @@ fn dir_lock(dir: &str) -> Arc<AsyncMutex<()>> {
         .clone()
 }
 
-/// Run a git command in `dir`. Credential prompts are disabled so a missing
-/// key / helper fails fast with a readable stderr instead of hanging forever.
+/// Run a git command in `dir`. Token login uses a temporary askpass helper.
 ///
 /// Async + spawn_blocking: sync commands run on the main thread, and a network
 /// fetch there freezes the whole UI for its duration. SSH gets a connect
 /// timeout and HTTP a low-speed abort so a dead network errors out in ~10-30s
 /// instead of hanging.
-#[tauri::command]
-pub async fn git_run(dir: String, args: Vec<String>) -> Result<GitOutput, String> {
+fn askpass_script() -> Result<tempfile::NamedTempFile, String> {
+    #[cfg(target_os = "windows")]
+    let mut file = tempfile::Builder::new()
+        .prefix("idea-note-askpass-")
+        .suffix(".cmd")
+        .tempfile()
+        .map_err(|e| format!("创建 git 凭据助手失败: {e}"))?;
+
+    #[cfg(not(target_os = "windows"))]
+    let mut file = tempfile::Builder::new()
+        .prefix("idea-note-askpass-")
+        .tempfile()
+        .map_err(|e| format!("创建 git 凭据助手失败: {e}"))?;
+
+    #[cfg(target_os = "windows")]
+    file.write_all(
+        br#"@echo off
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "if ($args[0] -match 'Username') { [Console]::WriteLine($env:IDEA_NOTE_GIT_USERNAME) } else { [Console]::WriteLine($env:IDEA_NOTE_GIT_PASSWORD) }" -- %*
+"#,
+    )
+    .map_err(|e| format!("写入 git 凭据助手失败: {e}"))?;
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        file.write_all(
+            br#"#!/bin/sh
+case "$1" in
+  *Username*|*username*) printf '%s\n' "$IDEA_NOTE_GIT_USERNAME" ;;
+  *) printf '%s\n' "$IDEA_NOTE_GIT_PASSWORD" ;;
+esac
+"#,
+        )
+        .map_err(|e| format!("写入 git 凭据助手失败: {e}"))?;
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = file
+            .as_file()
+            .metadata()
+            .map_err(|e| format!("读取 git 凭据助手权限失败: {e}"))?
+            .permissions();
+        perms.set_mode(0o700);
+        file.as_file()
+            .set_permissions(perms)
+            .map_err(|e| format!("设置 git 凭据助手权限失败: {e}"))?;
+    }
+
+    Ok(file)
+}
+
+fn command_output_with_timeout(
+    mut cmd: Command,
+    timeout: Duration,
+    timeout_message: &str,
+) -> Result<GitOutput, String> {
+    let mut child = cmd
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("git 执行失败: {e}"))?;
+
+    let start = Instant::now();
+    loop {
+        if child
+            .try_wait()
+            .map_err(|e| format!("git 执行失败: {e}"))?
+            .is_some()
+        {
+            let output = child
+                .wait_with_output()
+                .map_err(|e| format!("git 执行失败: {e}"))?;
+            return Ok(GitOutput {
+                code: output.status.code().unwrap_or(-1),
+                stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+            });
+        }
+
+        if start.elapsed() >= timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Ok(GitOutput {
+                code: -1,
+                stdout: String::new(),
+                stderr: timeout_message.to_string(),
+            });
+        }
+
+        std::thread::sleep(Duration::from_millis(200));
+    }
+}
+
+fn run_git_blocking(
+    dir: String,
+    args: Vec<String>,
+    credential: Option<GitCredential>,
+) -> Result<GitOutput, String> {
     if !Path::new(&dir).is_dir() {
         return Err(format!("目录不存在: {dir}"));
     }
     let git = git_binary()?;
-    // Serialize all git calls to this repo (held across the whole invocation,
-    // including a network fetch) so no two processes touch the index at once.
-    let lock = dir_lock(&dir);
-    let _guard = lock.lock().await;
+
     // BatchMode + ConnectTimeout make a missing key / dead host fail fast
     // instead of hanging. ControlMaster reuses one SSH connection across the
     // fetch and push of a sync (and across close-together syncs), cutting a
@@ -113,23 +211,114 @@ pub async fn git_run(dir: String, args: Vec<String>) -> Result<GitOutput, String
     #[cfg(target_os = "windows")]
     const SSH_COMMAND: &str = "ssh -oBatchMode=yes -oConnectTimeout=10";
 
+    let askpass = if credential.is_some() {
+        Some(askpass_script()?)
+    } else {
+        None
+    };
+
+    let mut cmd = crate::proc::command(&git);
+    cmd.args(&args)
+        .current_dir(&dir)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_SSH_COMMAND", SSH_COMMAND)
+        .env("GIT_HTTP_LOW_SPEED_LIMIT", "1")
+        .env("GIT_HTTP_LOW_SPEED_TIME", "30");
+
+    if let (Some(credential), Some(askpass)) = (&credential, &askpass) {
+        cmd.env("GIT_ASKPASS", askpass.path())
+            .env("IDEA_NOTE_GIT_USERNAME", &credential.username)
+            .env("IDEA_NOTE_GIT_PASSWORD", &credential.password);
+    } else {
+        cmd.env("GIT_ASKPASS", "");
+    }
+
+    command_output_with_timeout(
+        cmd,
+        Duration::from_secs(120),
+        "git 操作超时，请检查网络或远程仓库认证状态",
+    )
+}
+
+async fn git_run_inner(
+    dir: String,
+    args: Vec<String>,
+    credential: Option<GitCredential>,
+) -> Result<GitOutput, String> {
+    if !Path::new(&dir).is_dir() {
+        return Err(format!("目录不存在: {dir}"));
+    }
+    // Serialize all git calls to this repo (held across the whole invocation,
+    // including a network fetch) so no two processes touch the index at once.
+    let lock = dir_lock(&dir);
+    let _guard = lock.lock().await;
+
+    tauri::async_runtime::spawn_blocking(move || run_git_blocking(dir, args, credential))
+        .await
+        .map_err(|e| format!("git 执行失败: {e}"))?
+}
+
+#[tauri::command]
+pub async fn git_run(dir: String, args: Vec<String>) -> Result<GitOutput, String> {
+    git_run_inner(dir, args, None).await
+}
+
+#[tauri::command]
+pub async fn git_run_with_credential(
+    dir: String,
+    args: Vec<String>,
+    credential: GitCredential,
+) -> Result<GitOutput, String> {
+    git_run_inner(dir, args, Some(credential)).await
+}
+
+#[tauri::command]
+pub async fn git_credential_approve(
+    dir: String,
+    url: String,
+    credential: GitCredential,
+) -> Result<(), String> {
+    if !Path::new(&dir).is_dir() {
+        return Err(format!("目录不存在: {dir}"));
+    }
+    let git = git_binary()?;
+    let lock = dir_lock(&dir);
+    let _guard = lock.lock().await;
+
     tauri::async_runtime::spawn_blocking(move || {
-        let output = crate::proc::command(&git)
-            .args(&args)
+        let mut child = crate::proc::command(&git)
+            .arg("credential")
+            .arg("approve")
             .current_dir(&dir)
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .env("GIT_ASKPASS", "")
-            .env("GIT_SSH_COMMAND", SSH_COMMAND)
-            .env("GIT_HTTP_LOW_SPEED_LIMIT", "1")
-            .env("GIT_HTTP_LOW_SPEED_TIME", "30")
-            .output()
-            .map_err(|e| format!("git 执行失败: {e}"))?;
-        Ok(GitOutput {
-            code: output.status.code().unwrap_or(-1),
-            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-        })
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("git 凭据保存失败: {e}"))?;
+
+        if let Some(stdin) = child.stdin.as_mut() {
+            write!(
+                stdin,
+                "url={}\nusername={}\npassword={}\n\n",
+                url, credential.username, credential.password
+            )
+            .map_err(|e| format!("git 凭据保存失败: {e}"))?;
+        }
+
+        let output = child
+            .wait_with_output()
+            .map_err(|e| format!("git 凭据保存失败: {e}"))?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            Err(if stderr.is_empty() {
+                "git 凭据保存失败".to_string()
+            } else {
+                format!("git 凭据保存失败: {stderr}")
+            })
+        }
     })
     .await
-    .map_err(|e| format!("git 执行失败: {e}"))?
+    .map_err(|e| format!("git 凭据保存失败: {e}"))?
 }

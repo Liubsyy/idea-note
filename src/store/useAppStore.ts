@@ -48,6 +48,8 @@ import {
   syncWorkspace,
   type CommitFile,
   type FileCommit,
+  type GitCredential,
+  type GitCredentialProvider,
   type GitInfo,
 } from "../lib/git";
 
@@ -187,6 +189,15 @@ export interface PromptRequest {
   onSubmit: (value: string) => void | Promise<void>;
 }
 
+export interface GitCredentialPromptRequest {
+  dir: string;
+  remoteUrl: string;
+  defaultUsername: string;
+  message: string;
+  onSubmit: (credential: GitCredential) => void;
+  onCancel: () => void;
+}
+
 /** An in-app confirmation dialog (WKWebView's window.confirm is unreliable). */
 export interface ConfirmRequest {
   title: string;
@@ -321,6 +332,8 @@ interface AppState {
   activeFormats: ActiveFormats;
   /** Pending in-app naming prompt, or null when none is open. */
   prompt: PromptRequest | null;
+  /** Pending HTTPS git credential prompt, or null when none is open. */
+  gitCredentialPrompt: GitCredentialPromptRequest | null;
   /** Pending in-app confirmation, or null when none is open. */
   confirm: ConfirmRequest | null;
   /** History modal: target path + kind, snapshotted at open time. "file" is
@@ -408,11 +421,13 @@ interface AppState {
   remove: (path: string) => Promise<void>;
   // In-app prompt: open with a request, the modal calls onSubmit / closePrompt.
   openPrompt: (req: PromptRequest) => void;
+  requestGitCredential: GitCredentialProvider;
   requestNewFile: (dir?: string) => void;
   requestNewRawFile: (dir?: string) => void;
   requestNewFolder: (dir?: string) => void;
   requestRename: (path: string) => void;
   closePrompt: () => void;
+  closeGitCredentialPrompt: () => void;
   openConfirm: (req: ConfirmRequest) => void;
   closeConfirm: () => void;
   /** Open the history modal: current file + global tabs when a file is open,
@@ -1203,6 +1218,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   aiModels: [],
   activeFormats: emptyFormats,
   prompt: null,
+  gitCredentialPrompt: null,
   confirm: null,
   history: null,
   gitInfo: null,
@@ -2079,6 +2095,23 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   openPrompt: (req) => set({ prompt: req }),
 
+  requestGitCredential: (req) =>
+    new Promise((resolve) => {
+      set({
+        gitCredentialPrompt: {
+          ...req,
+          onSubmit: (credential) => {
+            set({ gitCredentialPrompt: null });
+            resolve(credential);
+          },
+          onCancel: () => {
+            set({ gitCredentialPrompt: null });
+            resolve(null);
+          },
+        },
+      });
+    }),
+
   requestNewFile: (dir) => {
     const target = dir ?? get().workspacePath;
     if (!target) return;
@@ -2131,6 +2164,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   closePrompt: () => set({ prompt: null }),
+
+  closeGitCredentialPrompt: () => {
+    const prompt = get().gitCredentialPrompt;
+    if (prompt) prompt.onCancel();
+  },
 
   openConfirm: (req) => set({ confirm: req }),
 
@@ -2455,7 +2493,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     broadcast();
     try {
       await get().flushActiveTab();
-      const result = await syncWorkspace(workspacePath, readGlobalProxy());
+      const result = await syncWorkspace(workspacePath, readGlobalProxy(), get().requestGitCredential);
 
       // The merge may have rewritten files on disk: refresh the tree, and
       // reload the open file unless the user kept typing during the sync.

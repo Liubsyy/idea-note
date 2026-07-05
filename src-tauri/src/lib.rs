@@ -128,6 +128,8 @@ pub fn run() {
             app_data::git_proxy_load,
             app_data::git_proxy_save,
             git::git_run,
+            git::git_run_with_credential,
+            git::git_credential_approve,
             print::print_page,
             print::export_pdf,
             terminal::term_open,

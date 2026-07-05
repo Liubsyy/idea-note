@@ -1909,6 +1909,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tauri-plugin-window-state",
+ "tempfile",
  "webkit2gtk",
  "webview2-com",
  "windows",

@@ -702,6 +702,7 @@ function SyncTab() {
 
 /** Empty project: clone a remote repo into a chosen local folder and open it. */
 function CloneSection({ src }: { src: string }) {
+  const requestGitCredential = useAppStore((s) => s.requestGitCredential);
   const [url, setUrl] = useState("");
   const [proxy, setProxy] = useState(() => readGlobalProxy());
   const [parentDir, setParentDir] = useState<string | null>(null);
@@ -719,7 +720,7 @@ function CloneSection({ src }: { src: string }) {
     setBusy(true);
     setError(null);
     try {
-      const path = await cloneRemote(url.trim(), parentDir, proxy);
+      const path = await cloneRemote(url.trim(), parentDir, proxy, requestGitCredential);
       // Persist the proxy globally so all later syncs reuse it.
       saveGlobalProxy(proxy);
       emit(GIT_PROXY_EVENT, { proxy }).catch(() => {});
@@ -799,6 +800,7 @@ function AttachSection({
   isRepo: boolean;
   onAttached: () => Promise<void>;
 }) {
+  const requestGitCredential = useAppStore((s) => s.requestGitCredential);
   const [url, setUrl] = useState("");
   const [proxy, setProxy] = useState(() => readGlobalProxy());
   const [busy, setBusy] = useState<"attach" | "local" | null>(null);
@@ -809,7 +811,7 @@ function AttachSection({
     setBusy("attach");
     setError(null);
     try {
-      await attachRemote(ws, url.trim(), proxy);
+      await attachRemote(ws, url.trim(), proxy, requestGitCredential);
       // Persist the proxy globally so subsequent syncs reuse it without re-entry.
       saveGlobalProxy(proxy);
       emit(GIT_PROXY_EVENT, { proxy }).catch(() => {});

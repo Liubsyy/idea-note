@@ -13,10 +13,33 @@ export interface GitOutput {
   stderr: string;
 }
 
+export interface GitCredential {
+  username: string;
+  password: string;
+  remember: boolean;
+}
+
+export interface GitCredentialRequest {
+  dir: string;
+  remoteUrl: string;
+  defaultUsername: string;
+  message: string;
+}
+
+export type GitCredentialProvider = (
+  request: GitCredentialRequest,
+) => Promise<GitCredential | null>;
+
 /** Raw git invocation. Non-zero exit codes come back as a normal GitOutput;
  *  the promise only rejects when git itself can't run (not installed, bad dir). */
 export const gitRun = (dir: string, args: string[]) =>
   invoke<GitOutput>("git_run", { dir, args });
+
+const gitRunWithCredential = (dir: string, args: string[], credential: GitCredential) =>
+  invoke<GitOutput>("git_run_with_credential", { dir, args, credential });
+
+const gitCredentialApprove = (dir: string, url: string, credential: GitCredential) =>
+  invoke<void>("git_credential_approve", { dir, url, credential });
 
 export class GitError extends Error {
   /** Raw stderr of the failing command, for detail display. */
@@ -57,6 +80,74 @@ export function friendlyGitError(stderr: string): string {
   }
   const firstLine = stderr.trim().split("\n")[0] ?? "";
   return firstLine ? `git 操作失败：${firstLine}` : "git 操作失败";
+}
+
+function isHttpsUrl(url: string | null | undefined): url is string {
+  return /^https:\/\//i.test(url?.trim() ?? "");
+}
+
+function isAuthFailure(stderr: string): boolean {
+  const s = stderr.toLowerCase();
+  return (
+    s.includes("authentication failed") ||
+    s.includes("permission denied") ||
+    s.includes("could not read username") ||
+    s.includes("could not read password") ||
+    s.includes("terminal prompts disabled") ||
+    s.includes("repository not found")
+  );
+}
+
+function defaultUsernameFromUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return decodeURIComponent(parsed.username || "");
+  } catch {
+    return "";
+  }
+}
+
+async function runNetworkGit(
+  dir: string,
+  args: string[],
+  remoteUrl: string,
+  credential: GitCredential | null,
+): Promise<GitOutput> {
+  const out = credential
+    ? await gitRunWithCredential(dir, args, credential)
+    : await gitRun(dir, args);
+  if (out.code === 0 && credential?.remember) {
+    await gitCredentialApprove(dir, remoteUrl, credential).catch(() => {});
+  }
+  return out;
+}
+
+async function runNetworkGitWithPrompt(
+  dir: string,
+  args: string[],
+  remoteUrl: string,
+  provider: GitCredentialProvider | undefined,
+  credentialRef: { current: GitCredential | null },
+): Promise<GitOutput> {
+  let out = await runNetworkGit(dir, args, remoteUrl, credentialRef.current);
+  if (out.code === 0 || !provider || !isHttpsUrl(remoteUrl) || !isAuthFailure(out.stderr)) {
+    return out;
+  }
+
+  const credential = await provider({
+    dir,
+    remoteUrl,
+    defaultUsername: defaultUsernameFromUrl(remoteUrl),
+    message: friendlyGitError(out.stderr),
+  });
+  if (!credential) return out;
+
+  credentialRef.current = credential;
+  out = await runNetworkGit(dir, args, remoteUrl, credentialRef.current);
+  if (out.code !== 0 && isAuthFailure(out.stderr)) {
+    credentialRef.current = null;
+  }
+  return out;
 }
 
 /** Run git and throw a friendly GitError on non-zero exit. */
@@ -555,13 +646,26 @@ export async function initLocalRepo(dir: string): Promise<void> {
  * (or attach `url` to a repo that has no origin yet). On a failed fetch the
  * remote is removed again so the folder is left as it was.
  */
-export async function attachRemote(dir: string, url: string, proxy?: string): Promise<void> {
+export async function attachRemote(
+  dir: string,
+  url: string,
+  proxy?: string,
+  credentialProvider?: GitCredentialProvider,
+): Promise<void> {
   if (!(await isGitRepo(dir))) await gitOk(dir, ["init"]);
   const hadOrigin = (await getRemoteUrl(dir)) !== null;
   await gitOk(dir, hadOrigin ? ["remote", "set-url", "origin", url] : ["remote", "add", "origin", url]);
+  const credentialRef = { current: null as GitCredential | null };
 
   try {
-    await gitOk(dir, withProxy(proxy, ["fetch", "origin"]));
+    const fetch = await runNetworkGitWithPrompt(
+      dir,
+      withProxy(proxy, ["fetch", "origin"]),
+      url,
+      credentialProvider,
+      credentialRef,
+    );
+    if (fetch.code !== 0) throw new GitError(friendlyGitError(fetch.stderr), fetch.stderr);
   } catch (err) {
     // Bad URL / no access — undo so the user can retry cleanly.
     if (!hadOrigin) await gitRun(dir, ["remote", "remove", "origin"]);
@@ -586,7 +690,14 @@ export async function attachRemote(dir: string, url: string, proxy?: string): Pr
       branch = remoteBranch;
     }
     await mergeRemote(dir, remoteBranch, ["--allow-unrelated-histories"]);
-    await gitOk(dir, withProxy(proxy, ["push", "-u", "origin", remoteBranch]));
+    const push = await runNetworkGitWithPrompt(
+      dir,
+      withProxy(proxy, ["push", "-u", "origin", remoteBranch]),
+      url,
+      credentialProvider,
+      credentialRef,
+    );
+    if (push.code !== 0) throw new GitError(friendlyGitError(push.stderr), push.stderr);
     return;
   }
 
@@ -596,13 +707,41 @@ export async function attachRemote(dir: string, url: string, proxy?: string): Pr
     await gitOk(dir, ["commit", "--allow-empty", "-m", "init: idea note"]);
   }
   branch = (await getCurrentBranch(dir)) ?? "main";
-  await gitOk(dir, withProxy(proxy, ["push", "-u", "origin", branch]));
+  const push = await runNetworkGitWithPrompt(
+    dir,
+    withProxy(proxy, ["push", "-u", "origin", branch]),
+    url,
+    credentialProvider,
+    credentialRef,
+  );
+  if (push.code !== 0) throw new GitError(friendlyGitError(push.stderr), push.stderr);
 }
 
 /** Clone `url` into a new folder under `parentDir`; returns the new path. */
-export async function cloneRemote(url: string, parentDir: string, proxy?: string): Promise<string> {
+export async function cloneRemote(
+  url: string,
+  parentDir: string,
+  proxy?: string,
+  credentialProvider?: GitCredentialProvider,
+): Promise<string> {
   const name = repoNameFromUrl(url);
-  await gitOk(parentDir, withProxy(proxy, ["clone", url, name]));
+  const credentialRef = { current: null as GitCredential | null };
+  const probe = await runNetworkGitWithPrompt(
+    parentDir,
+    withProxy(proxy, ["ls-remote", url, "HEAD"]),
+    url,
+    credentialProvider,
+    credentialRef,
+  );
+  if (probe.code !== 0) throw new GitError(friendlyGitError(probe.stderr), probe.stderr);
+  const clone = await runNetworkGitWithPrompt(
+    parentDir,
+    withProxy(proxy, ["clone", url, name]),
+    url,
+    credentialProvider,
+    credentialRef,
+  );
+  if (clone.code !== 0) throw new GitError(friendlyGitError(clone.stderr), clone.stderr);
   const sep = parentDir.includes("\\") ? "\\" : "/";
   return `${parentDir.replace(/[\\/]$/, "")}${sep}${name}`;
 }
@@ -632,7 +771,11 @@ export interface SyncResult {
  * local changes are always committed first so nothing is ever lost.
  * Without a remote this is just the commit step (local snapshot).
  */
-export async function syncWorkspace(dir: string, proxy?: string): Promise<SyncResult> {
+export async function syncWorkspace(
+  dir: string,
+  proxy?: string,
+  credentialProvider?: GitCredentialProvider,
+): Promise<SyncResult> {
   try {
     if (!(await isGitRepo(dir))) {
       return {
@@ -644,7 +787,8 @@ export async function syncWorkspace(dir: string, proxy?: string): Promise<SyncRe
     }
 
     // No remote configured → local-only sync: just commit, skip fetch/merge/push.
-    if (!(await getRemoteUrl(dir))) {
+    const remoteUrl = await getRemoteUrl(dir);
+    if (!remoteUrl) {
       const committed = await commitAll(dir, syncCommitMessage());
       return committed
         ? { ok: true, conflictFiles: [], changed: true, message: "已同步到本地仓库" }
@@ -653,9 +797,16 @@ export async function syncWorkspace(dir: string, proxy?: string): Promise<SyncRe
 
     // 1. Local edits become a commit before anything touches the network.
     const committed = await commitAll(dir, syncCommitMessage());
+    const credentialRef = { current: null as GitCredential | null };
 
     // 2. Fetch; offline is fine — the local commit already protects the data.
-    const fetch = await gitRun(dir, withProxy(proxy, ["fetch", "origin"]));
+    const fetch = await runNetworkGitWithPrompt(
+      dir,
+      withProxy(proxy, ["fetch", "origin"]),
+      remoteUrl,
+      credentialProvider,
+      credentialRef,
+    );
     if (fetch.code !== 0) {
       return {
         ok: false,
@@ -693,13 +844,31 @@ export async function syncWorkspace(dir: string, proxy?: string): Promise<SyncRe
     //    if someone else pushed between our fetch and push.
     let pushed = false;
     if (!branchOnRemote || (await aheadCount(dir, branch)) > 0) {
-      let push = await gitRun(dir, withProxy(proxy, ["push", "-u", "origin", branch]));
+      let push = await runNetworkGitWithPrompt(
+        dir,
+        withProxy(proxy, ["push", "-u", "origin", branch]),
+        remoteUrl,
+        credentialProvider,
+        credentialRef,
+      );
       if (push.code !== 0 && /fetch first|non-fast-forward|rejected/i.test(push.stderr)) {
-        const refetch = await gitRun(dir, withProxy(proxy, ["fetch", "origin"]));
+        const refetch = await runNetworkGitWithPrompt(
+          dir,
+          withProxy(proxy, ["fetch", "origin"]),
+          remoteUrl,
+          credentialProvider,
+          credentialRef,
+        );
         if (refetch.code === 0) {
           conflicts = [...conflicts, ...(await mergeRemote(dir, branch))];
           pulled = true;
-          push = await gitRun(dir, withProxy(proxy, ["push", "-u", "origin", branch]));
+          push = await runNetworkGitWithPrompt(
+            dir,
+            withProxy(proxy, ["push", "-u", "origin", branch]),
+            remoteUrl,
+            credentialProvider,
+            credentialRef,
+          );
         }
       }
       if (push.code !== 0) {
