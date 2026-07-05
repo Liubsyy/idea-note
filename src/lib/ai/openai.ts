@@ -57,14 +57,18 @@ export async function send(
   const body: Record<string, unknown> = {
     model: model.model,
     messages: toMessages(system, history),
-    tools: tools.map((t) => ({
-      type: "function",
-      function: { name: t.name, description: t.description, parameters: t.parameters },
-    })),
-    tool_choice: "auto",
     reasoning_effort: reasoningEffort(options.thinkingLevel),
     stream: true,
   };
+  // OpenAI rejects an empty tools array — omit it for tool-less calls
+  // (e.g. commit-message generation).
+  if (tools.length > 0) {
+    body.tools = tools.map((t) => ({
+      type: "function",
+      function: { name: t.name, description: t.description, parameters: t.parameters },
+    }));
+    body.tool_choice = "auto";
+  }
 
   const res = await fetch(joinUrl(model.baseUrl, "/chat/completions"), {
     method: "POST",

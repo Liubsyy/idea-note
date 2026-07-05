@@ -65,10 +65,14 @@ export async function send(
     model: model.model,
     system,
     messages: toMessages(history),
-    tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters })),
     output_config: { effort: options.thinkingLevel },
     stream: true,
   };
+  // Omit tools entirely on tool-less calls (e.g. commit-message generation);
+  // some compatible gateways reject an empty tools array.
+  if (tools.length > 0) {
+    body.tools = tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters }));
+  }
 
   const doFetch = (maxTokens: number) =>
     fetch(joinUrl(model.baseUrl, "/v1/messages"), {

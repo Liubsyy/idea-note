@@ -39,6 +39,8 @@ import {
 } from "../lib/search";
 import { loadModels, saveModels } from "../lib/ai/config";
 import type { AiModel } from "../lib/ai/types";
+import { generateCommitMessage } from "../lib/ai/commitMessage";
+import { firstModelSelection, resolveModelSelection } from "../lib/ai/modelSelection";
 import {
   discardWorkingChanges,
   getRepoRoot,
@@ -47,6 +49,7 @@ import {
   restoreWorkspaceToCommit,
   syncWorkspace,
   type CommitFile,
+  type CommitMessageProvider,
   type FileCommit,
   type GitCredential,
   type GitCredentialProvider,
@@ -228,6 +231,13 @@ export interface ToastRequest {
 export interface SyncConfig {
   autoSync: boolean;
   intervalMin: number;
+  /** Sync commit message: "default" = timestamp (sync: …), "ai" = generated
+   *  from the staged diff by the model below (falls back to timestamp). */
+  commitMessage: "default" | "ai";
+  /** AI model selection key (see modelSelection.ts); null = first configured. */
+  commitModel: string | null;
+  /** Natural-language commit spec fed to the AI prompt verbatim ("" = none). */
+  commitConvention: string;
 }
 
 interface AppState {
@@ -630,7 +640,13 @@ export const SETTINGS_CONTEXT_EVENT = "settings:context";
 const LEGACY_SYNC_CONFIG_PREFIX = "idea-note:sync:";
 const SYNC_INTERVAL_MIN = 1;
 const SYNC_INTERVAL_MAX = 60;
-const DEFAULT_SYNC_CONFIG: SyncConfig = { autoSync: false, intervalMin: 10 };
+const DEFAULT_SYNC_CONFIG: SyncConfig = {
+  autoSync: false,
+  intervalMin: 10,
+  commitMessage: "default",
+  commitModel: null,
+  commitConvention: "",
+};
 
 /** Where pasted images / attachments are saved, persisted per workspace. */
 export interface AttachmentConfig {
@@ -729,6 +745,9 @@ function normalizeSyncConfig(parsed: unknown): SyncConfig {
       typeof p.intervalMin === "number"
         ? Math.min(SYNC_INTERVAL_MAX, Math.max(SYNC_INTERVAL_MIN, p.intervalMin))
         : DEFAULT_SYNC_CONFIG.intervalMin,
+    commitMessage: p.commitMessage === "ai" ? "ai" : "default",
+    commitModel: typeof p.commitModel === "string" && p.commitModel ? p.commitModel : null,
+    commitConvention: typeof p.commitConvention === "string" ? p.commitConvention : "",
   };
 }
 
@@ -2493,7 +2512,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     broadcast();
     try {
       await get().flushActiveTab();
-      const result = await syncWorkspace(workspacePath, readGlobalProxy(), get().requestGitCredential);
+
+      // AI commit messages (设置 → 远程同步 → 提交文案). Resolved here per sync
+      // so config/model edits in the settings window take effect immediately;
+      // generation failure inside syncWorkspace falls back to the timestamp.
+      let commitMessage: CommitMessageProvider | undefined;
+      const syncCfg = readSyncConfig(workspacePath);
+      if (syncCfg.commitMessage === "ai") {
+        const models = get().aiModels;
+        const model =
+          resolveModelSelection(models, syncCfg.commitModel) ??
+          resolveModelSelection(models, firstModelSelection(models));
+        if (model) commitMessage = (dir) => generateCommitMessage(model, dir, syncCfg.commitConvention);
+      }
+
+      const result = await syncWorkspace(
+        workspacePath,
+        readGlobalProxy(),
+        get().requestGitCredential,
+        commitMessage,
+      );
 
       // The merge may have rewritten files on disk: refresh the tree, and
       // reload the open file unless the user kept typing during the sync.

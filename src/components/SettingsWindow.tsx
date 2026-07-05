@@ -54,7 +54,12 @@ import {
   type SyncState,
 } from "../store/useAppStore";
 import { fetchUpstreamModels } from "../lib/ai/modelCatalog";
-import { modelIdsOf } from "../lib/ai/modelSelection";
+import {
+  firstModelSelection,
+  modelIdsOf,
+  modelSelectionKey,
+  modelSelectionLabel,
+} from "../lib/ai/modelSelection";
 import {
   attachRemote,
   cloneRemote,
@@ -899,6 +904,8 @@ function ConnectedSection({
 }) {
   const [editingUrl, setEditingUrl] = useState<string | null>(null);
   const [urlError, setUrlError] = useState<string | null>(null);
+  // For the AI commit-message model picker (loaded/broadcast via the store).
+  const aiModels = useAppStore((s) => s.aiModels);
   const [config, setConfig] = useState<SyncConfig>(() => readSyncConfig(ws));
   useEffect(() => setConfig(readSyncConfig(ws)), [ws]);
   // The proxy is global (shared by all workspaces), not part of SyncConfig.
@@ -1038,12 +1045,102 @@ function ConnectedSection({
         )}
       </Card>
 
+      <CommitMessageCard config={config} aiModels={aiModels} onChange={updateConfig} />
+
       <div className="px-1 text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
         {local
           ? "同步流程：将本地修改提交到本地 git 仓库，作为版本快照；关联远程后即可在多台设备间同步。"
           : "同步流程：先提交本地修改，再拉取远程并合并，最后推送。两端改动同一处时，双方内容都会保留在文件中（以 <<<<<<< 标记区分），整理后再次同步即可。"}
       </div>
     </>
+  );
+}
+
+/** Sync commit message: default timestamp, or AI-generated from the diff with
+ *  an optional natural-language commit spec fed into the prompt. */
+function CommitMessageCard({
+  config,
+  aiModels,
+  onChange,
+}: {
+  config: SyncConfig;
+  aiModels: AiModel[];
+  onChange: (patch: Partial<SyncConfig>) => void;
+}) {
+  const modelOptions = aiModels.flatMap((m) =>
+    modelIdsOf(m).map((id) => ({
+      value: modelSelectionKey(m.id, id),
+      label: modelSelectionLabel(m, id),
+    })),
+  );
+  // A stale selection (model deleted) falls back to the first configured one —
+  // same as the sync itself does.
+  const modelValue =
+    config.commitModel && modelOptions.some((o) => o.value === config.commitModel)
+      ? config.commitModel
+      : (firstModelSelection(aiModels) ?? "");
+
+  return (
+    <Card>
+      <Row
+        title="提交文案"
+        desc={
+          config.commitMessage === "ai"
+            ? "由 AI 阅读本次改动生成提交说明，生成失败时退回默认文案"
+            : "使用默认时间戳文案，如 sync: 2026/7/5 14:30:00"
+        }
+      >
+        <div className="w-[150px]">
+          <Select
+            value={config.commitMessage}
+            options={[
+              { value: "default", label: "默认（时间）" },
+              { value: "ai", label: "AI 生成" },
+            ]}
+            onChange={(v) => onChange({ commitMessage: v as SyncConfig["commitMessage"] })}
+          />
+        </div>
+      </Row>
+      {config.commitMessage === "ai" && (
+        <>
+          <Row
+            title="生成模型"
+            desc={
+              modelOptions.length > 0
+                ? "用于生成提交文案的模型"
+                : "尚未配置 AI 模型，请先在「AI笔记助手」中添加，否则使用默认文案"
+            }
+          >
+            {modelOptions.length > 0 && (
+              <div className="w-[220px]">
+                <Select
+                  value={modelValue}
+                  options={modelOptions}
+                  onChange={(commitModel) => onChange({ commitModel })}
+                />
+              </div>
+            )}
+          </Row>
+          <div className="px-4 py-3" style={{ borderColor: "var(--border)" }}>
+            <div className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
+              提交规范
+            </div>
+            <div className="mb-2 mt-0.5 text-[11px] leading-snug" style={{ color: "var(--text-muted)" }}>
+              用自然语言描述提交文案的要求，会作为提示词交给 AI；留空则由 AI 自行概括改动
+            </div>
+            <textarea
+              value={config.commitConvention}
+              placeholder={"例如：以「笔记:」开头，用一句话概括本次改动，不超过 30 字"}
+              onChange={(e) => onChange({ commitConvention: e.target.value })}
+              className="min-h-[64px] w-full resize-y rounded-lg px-2.5 py-2 text-[13px] leading-5 outline-none"
+              style={{ background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)" }}
+              onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
+            />
+          </div>
+        </>
+      )}
+    </Card>
   );
 }
 

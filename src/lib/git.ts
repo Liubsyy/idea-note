@@ -508,7 +508,7 @@ export async function readFileAtCommit(dir: string, commit: FileCommit): Promise
  * Safety commit of all pending workspace changes — used before a version
  * rollback overwrites a file, so the pre-rollback state stays in history.
  */
-export const commitPending = (dir: string) => commitAll(dir, syncCommitMessage());
+export const commitPending = (dir: string) => commitAll(dir, syncCommitMessage);
 
 /** Restore the whole working tree to a commit snapshot without moving HEAD.
  *  Callers should ensure the working tree is clean; the restore appears as
@@ -535,13 +535,35 @@ async function hasLocalChanges(dir: string): Promise<boolean> {
 }
 
 /** Stage everything and commit if there is anything to commit; returns
- *  whether a commit was actually created. */
-async function commitAll(dir: string, message: string): Promise<boolean> {
+ *  whether a commit was actually created. `getMessage` runs only when a commit
+ *  will happen and after staging, so it can inspect the staged diff (this is
+ *  where AI-generated messages hook in). */
+async function commitAll(
+  dir: string,
+  getMessage: () => string | Promise<string>,
+): Promise<boolean> {
   await gitOk(dir, ["add", "-A"]);
   if (!(await hasLocalChanges(dir))) return false;
   await ensureIdentity(dir);
-  await gitOk(dir, ["commit", "-m", message]);
+  await gitOk(dir, ["commit", "-m", await getMessage()]);
   return true;
+}
+
+/** Summary of the staged changes (after `add -A`), for commit-message
+ *  generation: `--stat` for the file overview plus the diff body, truncated
+ *  so a huge edit doesn't blow the model's context. */
+export async function collectStagedChanges(
+  dir: string,
+  maxDiffChars = 6000,
+): Promise<{ stat: string; diff: string }> {
+  const statArgs = ["-c", "core.quotepath=false", "diff", "--cached", "--stat"];
+  const diffArgs = ["-c", "core.quotepath=false", "diff", "--cached", "--unified=1"];
+  const [stat, diff] = await Promise.all([gitOk(dir, statArgs), gitOk(dir, diffArgs)]);
+  const body = diff.stdout;
+  return {
+    stat: stat.stdout.trim(),
+    diff: body.length > maxDiffChars ? body.slice(0, maxDiffChars) + "\n…（diff 已截断）" : body,
+  };
 }
 
 /** Commits on origin/<branch> that HEAD lacks (0 = nothing to merge).
@@ -634,7 +656,7 @@ async function mergeRemote(
  */
 export async function initLocalRepo(dir: string): Promise<void> {
   if (!(await isGitRepo(dir))) await gitOk(dir, ["init"]);
-  await commitAll(dir, syncCommitMessage());
+  await commitAll(dir, syncCommitMessage);
   if (!(await hasCommits(dir))) {
     await ensureIdentity(dir);
     await gitOk(dir, ["commit", "--allow-empty", "-m", "init: idea note"]);
@@ -672,7 +694,7 @@ export async function attachRemote(
     throw err;
   }
 
-  await commitAll(dir, syncCommitMessage());
+  await commitAll(dir, syncCommitMessage);
 
   const remoteBranch = await getRemoteDefaultBranch(dir);
   let branch = await getCurrentBranch(dir);
@@ -765,6 +787,11 @@ export interface SyncResult {
   message: string;
 }
 
+/** Supplies the sync commit's message. Called after staging (so it can read
+ *  the staged diff); null or a rejection falls back to the timestamp message —
+ *  a sync must never fail because of message generation. */
+export type CommitMessageProvider = (dir: string) => Promise<string | null>;
+
 /**
  * Full sync: commit local edits → fetch → merge (conflicts keep both sides)
  * → push. Every failure path leaves the repo in a stable, non-merging state;
@@ -775,7 +802,10 @@ export async function syncWorkspace(
   dir: string,
   proxy?: string,
   credentialProvider?: GitCredentialProvider,
+  commitMessage?: CommitMessageProvider,
 ): Promise<SyncResult> {
+  const getMessage = async () =>
+    (await commitMessage?.(dir).catch(() => null))?.trim() || syncCommitMessage();
   try {
     if (!(await isGitRepo(dir))) {
       return {
@@ -789,14 +819,14 @@ export async function syncWorkspace(
     // No remote configured → local-only sync: just commit, skip fetch/merge/push.
     const remoteUrl = await getRemoteUrl(dir);
     if (!remoteUrl) {
-      const committed = await commitAll(dir, syncCommitMessage());
+      const committed = await commitAll(dir, getMessage);
       return committed
         ? { ok: true, conflictFiles: [], changed: true, message: "已同步到本地仓库" }
         : { ok: true, conflictFiles: [], changed: false, message: "已是最新，无需同步" };
     }
 
     // 1. Local edits become a commit before anything touches the network.
-    const committed = await commitAll(dir, syncCommitMessage());
+    const committed = await commitAll(dir, getMessage);
     const credentialRef = { current: null as GitCredential | null };
 
     // 2. Fetch; offline is fine — the local commit already protects the data.
