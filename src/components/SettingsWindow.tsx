@@ -35,6 +35,8 @@ import {
   readGlobalProxy,
   saveGlobalProxy,
   ensureGlobalProxyLoaded,
+  readCommitMessageConfig,
+  saveCommitMessageConfig,
   SYNC_REQUEST_EVENT,
   SYNC_STATE_EVENT,
   SYNC_CONFIG_EVENT,
@@ -50,6 +52,7 @@ import {
   type AiProvider,
   type AttachmentConfig,
   type AttachmentLocation,
+  type CommitMessageConfig,
   type SyncConfig,
   type SyncState,
 } from "../store/useAppStore";
@@ -904,8 +907,6 @@ function ConnectedSection({
 }) {
   const [editingUrl, setEditingUrl] = useState<string | null>(null);
   const [urlError, setUrlError] = useState<string | null>(null);
-  // For the AI commit-message model picker (loaded/broadcast via the store).
-  const aiModels = useAppStore((s) => s.aiModels);
   const [config, setConfig] = useState<SyncConfig>(() => readSyncConfig(ws));
   useEffect(() => setConfig(readSyncConfig(ws)), [ws]);
   // The proxy is global (shared by all workspaces), not part of SyncConfig.
@@ -1045,7 +1046,7 @@ function ConnectedSection({
         )}
       </Card>
 
-      <CommitMessageCard config={config} aiModels={aiModels} onChange={updateConfig} />
+      <CommitMessageCard ws={ws} />
 
       <div className="px-1 text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
         {local
@@ -1057,16 +1058,20 @@ function ConnectedSection({
 }
 
 /** Sync commit message: default timestamp, or AI-generated from the diff with
- *  an optional natural-language commit spec fed into the prompt. */
-function CommitMessageCard({
-  config,
-  aiModels,
-  onChange,
-}: {
-  config: SyncConfig;
-  aiModels: AiModel[];
-  onChange: (patch: Partial<SyncConfig>) => void;
-}) {
+ *  an optional natural-language commit spec fed into the prompt. The whole
+ *  config is global (all workspaces share it), like the sync proxy; `ws` is
+ *  only the SYNC_CONFIG_EVENT payload so main windows re-read the cache. */
+function CommitMessageCard({ ws }: { ws: string }) {
+  const aiModels = useAppStore((s) => s.aiModels);
+  const [config, setConfig] = useState<CommitMessageConfig>(readCommitMessageConfig);
+
+  const update = (patch: Partial<CommitMessageConfig>) => {
+    const next = { ...config, ...patch };
+    setConfig(next);
+    saveCommitMessageConfig(next);
+    emit(SYNC_CONFIG_EVENT, { workspace: ws }).catch(() => {});
+  };
+
   const modelOptions = aiModels.flatMap((m) =>
     modelIdsOf(m).map((id) => ({
       value: modelSelectionKey(m.id, id),
@@ -1076,8 +1081,8 @@ function CommitMessageCard({
   // A stale selection (model deleted) falls back to the first configured one —
   // same as the sync itself does.
   const modelValue =
-    config.commitModel && modelOptions.some((o) => o.value === config.commitModel)
-      ? config.commitModel
+    config.model && modelOptions.some((o) => o.value === config.model)
+      ? config.model
       : (firstModelSelection(aiModels) ?? "");
 
   return (
@@ -1085,23 +1090,23 @@ function CommitMessageCard({
       <Row
         title="提交文案"
         desc={
-          config.commitMessage === "ai"
+          (config.mode === "ai"
             ? "由 AI 阅读本次改动生成提交说明，生成失败时退回默认文案"
-            : "使用默认时间戳文案，如 sync: 2026/7/5 14:30:00"
+            : "使用默认时间戳文案，如 sync: 2026/7/5 14:30:00") + "；全局设置，所有笔记库共用"
         }
       >
         <div className="w-[150px]">
           <Select
-            value={config.commitMessage}
+            value={config.mode}
             options={[
               { value: "default", label: "默认（时间）" },
               { value: "ai", label: "AI 生成" },
             ]}
-            onChange={(v) => onChange({ commitMessage: v as SyncConfig["commitMessage"] })}
+            onChange={(v) => update({ mode: v as CommitMessageConfig["mode"] })}
           />
         </div>
       </Row>
-      {config.commitMessage === "ai" && (
+      {config.mode === "ai" && (
         <>
           <Row
             title="生成模型"
@@ -1116,7 +1121,7 @@ function CommitMessageCard({
                 <Select
                   value={modelValue}
                   options={modelOptions}
-                  onChange={(commitModel) => onChange({ commitModel })}
+                  onChange={(model) => update({ model })}
                 />
               </div>
             )}
@@ -1129,9 +1134,9 @@ function CommitMessageCard({
               用自然语言描述提交文案的要求，会作为提示词交给 AI；留空则由 AI 自行概括改动
             </div>
             <textarea
-              value={config.commitConvention}
+              value={config.convention}
               placeholder={"例如：以「笔记:」开头，用一句话概括本次改动，不超过 30 字"}
-              onChange={(e) => onChange({ commitConvention: e.target.value })}
+              onChange={(e) => update({ convention: e.target.value })}
               className="min-h-[64px] w-full resize-y rounded-lg px-2.5 py-2 text-[13px] leading-5 outline-none"
               style={{ background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)" }}
               onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}

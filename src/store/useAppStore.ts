@@ -227,17 +227,22 @@ export interface ToastRequest {
 }
 
 /** Per-workspace auto-sync preferences (manual sync always works). The HTTP
- *  proxy is global (shared by all workspaces) — see readGlobalProxy. */
+ *  proxy and the commit-message settings are global (shared by all
+ *  workspaces) — see readGlobalProxy / readCommitMessageConfig. */
 export interface SyncConfig {
   autoSync: boolean;
   intervalMin: number;
-  /** Sync commit message: "default" = timestamp (sync: …), "ai" = generated
-   *  from the staged diff by the model below (falls back to timestamp). */
-  commitMessage: "default" | "ai";
+}
+
+/** Global sync commit-message settings (shared by all workspaces). */
+export interface CommitMessageConfig {
+  /** "default" = timestamp (sync: …), "ai" = generated from the staged diff
+   *  by the model below (falls back to timestamp on any failure). */
+  mode: "default" | "ai";
   /** AI model selection key (see modelSelection.ts); null = first configured. */
-  commitModel: string | null;
+  model: string | null;
   /** Natural-language commit spec fed to the AI prompt verbatim ("" = none). */
-  commitConvention: string;
+  convention: string;
 }
 
 interface AppState {
@@ -640,13 +645,15 @@ export const SETTINGS_CONTEXT_EVENT = "settings:context";
 const LEGACY_SYNC_CONFIG_PREFIX = "idea-note:sync:";
 const SYNC_INTERVAL_MIN = 1;
 const SYNC_INTERVAL_MAX = 60;
-const DEFAULT_SYNC_CONFIG: SyncConfig = {
-  autoSync: false,
-  intervalMin: 10,
-  commitMessage: "default",
-  commitModel: null,
-  commitConvention: "",
+const DEFAULT_SYNC_CONFIG: SyncConfig = { autoSync: false, intervalMin: 10 };
+const DEFAULT_COMMIT_MESSAGE_CONFIG: CommitMessageConfig = {
+  mode: "default",
+  model: null,
+  convention: "",
 };
+/** Reserved sync-config.json key holding globals ({ commitMessage: … }) —
+ *  workspace keys are absolute paths, so this can never collide. */
+const GLOBAL_CONFIG_KEY = "__global__";
 
 /** Where pasted images / attachments are saved, persisted per workspace. */
 export interface AttachmentConfig {
@@ -673,6 +680,9 @@ interface WorkspaceConfig {
 
 let syncConfigCache: Record<string, WorkspaceConfig> = {};
 let syncConfigLoaded: Promise<void> | null = null;
+/** Global commit-message settings; null = not yet loaded and never saved
+ *  in-memory (readers fall back to the default until hydration). */
+let commitMessageCache: CommitMessageConfig | null = null;
 
 // The sync proxy is global (one value for all workspaces), stored Rust-side in
 // git-proxy.txt. Cached in memory so reads stay synchronous; hydrated on startup
@@ -745,9 +755,16 @@ function normalizeSyncConfig(parsed: unknown): SyncConfig {
       typeof p.intervalMin === "number"
         ? Math.min(SYNC_INTERVAL_MAX, Math.max(SYNC_INTERVAL_MIN, p.intervalMin))
         : DEFAULT_SYNC_CONFIG.intervalMin,
-    commitMessage: p.commitMessage === "ai" ? "ai" : "default",
-    commitModel: typeof p.commitModel === "string" && p.commitModel ? p.commitModel : null,
-    commitConvention: typeof p.commitConvention === "string" ? p.commitConvention : "",
+  };
+}
+
+function normalizeCommitMessageConfig(parsed: unknown): CommitMessageConfig {
+  if (!parsed || typeof parsed !== "object") return DEFAULT_COMMIT_MESSAGE_CONFIG;
+  const p = parsed as Partial<CommitMessageConfig>;
+  return {
+    mode: p.mode === "ai" ? "ai" : "default",
+    model: typeof p.model === "string" && p.model ? p.model : null,
+    convention: typeof p.convention === "string" ? p.convention : "",
   };
 }
 
@@ -787,11 +804,67 @@ function parseSyncConfigMap(raw: string): Record<string, WorkspaceConfig> {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return {};
     const out: Record<string, WorkspaceConfig> = {};
-    for (const [k, v] of Object.entries(parsed)) out[k] = normalizeWorkspaceConfig(v);
+    for (const [k, v] of Object.entries(parsed)) {
+      if (k === GLOBAL_CONFIG_KEY) continue; // globals, not a workspace entry
+      out[k] = normalizeWorkspaceConfig(v);
+    }
     return out;
   } catch {
     return {};
   }
+}
+
+/** The global entry's commit-message settings, or null when the file has no
+ *  global entry yet (distinct from "present with default values"). */
+function parseGlobalCommitMessage(raw: string): CommitMessageConfig | null {
+  try {
+    const entry = (JSON.parse(raw) as Record<string, unknown>)?.[GLOBAL_CONFIG_KEY];
+    if (!entry || typeof entry !== "object") return null;
+    return normalizeCommitMessageConfig((entry as { commitMessage?: unknown }).commitMessage);
+  } catch {
+    return null;
+  }
+}
+
+/** One-time adoption of the short-lived per-workspace commit-message fields
+ *  (an early build stored commitMessage/commitModel/commitConvention inside
+ *  each workspace's sync config): adopt the first entry that actually enabled
+ *  AI or wrote a convention. */
+function migrateLegacyCommitMessage(raw: string): CommitMessageConfig | null {
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object") return null;
+    for (const [k, v] of Object.entries(parsed)) {
+      if (k === GLOBAL_CONFIG_KEY || !v || typeof v !== "object") continue;
+      const sync = ((v as { sync?: unknown }).sync ?? v) as {
+        commitMessage?: unknown;
+        commitModel?: unknown;
+        commitConvention?: unknown;
+      };
+      if (
+        sync.commitMessage === "ai" ||
+        (typeof sync.commitConvention === "string" && sync.commitConvention.trim())
+      ) {
+        return normalizeCommitMessageConfig({
+          mode: sync.commitMessage,
+          model: sync.commitModel,
+          convention: sync.commitConvention,
+        });
+      }
+    }
+  } catch {
+    /* nothing to migrate */
+  }
+  return null;
+}
+
+export function readCommitMessageConfig(): CommitMessageConfig {
+  return commitMessageCache ?? DEFAULT_COMMIT_MESSAGE_CONFIG;
+}
+
+export function saveCommitMessageConfig(config: CommitMessageConfig) {
+  commitMessageCache = config;
+  void flushSyncConfigs();
 }
 
 export function readSyncConfig(workspace: string | null): SyncConfig {
@@ -829,7 +902,9 @@ export function saveAttachmentConfig(workspace: string, config: AttachmentConfig
 async function flushSyncConfigs() {
   await ensureSyncConfigsLoaded();
   try {
-    await invoke("sync_config_save", { json: JSON.stringify(syncConfigCache) });
+    const blob: Record<string, unknown> = { ...syncConfigCache };
+    if (commitMessageCache) blob[GLOBAL_CONFIG_KEY] = { commitMessage: commitMessageCache };
+    await invoke("sync_config_save", { json: JSON.stringify(blob) });
   } catch {
     /* non-fatal */
   }
@@ -840,13 +915,21 @@ async function flushSyncConfigs() {
 export function ensureSyncConfigsLoaded(): Promise<void> {
   if (!syncConfigLoaded) {
     syncConfigLoaded = (async () => {
-      let disk: Record<string, WorkspaceConfig> = {};
+      let raw = "{}";
       try {
-        disk = parseSyncConfigMap(await invoke<string>("sync_config_load"));
+        raw = await invoke<string>("sync_config_load");
       } catch {
         /* keep empty */
       }
-      syncConfigCache = { ...disk, ...syncConfigCache };
+      syncConfigCache = { ...parseSyncConfigMap(raw), ...syncConfigCache };
+      // In-memory (pre-load) saves win over disk, mirroring the map merge.
+      if (commitMessageCache === null) {
+        commitMessageCache = parseGlobalCommitMessage(raw);
+        if (commitMessageCache === null) {
+          commitMessageCache = migrateLegacyCommitMessage(raw);
+          if (commitMessageCache) void flushSyncConfigs();
+        }
+      }
       migrateLegacySyncConfigs();
     })();
   }
@@ -858,7 +941,9 @@ export function ensureSyncConfigsLoaded(): Promise<void> {
 async function reloadSyncConfigs(): Promise<void> {
   await ensureSyncConfigsLoaded();
   try {
-    syncConfigCache = parseSyncConfigMap(await invoke<string>("sync_config_load"));
+    const raw = await invoke<string>("sync_config_load");
+    syncConfigCache = parseSyncConfigMap(raw);
+    commitMessageCache = parseGlobalCommitMessage(raw) ?? commitMessageCache;
   } catch {
     /* keep current cache */
   }
@@ -2513,17 +2598,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       await get().flushActiveTab();
 
-      // AI commit messages (设置 → 远程同步 → 提交文案). Resolved here per sync
-      // so config/model edits in the settings window take effect immediately;
-      // generation failure inside syncWorkspace falls back to the timestamp.
+      // AI commit messages (设置 → 远程同步 → 提交文案, global). Resolved here
+      // per sync so config/model edits in the settings window take effect
+      // immediately; generation failure falls back to the timestamp.
       let commitMessage: CommitMessageProvider | undefined;
-      const syncCfg = readSyncConfig(workspacePath);
-      if (syncCfg.commitMessage === "ai") {
+      const commitCfg = readCommitMessageConfig();
+      if (commitCfg.mode === "ai") {
         const models = get().aiModels;
         const model =
-          resolveModelSelection(models, syncCfg.commitModel) ??
+          resolveModelSelection(models, commitCfg.model) ??
           resolveModelSelection(models, firstModelSelection(models));
-        if (model) commitMessage = (dir) => generateCommitMessage(model, dir, syncCfg.commitConvention);
+        if (model) commitMessage = (dir) => generateCommitMessage(model, dir, commitCfg.convention);
       }
 
       const result = await syncWorkspace(
