@@ -635,15 +635,15 @@ function SyncTab() {
   }, []);
 
   const [info, setInfo] = useState<GitInfo | null>(null);
+  // Gates the sub-sections (all of them, including the empty-project
+  // CloneSection) until the caches below are warm.
+  const [ready, setReady] = useState(false);
   const refreshInfo = useCallback(async () => {
-    if (!ws) {
-      setInfo(null);
-      return;
-    }
     // Ensure the sync-config and proxy caches are warm before the sub-sections
     // (which read them synchronously in their state initializers) mount.
     await Promise.all([ensureSyncConfigsLoaded(), ensureGlobalProxyLoaded()]);
-    setInfo(await getGitInfo(ws));
+    setReady(true);
+    setInfo(ws ? await getGitInfo(ws) : null);
   }, [ws]);
   useEffect(() => {
     void refreshInfo();
@@ -686,7 +686,7 @@ function SyncTab() {
         </Notice>
       )}
 
-      {!ws ? (
+      {!ready ? null : !ws ? (
         <CloneSection src={src} />
       ) : connected || localOnly ? (
         <>

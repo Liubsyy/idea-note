@@ -11,7 +11,7 @@ import {
   syntaxTree,
   syntaxTreeAvailable,
 } from "@codemirror/language";
-import { EditorState, Range, StateEffect } from "@codemirror/state";
+import { EditorState, Range, StateEffect, type Line } from "@codemirror/state";
 import {
   Decoration,
   DecorationSet,
@@ -20,7 +20,7 @@ import {
   ViewUpdate,
   WidgetType,
 } from "@codemirror/view";
-import type { SyntaxNode } from "@lezer/common";
+import type { SyntaxNode, Tree } from "@lezer/common";
 
 import { toDisplaySrc } from "../imagePath";
 import { copyText } from "../clipboard";
@@ -86,6 +86,24 @@ const RAW_BLANK_BLOCKS = new Set([
   "HTMLBlock",
   "CommentBlock",
 ]);
+
+/** Whether the line sits inside a raw block (code / raw HTML / comment),
+ *  where every line is literal content — a `# …` there is a shell comment,
+ *  not a heading. Probes at the first non-space character: an indented
+ *  CodeBlock node starts after the 4-space indent, so the line start itself
+ *  resolves outside it. */
+function inRawBlock(tree: Tree, line: Line): boolean {
+  const indent = line.text.match(/^\s*/)![0].length;
+  const pos = Math.min(line.from + indent, line.to);
+  for (
+    let node: SyntaxNode | null = tree.resolveInner(pos, 1);
+    node;
+    node = node.parent
+  ) {
+    if (RAW_BLANK_BLOCKS.has(node.name)) return true;
+  }
+  return false;
+}
 
 class ImageWidget extends WidgetType {
   constructor(
@@ -654,18 +672,7 @@ function buildDecorations(view: EditorView): DecorationSet {
         // doesn't pop it back open to a full empty row (a visible "double"
         // break). The caret just renders at the collapsed line's height.
         if (mathInterior.has(n)) continue;
-        let raw = false;
-        for (
-          let node: SyntaxNode | null = tree.resolveInner(line.from, 1);
-          node;
-          node = node.parent
-        ) {
-          if (RAW_BLANK_BLOCKS.has(node.name)) {
-            raw = true;
-            break;
-          }
-        }
-        if (!raw)
+        if (!inRawBlock(tree, line))
           ranges.push(
             Decoration.line({ class: "cm-md-blank" }).range(line.from),
           );
@@ -679,6 +686,13 @@ function buildDecorations(view: EditorView): DecorationSet {
           ranges.push(
             Decoration.line({ class: "cm-md-image-line" }).range(line.from),
           );
+        // Heading gaps never involve lines inside raw blocks: a `# comment` in
+        // a shell/PowerShell code block matches HEADING_RE but is not a heading
+        // (as an anchor it would gift heading padding to code lines, shifting
+        // the code text away from its gutter line number), and code lines must
+        // not receive the gap either — their number is drawn by an absolutely
+        // positioned ::before that padding-top would not move.
+        const selfRaw = inRawBlock(tree, line);
         // Any non-blank line — body text OR a following heading: if the nearest
         // non-blank line above is a heading, tag it with that heading's level so
         // CSS sizes the gap per level. Keying off the heading *above* means the
@@ -687,10 +701,13 @@ function buildDecorations(view: EditorView): DecorationSet {
         let p = n - 1;
         while (p >= 1 && state.doc.line(p).text.trim() === "") p--;
         const aboveLine = p >= 1 ? state.doc.line(p) : null;
-        const above = aboveLine ? aboveLine.text.match(HEADING_RE) : null;
+        const above =
+          aboveLine && !inRawBlock(tree, aboveLine)
+            ? aboveLine.text.match(HEADING_RE)
+            : null;
         // Skip the gap when the body is an image — it renders as its own block,
         // so the heading→text breathing room just leaves it floating far below.
-        if (above && !isImage)
+        if (above && !isImage && !selfRaw)
           ranges.push(
             Decoration.line({
               class: `cm-md-after-h${above[1].length}`,
@@ -700,7 +717,7 @@ function buildDecorations(view: EditorView): DecorationSet {
         // …). Sized by the heading's own level. Skipped when the line above is
         // itself a heading (that pair already gets the `after-h` gap, so we'd
         // otherwise double it) and at the document's very top (no content above).
-        const self = line.text.match(HEADING_RE);
+        const self = selfRaw ? null : line.text.match(HEADING_RE);
         if (self && aboveLine && !above)
           ranges.push(
             Decoration.line({

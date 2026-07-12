@@ -265,6 +265,9 @@ function HistoryMenu() {
       style={{
         left: menuPos.left,
         top: menuPos.top,
+        // Portaled to <body>, so the panel's font-size doesn't cascade here —
+        // re-anchor the em-based row sizes to the assistant's base size.
+        fontSize: "var(--ai-assistant-font-size)",
         background: "var(--bg-elev)",
         border: "1px solid var(--border)",
         boxShadow: "0 8px 24px var(--shadow)",
