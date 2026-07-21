@@ -42,9 +42,10 @@ function activeLineSet(state: EditorState): Set<number> {
 const FENCE_RE = /^\s*(`{3,}|~{3,})/;
 /** An ATX heading line (`# ` … `###### `); group 1 is the `#`s (its level). */
 const HEADING_RE = /^(#{1,6})\s/;
-/** A line that begins with an image (spaced paths included). Used to drop the
- *  heading→body gap before an image, which renders as its own block. */
-const IMAGE_LINE_RE = /^\s*!\[[^\]\n]*\]\([^)\n]+\)/;
+/** A line containing only an image (spaced paths included). Used to drop the
+ *  heading→body gap and give standalone images a definite-width container.
+ *  An image followed by text must remain inline. */
+const IMAGE_LINE_RE = /^\s*!\[[^\]\n]*\]\([^)\n]+\)\s*$/;
 
 /**
  * Interior line numbers of multi-line `$$ … $$` math blocks, where a blank line

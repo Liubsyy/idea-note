@@ -387,6 +387,16 @@
   vertical-align: middle;
 }
 
+/* A standalone image gets the line's definite width as its containing block.
+   Besides making large images clamp predictably, this avoids WebKit's cyclic
+   shrink-to-fit sizing for external SVGs that provide only a viewBox (no root
+   width/height). Inline badges stay inline because only image-only lines get
+   the cm-md-image-line marker. */
+.cm-content .cm-md-image-line .cm-md-image-wrap {
+  display: block;
+  width: 100%;
+}
+
 /* Inline images inside HTML/table widgets (e.g. shields-style badges that sit
    in a paragraph alongside raw HTML). Markdown image widgets use the same
    inline flow so a single source newline inside one paragraph stays soft.
