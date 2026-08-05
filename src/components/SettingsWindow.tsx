@@ -82,6 +82,7 @@ import {
   type ThemeDef,
 } from "../themes";
 import {
+  canonicalKey,
   EDITOR_COMMANDS,
   effectiveKey,
   formatKey,
@@ -489,10 +490,22 @@ function ShortcutsTab({
   // Effective key -> command ids, so a combo bound to two commands is flagged.
   const keyUsers = new Map<string, string[]>();
   for (const cmd of EDITOR_COMMANDS) {
-    const k = effectiveKey(cmd, overrides);
+    const k = canonicalKey(effectiveKey(cmd, overrides));
     keyUsers.set(k, [...(keyUsers.get(k) ?? []), cmd.id]);
   }
   const hasOverrides = Object.keys(overrides).length > 0;
+  const groups = [
+    {
+      id: "general" as const,
+      label: "通用编辑",
+      commands: EDITOR_COMMANDS.filter((cmd) => cmd.group === "general"),
+    },
+    {
+      id: "markdown" as const,
+      label: "Markdown",
+      commands: EDITOR_COMMANDS.filter((cmd) => cmd.group === "markdown"),
+    },
+  ];
 
   return (
     <div className="space-y-4">
@@ -509,42 +522,55 @@ function ShortcutsTab({
         </div>
       </div>
 
-      {/* Two shortcuts per row. */}
-      <div className="grid grid-cols-2 gap-2">
-        {EDITOR_COMMANDS.map((cmd) => {
-          const key = effectiveKey(cmd, overrides);
-          const overridden = !!overrides[cmd.id];
-          const conflict = (keyUsers.get(key)?.length ?? 0) > 1;
-          return (
+      <div className="space-y-5">
+        {groups.map((group) => (
+          <section key={group.id}>
             <div
-              key={cmd.id}
-              className="flex items-center justify-between gap-2 rounded-xl px-3 py-2.5"
-              style={{ background: "var(--bg-elev)", border: "1px solid var(--border)" }}
+              className="mb-2 text-xs font-semibold"
+              style={{ color: "var(--text-soft)" }}
             >
-              <div className="min-w-0">
-                <div className="truncate text-[13px] font-medium" style={{ color: "var(--text)" }}>
-                  {cmd.label}
-                </div>
-                <div className="mt-0.5 truncate text-[11px]" style={{ color: "var(--text-muted)" }} title={cmd.desc}>
-                  {cmd.desc}
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                {overridden && (
-                  <IconButton title="恢复默认" onClick={() => onSet(cmd.id, null)}>
-                    <RotateCcw size={14} />
-                  </IconButton>
-                )}
-                <KeyRecorder
-                  value={key}
-                  conflict={conflict}
-                  onChange={(k) => onSet(cmd.id, k)}
-                  onReset={() => onSet(cmd.id, null)}
-                />
-              </div>
+              {group.label}
             </div>
-          );
-        })}
+            {/* Two shortcuts per row. */}
+            <div className="grid grid-cols-2 gap-2">
+              {group.commands.map((cmd) => {
+                const key = effectiveKey(cmd, overrides);
+                const overridden = !!overrides[cmd.id];
+                const conflict =
+                  (keyUsers.get(canonicalKey(key))?.length ?? 0) > 1;
+                return (
+                  <div
+                    key={cmd.id}
+                    className="flex items-center justify-between gap-2 rounded-xl px-3 py-2.5"
+                    style={{ background: "var(--bg-elev)", border: "1px solid var(--border)" }}
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-[13px] font-medium" style={{ color: "var(--text)" }}>
+                        {cmd.label}
+                      </div>
+                      <div className="mt-0.5 truncate text-[11px]" style={{ color: "var(--text-muted)" }} title={cmd.desc}>
+                        {cmd.desc}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {overridden && (
+                        <IconButton title="恢复默认" onClick={() => onSet(cmd.id, null)}>
+                          <RotateCcw size={14} />
+                        </IconButton>
+                      )}
+                      <KeyRecorder
+                        value={key}
+                        conflict={conflict}
+                        onChange={(k) => onSet(cmd.id, k)}
+                        onReset={() => onSet(cmd.id, null)}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        ))}
       </div>
     </div>
   );

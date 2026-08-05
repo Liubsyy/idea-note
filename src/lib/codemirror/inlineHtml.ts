@@ -202,14 +202,6 @@ export function renderInlineHtml(text: string): string {
   return out;
 }
 
-/** Does `text` contain an inline HTML tag/comment or an HTML entity? Such a
- *  paragraph needs the HTML renderer rather than the plain live preview. */
-export function hasInlineHtml(text: string): boolean {
-  return /<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^<>]*?)?\/?>|<!--|&(?:[a-zA-Z][a-zA-Z0-9]*|#\d+|#[xX][0-9a-fA-F]+);/.test(
-    text,
-  );
-}
-
 /**
  * Sanitize an HTML string for safe insertion via innerHTML: strips `<script>`,
  * inline event handlers, `javascript:` URLs, etc., while keeping the common

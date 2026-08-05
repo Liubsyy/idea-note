@@ -131,7 +131,7 @@ export function CodeMirrorEditor() {
       editorSearch,
       // Curated, user-customisable keymap (Settings › 快捷键) + the stock
       // bindings for everything it doesn't manage.
-      buildEditorKeymap(editorKeybindings),
+      buildEditorKeymap(editorKeybindings, isMd),
       updateListener,
     ];
 

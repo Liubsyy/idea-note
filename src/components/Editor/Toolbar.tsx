@@ -22,13 +22,45 @@ import {
   Sigma,
   Workflow,
   ChevronRight,
+  Highlighter,
+  Pipette,
+  Ban,
 } from "lucide-react";
 
 import type { EditorView } from "@codemirror/view";
 import { md } from "../../lib/codemirror/markdownCommands";
 import { getActiveView } from "../../lib/codemirror/activeView";
-import { pickImage } from "../../lib/fs";
+import {
+  commandTitle,
+  runEditorCommand,
+} from "../../lib/codemirror/keybindings";
+import {
+  loadLastMarkdownColors,
+  MERMAID_TYPES,
+  saveLastMarkdownColors,
+} from "../../lib/codemirror/markdownActions";
 import { useAppStore } from "../../store/useAppStore";
+import { ColorPicker } from "./ColorPicker";
+
+/** Text-colour glyph without the extra baseline drawn by Lucide's Baseline icon. */
+function TextColorIcon({ size }: { size: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m5 20 7-16 7 16" />
+      <path d="M7.5 14h9" />
+    </svg>
+  );
+}
 
 function Divider() {
   return (
@@ -75,24 +107,44 @@ function Btn({ title, onClick, children, active }: BtnProps) {
  * portaled to body so the toolbar's `overflow-x` can't clip it; clicking
  * outside, scrolling or resizing closes it. `render` receives a `close`
  * callback so items can dismiss the menu after acting.
+ *
+ * With `onPrimary` the control splits in two: the icon repeats that action
+ * directly and only the chevron opens the menu — the colour tools use it to
+ * reapply the last colour without going through the palette again.
  */
 function Dropdown({
   title,
+  primaryTitle,
   active,
   menuWidth,
   trigger,
   render,
+  onPrimary,
+  onClose,
 }: {
   title: string;
+  primaryTitle?: string;
   active?: boolean;
   menuWidth: number;
   trigger: React.ReactNode;
   render: (close: () => void) => React.ReactNode;
+  onPrimary?: () => void;
+  /** Fired whenever the menu closes, so `render` can reset its own view. */
+  onClose?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ x: 0, y: 0 });
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  // Held in a ref so the listener effect below doesn't re-run when the callback
+  // identity changes on every render.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (!open) return;
+    return () => onCloseRef.current?.();
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -118,29 +170,60 @@ function Dropdown({
     setOpen((v) => !v);
   };
 
+  // Shared by both halves of a split control, and by the whole button otherwise.
+  const half = (
+    label: string,
+    onClick: () => void,
+    className: string,
+    children: React.ReactNode,
+  ) => (
+    <button
+      title={label}
+      onMouseDown={(e) => e.preventDefault()} // keep editor selection
+      onClick={onClick}
+      className={`flex h-8 items-center transition-colors ${className}`}
+      style={{
+        color: active ? "var(--accent)" : "var(--text)",
+        background: active ? "var(--active)" : "transparent",
+      }}
+      onMouseEnter={(e) => {
+        if (!active) e.currentTarget.style.background = "var(--hover)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = active
+          ? "var(--active)"
+          : "transparent";
+      }}
+    >
+      {children}
+    </button>
+  );
+
   return (
     <>
-      <button
-        ref={triggerRef}
-        title={title}
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={toggle}
-        className="flex h-8 items-center gap-0.5 rounded-md px-1.5 transition-colors"
-        style={{
-          color: active ? "var(--accent)" : "var(--text)",
-          background: active ? "var(--active)" : "transparent",
-        }}
-        onMouseEnter={(e) => {
-          if (!active) e.currentTarget.style.background = "var(--hover)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = active
-            ? "var(--active)"
-            : "transparent";
-        }}
-      >
-        {trigger}
-      </button>
+      <div ref={triggerRef} className="flex shrink-0 items-center">
+        {onPrimary ? (
+          <>
+            {half(
+              primaryTitle ?? title,
+              onPrimary,
+              "rounded-l-md pl-1.5 pr-1",
+              trigger,
+            )}
+            {half(title, toggle, "rounded-r-md pr-1", <ChevronDown size={13} />)}
+          </>
+        ) : (
+          half(
+            title,
+            toggle,
+            "gap-0.5 rounded-md px-1.5",
+            <>
+              {trigger}
+              <ChevronDown size={13} />
+            </>,
+          )
+        )}
+      </div>
       {open &&
         createPortal(
           <div
@@ -167,18 +250,21 @@ function Dropdown({
 function MenuItem({
   icon,
   label,
+  title,
   active,
   onClick,
   style,
 }: {
   icon?: React.ReactNode;
   label: React.ReactNode;
+  title?: string;
   active?: boolean;
   onClick: () => void;
   style?: React.CSSProperties;
 }) {
   return (
     <button
+      title={title}
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
       className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors"
@@ -253,51 +339,178 @@ function SubMenu({
   );
 }
 
-// Mermaid diagram templates offered in the insert > Mermaid submenu. The
-// renderer is the full mermaid library, so any diagram type works.
-const MERMAID_TYPES: { label: string; body: string }[] = [
-  {
-    label: "流程图",
-    body: "flowchart TD\n    A[开始] --> B{判断}\n    B -->|是| C[执行]\n    B -->|否| D[结束]",
-  },
-  {
-    label: "时序图",
-    body: "sequenceDiagram\n    participant A as 用户\n    participant B as 服务器\n    A->>B: 请求\n    B-->>A: 响应",
-  },
-  {
-    label: "甘特图",
-    body: "gantt\n    title 项目计划\n    dateFormat YYYY-MM-DD\n    section 阶段一\n    需求分析 :a1, 2024-01-01, 7d\n    设计     :after a1, 5d",
-  },
-  {
-    label: "饼图",
-    body: 'pie title 占比\n    "A" : 40\n    "B" : 35\n    "C" : 25',
-  },
-  {
-    label: "类图",
-    body: "classDiagram\n    class Animal {\n      +String name\n      +eat()\n    }\n    Animal <|-- Dog",
-  },
-  {
-    label: "状态图",
-    body: "stateDiagram-v2\n    [*] --> 待机\n    待机 --> 运行 : 启动\n    运行 --> [*] : 停止",
-  },
+/**
+ * Colour palette grid inside the text/background colour menus. Swatches are
+ * literal hex — the colour is written into the note as `<span style>`, so it
+ * has to survive export and being opened in another editor, where the app's
+ * theme variables mean nothing.
+ */
+function Swatches({
+  colors,
+  current,
+  onPick,
+}: {
+  colors: string[];
+  current: string | null;
+  onPick: (color: string) => void;
+}) {
+  const active = current?.toLowerCase();
+  return (
+    <div className="grid grid-cols-8 gap-1 px-2 py-1.5">
+      {colors.map((c) => (
+        <button
+          key={c}
+          title={c}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => onPick(c)}
+          className="h-5 w-5 rounded transition-transform hover:scale-110"
+          style={{
+            background: c,
+            border: "1px solid var(--border)",
+            outline: active === c ? "2px solid var(--accent)" : "none",
+            outlineOffset: 1,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+// Both palettes are a grid: one hue per column (red → pink), one shade per row,
+// over a row of neutrals. Picking down a column keeps the hue and changes only
+// how strong it is.
+const TEXT_COLORS = [
+  "#000000", "#404040", "#737373", "#a3a3a3", "#d4d4d4", "#e5e5e5", "#f5f5f5", "#ffffff",
+  "#9f1239", "#9a3412", "#854d0e", "#166534", "#155e75", "#1e40af", "#5b21b6", "#9d174d",
+  "#e11d48", "#ea580c", "#ca8a04", "#16a34a", "#0891b2", "#2563eb", "#7c3aed", "#db2777",
+  "#fb7185", "#fb923c", "#facc15", "#4ade80", "#22d3ee", "#60a5fa", "#a78bfa", "#f472b6",
 ];
+
+// Highlighter tints — lighter than the text palette so the text on top stays
+// legible, with the neutrals reversed to lead with the pale ones.
+const BG_COLORS = [
+  "#ffffff", "#f5f5f5", "#e5e5e5", "#d4d4d4", "#a3a3a3", "#737373", "#404040", "#000000",
+  "#fee2e2", "#ffedd5", "#fef9c3", "#dcfce7", "#cffafe", "#dbeafe", "#ede9fe", "#fce7f3",
+  "#fecaca", "#fed7aa", "#fef08a", "#bbf7d0", "#a5f3fc", "#bfdbfe", "#ddd6fe", "#fbcfe8",
+  "#fca5a5", "#fdba74", "#fde047", "#86efac", "#67e8f9", "#93c5fd", "#c4b5fd", "#f9a8d4",
+];
+
+/**
+ * A colour tool: a split button whose icon half reapplies `last` and whose
+ * chevron opens the menu. The menu shows the palette, and swaps to the custom
+ * colour panel in place when 自定义 is chosen — no second dialog on top.
+ */
+function ColorDropdown({
+  title,
+  primaryTitle,
+  clearTitle,
+  icon,
+  colors,
+  last,
+  current,
+  onPrimary,
+  onPick,
+  onClear,
+}: {
+  title: string;
+  primaryTitle: string;
+  clearTitle: string;
+  icon: React.ReactNode;
+  colors: string[];
+  /** Colour the icon half applies, drawn as the bar under it. */
+  last: string;
+  /** Colour at the cursor, ringed in the palette; null outside a coloured span. */
+  current: string | null;
+  onPrimary: () => void;
+  onPick: (color: string) => void;
+  onClear: () => void;
+}) {
+  const [custom, setCustom] = useState(false);
+  return (
+    <Dropdown
+      title={title}
+      primaryTitle={primaryTitle}
+      active={!!current}
+      menuWidth={212}
+      onPrimary={onPrimary}
+      onClose={() => setCustom(false)}
+      trigger={
+        <span className="flex flex-col items-center">
+          {icon}
+          <span
+            className="mt-px h-[3px] w-4 rounded-sm"
+            style={{ background: last }}
+          />
+        </span>
+      }
+      render={(close) =>
+        custom ? (
+          <ColorPicker
+            initial={current ?? last}
+            onBack={() => setCustom(false)}
+            onSubmit={(c) => {
+              onPick(c);
+              close();
+            }}
+          />
+        ) : (
+          <>
+            <Swatches
+              colors={colors}
+              current={current}
+              onPick={(c) => {
+                onPick(c);
+                close();
+              }}
+            />
+            <div className="my-1 h-px" style={{ background: "var(--border)" }} />
+            <MenuItem
+              icon={<Pipette size={15} />}
+              label="自定义…"
+              onClick={() => setCustom(true)}
+            />
+            <MenuItem
+              icon={<Ban size={15} />}
+              label="清除颜色"
+              title={clearTitle}
+              onClick={() => {
+                onClear();
+                close();
+              }}
+            />
+          </>
+        )
+      }
+    />
+  );
+}
 
 export function Toolbar() {
   const active = useAppStore((s) => s.activeFormats);
-  const openPrompt = useAppStore((s) => s.openPrompt);
+  const editorKeybindings = useAppStore((s) => s.editorKeybindings);
+  const [lastColors, setLastColors] = useState(loadLastMarkdownColors);
 
   const iconSize = 15;
+  // Apply a colour and make it the button's one-click default from now on.
+  const applyColor = (kind: "text" | "bg", color: string) => {
+    const next = { ...lastColors, [kind]: color };
+    setLastColors(next);
+    saveLastMarkdownColors(next);
+    run((v) =>
+      kind === "text" ? md.textColor(v, color) : md.bgColor(v, color),
+    );
+  };
   // Run a command against the active editor view, if any.
   const run = (fn: (v: EditorView) => void) => {
     const v = getActiveView();
-    if (v) fn(v);
+    if (v && !v.state.readOnly) fn(v);
   };
-  const selectedText = () => {
+  const runCommand = (id: string) => {
     const v = getActiveView();
-    if (!v) return "";
-    const range = v.state.selection.main;
-    return v.state.sliceDoc(range.from, range.to).trim();
+    if (v) runEditorCommand(id, v);
   };
+  const shortcut = (label: string, id: string) =>
+    commandTitle(label, id, editorKeybindings);
 
   return (
     <div className="flex items-center gap-0.5 overflow-x-auto px-2">
@@ -306,22 +519,18 @@ export function Toolbar() {
         title="标题"
         active={active.heading > 0}
         menuWidth={128}
-        trigger={
-          <>
-            <Heading size={iconSize} />
-            <ChevronDown size={13} />
-          </>
-        }
+        trigger={<Heading size={iconSize} />}
         render={(close) => (
           <>
             {[1, 2, 3, 4, 5, 6].map((lvl) => (
               <MenuItem
                 key={lvl}
                 label={`标题 ${lvl}`}
+                title={shortcut(`标题 ${lvl}`, `markdownHeading${lvl}`)}
                 active={active.heading === lvl}
                 style={{ fontSize: `${20 - lvl}px` }}
                 onClick={() => {
-                  run((v) => md.heading(v, lvl));
+                  runCommand(`markdownHeading${lvl}`);
                   close();
                 }}
               />
@@ -332,8 +541,9 @@ export function Toolbar() {
             />
             <MenuItem
               label="正文"
+              title={shortcut("正文", "markdownParagraph")}
               onClick={() => {
-                run((v) => md.paragraph(v));
+                runCommand("markdownParagraph");
                 close();
               }}
             />
@@ -343,105 +553,127 @@ export function Toolbar() {
 
       <Divider />
 
-      <Btn title="加粗 (Ctrl/Cmd+B)" active={active.bold} onClick={() => run(md.bold)}>
+      <Btn
+        title={shortcut("加粗", "markdownBold")}
+        active={active.bold}
+        onClick={() => runCommand("markdownBold")}
+      >
         <Bold size={iconSize} />
       </Btn>
-      <Btn title="斜体 (Ctrl/Cmd+I)" active={active.italic} onClick={() => run(md.italic)}>
+      <Btn
+        title={shortcut("斜体", "markdownItalic")}
+        active={active.italic}
+        onClick={() => runCommand("markdownItalic")}
+      >
         <Italic size={iconSize} />
       </Btn>
-      <Btn title="删除线" active={active.strike} onClick={() => run(md.strike)}>
+      <Btn
+        title={shortcut("删除线", "markdownStrike")}
+        active={active.strike}
+        onClick={() => runCommand("markdownStrike")}
+      >
         <Strikethrough size={iconSize} />
       </Btn>
-      <Btn title="行内代码" active={active.code} onClick={() => run(md.inlineCode)}>
+      <Btn
+        title={shortcut("行内代码", "markdownInlineCode")}
+        active={active.code}
+        onClick={() => runCommand("markdownInlineCode")}
+      >
         <Code size={iconSize} />
       </Btn>
 
+      {/* Text / background colour — both write a `<span style>` around the
+          selection, the one form every markdown renderer understands. The icon
+          half reapplies the colour under the bar; the chevron opens the palette. */}
+      <ColorDropdown
+        title="文字颜色"
+        primaryTitle={shortcut(
+          `应用文字颜色 ${lastColors.text}`,
+          "markdownTextColor",
+        )}
+        clearTitle={shortcut("清除颜色", "markdownClearColor")}
+        icon={<TextColorIcon size={iconSize} />}
+        colors={TEXT_COLORS}
+        last={lastColors.text}
+        current={active.textColor}
+        onPrimary={() => runCommand("markdownTextColor")}
+        onPick={(c) => applyColor("text", c)}
+        onClear={() => runCommand("markdownClearColor")}
+      />
+      <ColorDropdown
+        title="背景色"
+        primaryTitle={shortcut(
+          `应用背景色 ${lastColors.bg}`,
+          "markdownBgColor",
+        )}
+        clearTitle={shortcut("清除颜色", "markdownClearColor")}
+        icon={<Highlighter size={iconSize} />}
+        colors={BG_COLORS}
+        last={lastColors.bg}
+        current={active.bgColor}
+        onPrimary={() => runCommand("markdownBgColor")}
+        onPick={(c) => applyColor("bg", c)}
+        onClear={() => runCommand("markdownClearColor")}
+      />
+
       <Divider />
 
-      <Btn title="无序列表" active={active.bulletList} onClick={() => run(md.bulletList)}>
+      <Btn
+        title={shortcut("无序列表", "markdownBulletList")}
+        active={active.bulletList}
+        onClick={() => runCommand("markdownBulletList")}
+      >
         <List size={iconSize} />
       </Btn>
-      <Btn title="有序列表" active={active.orderedList} onClick={() => run(md.orderedList)}>
+      <Btn
+        title={shortcut("有序列表", "markdownOrderedList")}
+        active={active.orderedList}
+        onClick={() => runCommand("markdownOrderedList")}
+      >
         <ListOrdered size={iconSize} />
       </Btn>
-      <Btn title="任务列表" onClick={() => run(md.taskList)}>
+      <Btn
+        title={shortcut("任务列表", "markdownTaskList")}
+        onClick={() => runCommand("markdownTaskList")}
+      >
         <ListChecks size={iconSize} />
       </Btn>
 
       <Divider />
 
-      <Btn title="引用" active={active.blockquote} onClick={() => run(md.quote)}>
+      <Btn
+        title={shortcut("引用", "markdownQuote")}
+        active={active.blockquote}
+        onClick={() => runCommand("markdownQuote")}
+      >
         <Quote size={iconSize} />
       </Btn>
-      <Btn title="代码块" active={active.codeBlock} onClick={() => run(md.codeBlock)}>
+      <Btn
+        title={shortcut("代码块", "markdownCodeBlock")}
+        active={active.codeBlock}
+        onClick={() => runCommand("markdownCodeBlock")}
+      >
         <Braces size={iconSize} />
       </Btn>
-      <Btn title="分割线" onClick={() => run(md.hr)}>
+      <Btn
+        title={shortcut("分割线", "markdownHr")}
+        onClick={() => runCommand("markdownHr")}
+      >
         <Minus size={iconSize} />
       </Btn>
 
       <Divider />
 
       <Btn
-        title="链接"
+        title={shortcut("链接", "markdownLink")}
         active={active.link}
-        onClick={() =>
-          openPrompt({
-            title: "插入链接",
-            defaultValue: "https://",
-            fields: [
-              {
-                name: "label",
-                label: "显示文本",
-                defaultValue: selectedText(),
-                placeholder: "链接",
-              },
-              {
-                name: "href",
-                label: "链接地址",
-                defaultValue: "https://",
-                placeholder: "https://example.com",
-              },
-            ],
-            onSubmit: (_value, values) => {
-              const href = values.href?.trim();
-              if (!href) throw "请填写链接地址";
-              run((v) => md.link(v, href, values.label));
-            },
-          })
-        }
+        onClick={() => runCommand("markdownLink")}
       >
         <LinkIcon size={iconSize} />
       </Btn>
       <Btn
-        title="图片"
-        onClick={() =>
-          openPrompt({
-            title: "插入图片",
-            defaultValue: "",
-            fields: [
-              {
-                name: "alt",
-                label: "替代文本",
-                defaultValue: selectedText(),
-                placeholder: "图片说明",
-              },
-              {
-                name: "src",
-                label: "图片地址或本地路径",
-                defaultValue: "",
-                placeholder: "https://example.com/image.png",
-                actionLabel: "选择本地图片",
-                onAction: pickImage,
-              },
-            ],
-            onSubmit: (_value, values) => {
-              const src = values.src?.trim();
-              if (!src) throw "请选择本地图片或填写图片地址";
-              run((v) => md.image(v, src, values.alt));
-            },
-          })
-        }
+        title={shortcut("图片", "markdownImage")}
+        onClick={() => runCommand("markdownImage")}
       >
         <ImageIcon size={iconSize} />
       </Btn>
@@ -451,27 +683,24 @@ export function Toolbar() {
       <Dropdown
         title="插入"
         menuWidth={168}
-        trigger={
-          <>
-            <Shapes size={iconSize} />
-            <ChevronDown size={13} />
-          </>
-        }
+        trigger={<Shapes size={iconSize} />}
         render={(close) => (
           <>
             <MenuItem
               icon={<Table size={15} />}
               label="表格"
+              title={shortcut("表格", "markdownTable")}
               onClick={() => {
-                run(md.table);
+                runCommand("markdownTable");
                 close();
               }}
             />
             <MenuItem
               icon={<Sigma size={15} />}
               label="数学公式"
+              title={shortcut("数学公式", "markdownMathBlock")}
               onClick={() => {
-                run(md.mathBlock);
+                runCommand("markdownMathBlock");
                 close();
               }}
             />
@@ -480,8 +709,9 @@ export function Toolbar() {
                 <MenuItem
                   key={t.label}
                   label={t.label}
+                  title={shortcut(t.label, t.commandId)}
                   onClick={() => {
-                    run((v) => md.mermaid(v, t.body));
+                    runCommand(t.commandId);
                     close();
                   }}
                 />
@@ -493,10 +723,10 @@ export function Toolbar() {
 
       <Divider />
 
-      <Btn title="撤销 (Ctrl/Cmd+Z)" onClick={() => run(md.undo)}>
+      <Btn title={shortcut("撤销", "undo")} onClick={() => runCommand("undo")}>
         <Undo2 size={iconSize} />
       </Btn>
-      <Btn title="重做 (Ctrl/Cmd+Shift+Z)" onClick={() => run(md.redo)}>
+      <Btn title={shortcut("重做", "redo")} onClick={() => runCommand("redo")}>
         <Redo2 size={iconSize} />
       </Btn>
     </div>

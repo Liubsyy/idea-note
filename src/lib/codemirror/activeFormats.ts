@@ -4,6 +4,8 @@
 import type { EditorState } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 
+import { findSpanAt } from "./spanStyle";
+
 export interface ActiveFormats {
   bold: boolean;
   italic: boolean;
@@ -16,6 +18,9 @@ export interface ActiveFormats {
   codeBlock: boolean;
   /** Active heading level (1–6), or 0 when not in a heading. */
   heading: number;
+  /** Colours of the `<span>` around the cursor, null when it has none. */
+  textColor: string | null;
+  bgColor: string | null;
 }
 
 export const emptyFormats: ActiveFormats = {
@@ -29,11 +34,23 @@ export const emptyFormats: ActiveFormats = {
   orderedList: false,
   codeBlock: false,
   heading: 0,
+  textColor: null,
+  bgColor: null,
 };
 
 export function computeActiveFormats(state: EditorState): ActiveFormats {
   const result: ActiveFormats = { ...emptyFormats };
-  const pos = state.selection.main.head;
+  const range = state.selection.main;
+  const pos = range.head;
+
+  // Colours come from the raw `<span style>` around the selection: the markdown
+  // tree parses it as a bare HTMLTag, with no attributes to read.
+  const span = findSpanAt(state, range.from, range.to);
+  if (span) {
+    result.textColor = span.style.get("color") ?? null;
+    result.bgColor = span.style.get("background-color") ?? null;
+  }
+
   let node: ReturnType<typeof syntaxTree>["topNode"] | null =
     syntaxTree(state).resolveInner(pos, -1);
 

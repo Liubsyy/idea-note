@@ -327,6 +327,17 @@
    nesting depth in livePreview.ts); inline styles already beat CodeMirror's
    own `.cm-line` padding, so no rule is needed here. */
 
+/* The hanging indent on a list line is a negative `text-indent` (set inline by
+   livePreview.ts). `text-indent` inherits, and it applies to the first line box
+   of every *block container* — so an inline-block widget sitting on the line
+   (KaTeX math, an image wrap, a badge) re-applies that negative indent to its
+   own content and slides it left, over the bullet or the text before it. Reset
+   it on the line's children: they inherit 0 down to any nested widget, while
+   the line itself keeps the hanging indent that positions its marker. */
+.cm-content .cm-md-list > * {
+  text-indent: 0;
+}
+
 /* Bullet replacement */
 .cm-md-bullet {
   color: var(--accent);

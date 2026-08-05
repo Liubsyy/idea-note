@@ -1,9 +1,17 @@
 // Toolbar actions that edit the markdown source in a CodeMirror view.
 // Each operates on the active view and refocuses it afterwards.
 
-import { EditorSelection } from "@codemirror/state";
+import { EditorSelection, type EditorState } from "@codemirror/state";
+import { syntaxTree } from "@codemirror/language";
 import type { EditorView } from "@codemirror/view";
 import { undo as cmUndo, redo as cmRedo } from "@codemirror/commands";
+
+import {
+  findSpanAt,
+  findSpansIn,
+  serializeStyle,
+  type SpanMatch,
+} from "./spanStyle";
 
 /** Wrap/unwrap the current selection with an inline delimiter (e.g. **). */
 function toggleInline(view: EditorView, mark: string) {
@@ -95,6 +103,159 @@ function insertBlock(view: EditorView, block: string, placeholder?: string) {
   view.focus();
 }
 
+/**
+ * Rewrite each span's open tag with its new style, dropping both tags when no
+ * properties are left — so turning the last colour off leaves clean markdown
+ * rather than an empty `<span>`.
+ */
+function rewriteSpans(
+  view: EditorView,
+  edits: { span: SpanMatch; style: Map<string, string> }[],
+) {
+  const { state } = view;
+  const specs = [];
+  for (const { span, style } of edits) {
+    if (style.size === 0)
+      specs.push(
+        { from: span.openFrom, to: span.openTo },
+        { from: span.closeFrom, to: span.closeTo },
+      );
+    else
+      specs.push({
+        from: span.openFrom,
+        to: span.openTo,
+        insert: `<span style="${serializeStyle(style)}">`,
+      });
+  }
+  if (!specs.length) {
+    view.focus();
+    return;
+  }
+  const changes = state.changes(specs.sort((a, b) => a.from - b.from));
+  view.dispatch({ changes, selection: state.selection.map(changes) });
+  view.focus();
+}
+
+// Everything before a line's actual text: indent, list/quote/heading markers
+// (possibly nested, as in `> - item`) and a task checkbox. Colouring has to
+// start after it, or the marker stops being one.
+const LINE_CONTENT_RE = /^\s*(?:(?:#{1,6}|>|[-*+]|\d+\.)\s+)*(?:\[[ xX]\]\s+)?/;
+// Lines a multi-line selection colours around rather than through: blanks,
+// table rows and code fences, where a `<span>` would break the block.
+const SKIP_LINE_RE = /^\s*(?:\||```|~~~|$)/;
+
+/** Is `pos` inside a code block? Colouring there would put literal `<span>`
+ *  markup into the code rather than styling it. */
+function insideCode(state: EditorState, pos: number): boolean {
+  for (
+    let node = syntaxTree(state).resolveInner(pos, 1) as ReturnType<
+      typeof syntaxTree
+    >["topNode"] | null;
+    node;
+    node = node.parent
+  )
+    if (node.name === "FencedCode" || node.name === "CodeBlock") return true;
+  return false;
+}
+
+/**
+ * Colour a selection spanning several lines by wrapping each line's text in its
+ * own span. One span across the whole range would swallow the blank lines and
+ * table rows between blocks, which stops them parsing as markdown.
+ */
+function setSpanStyleLines(
+  view: EditorView,
+  prop: string,
+  value: string,
+  from: number,
+  to: number,
+) {
+  const { state } = view;
+  const open = `<span style="${prop}: ${value}">`;
+  const specs = [];
+  const last = state.doc.lineAt(to).number;
+  for (let n = state.doc.lineAt(from).number; n <= last; n++) {
+    const line = state.doc.line(n);
+    if (SKIP_LINE_RE.test(line.text) || insideCode(state, line.from)) continue;
+    const prefix = LINE_CONTENT_RE.exec(line.text);
+    const segFrom = Math.max(from, line.from + (prefix ? prefix[0].length : 0));
+    const segTo = Math.min(to, line.to);
+    if (segFrom >= segTo) continue;
+    specs.push({ from: segFrom, insert: open }, { from: segTo, insert: "</span>" });
+  }
+  if (!specs.length) {
+    view.focus();
+    return;
+  }
+  const changes = state.changes(specs);
+  view.dispatch({
+    changes,
+    // Keep the same text selected: past the first open tag, before the last close.
+    selection: EditorSelection.range(
+      changes.mapPos(from, 1),
+      changes.mapPos(to, -1),
+    ),
+  });
+  view.focus();
+}
+
+/**
+ * Set a `<span>` style property on the selection. Inside an existing span the
+ * property is merged into it (and toggled off when it already holds `value`);
+ * otherwise the selection is wrapped in a new span. With an empty selection an
+ * empty span is inserted with the caret between its tags, ready to type into.
+ */
+function setSpanStyle(view: EditorView, prop: string, value: string) {
+  const { state } = view;
+  const range = state.selection.main;
+  if (state.doc.lineAt(range.from).number !== state.doc.lineAt(range.to).number) {
+    setSpanStyleLines(view, prop, value, range.from, range.to);
+    return;
+  }
+  const span = findSpanAt(state, range.from, range.to);
+  if (span) {
+    const style = new Map(span.style);
+    if (style.get(prop)?.toLowerCase() === value.toLowerCase())
+      style.delete(prop);
+    else style.set(prop, value);
+    rewriteSpans(view, [{ span, style }]);
+    return;
+  }
+  const text = state.sliceDoc(range.from, range.to);
+  const open = `<span style="${prop}: ${value}">`;
+  view.dispatch({
+    changes: { from: range.from, to: range.to, insert: open + text + "</span>" },
+    selection: EditorSelection.range(
+      range.from + open.length,
+      range.from + open.length + text.length,
+    ),
+  });
+  view.focus();
+}
+
+/**
+ * Drop both colour properties: from the span around the cursor, or — when the
+ * selection covers several lines — from every span inside it.
+ */
+function clearSpanColors(view: EditorView) {
+  const { state } = view;
+  const range = state.selection.main;
+  const multiLine =
+    state.doc.lineAt(range.from).number !== state.doc.lineAt(range.to).number;
+  const spans = multiLine
+    ? findSpansIn(state, range.from, range.to)
+    : [findSpanAt(state, range.from, range.to)].filter((s) => s !== null);
+  rewriteSpans(
+    view,
+    spans.map((span) => {
+      const style = new Map(span.style);
+      style.delete("color");
+      style.delete("background-color");
+      return { span, style };
+    }),
+  );
+}
+
 const HEADING_RE = /^#{1,6}\s+/;
 const QUOTE_RE = /^>\s+/;
 const BULLET_RE = /^[-*+]\s+/;
@@ -106,6 +267,11 @@ export const md = {
   italic: (v: EditorView) => toggleInline(v, "*"),
   strike: (v: EditorView) => toggleInline(v, "~~"),
   inlineCode: (v: EditorView) => toggleInline(v, "`"),
+
+  textColor: (v: EditorView, color: string) => setSpanStyle(v, "color", color),
+  bgColor: (v: EditorView, color: string) =>
+    setSpanStyle(v, "background-color", color),
+  clearColor: (v: EditorView) => clearSpanColors(v),
 
   heading: (v: EditorView, level: number) =>
     setLinePrefix(v, "#".repeat(level) + " ", PREFIX_RE),
