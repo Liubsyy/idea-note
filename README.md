@@ -82,7 +82,7 @@ Markdown 语法的完整支持范围可参考 [doc/markdown-语法大全.md](./d
 
 
 
-![](./doc/assets/sample1.png)
+![](./doc/assets/sample2.png)
 
 
 
