@@ -14,11 +14,7 @@
   <a href="https://github.com/Liubsyy/idea-note/releases"><img src="https://img.shields.io/github/downloads/Liubsyy/idea-note/total?style=flat-square&logo=github&label=downloads&color=10b981" alt="Total downloads" /></a>
 </p>
 
-**Idea Note** 是一款轻量、简洁的所见即所得 **Markdown** 笔记应用，内置 **AI 笔记助手**，可用自然语言编辑你的笔记，支持**Git远程同步**，兼容 Windows、MacOS 和 Linux 平台。
-
-
-主界面效果图：
-
+**Idea Note** 是一款轻量简洁的文件编辑器，包含 **Markdown** 编辑器、文件编辑器、 **AI 笔记助手**，支持**Git远程同步**，兼容 Windows、MacOS 和 Linux 平台。
 
 
 ![](./doc/assets/sample1.png)
@@ -26,22 +22,15 @@
 
 
 
-AI 笔记助手效果图：
-
-
-![](doc/assets/sample2.png)
-
 
 ## 功能特性
 
-- **AI 笔记助手**：可结合当前笔记进行问答、总结、润色，并通过工具直接读取、搜索、新建、编辑或删除笔记。
-- **Markdown 编辑**：所见即所得实时预览，支持 CommonMark + GFM、KaTeX 公式、Mermaid 图表、HTML / SVG 渲染、源码模式、多标签页和格式工具栏。
-- **文件管理**：除markdown外还可管理其他文件，可作为轻量级项目文件管理器，支持文件树、文件夹浏览、普通文本编辑和图片查看。
-- **笔记管理**：提供笔记模式、大纲和全局搜索，方便整理、定位和回看内容。
+- **Markdown 编辑器**：所见即所得实时预览，支持 CommonMark + GFM、KaTeX 公式、Mermaid流程图、HTML / SVG 渲染、源码模式、多标签页和格式工具栏。
+- **文件管理**：除markdown外还可编辑其他文本文件，可作为轻量级项目文件管理器。
+- **AI 笔记助手**：用自然语言对当前笔记进行问答、总结、润色，并通过工具直接读取、搜索、新建、编辑或删除笔记。
 - **Git 同步与历史**：支持自动提交、远程推拉、本地版本记录、单文件 / 全局历史和 diff 对比。
 - **内置终端**：集成终端，可在应用内直接执行命令。
-- **导出与系统集成**：可导出带书签大纲的 PDF，支持系统级“打开方式”关联常见文本、代码与图片文件。
-- **其他特性**：支持切换主题和自定义主题、自定义字体字号间距。
+- **其他特性**：支持PDF导出和打印、切换主题、自定义字体字号间距。
 
 ## 使用说明
 
@@ -90,6 +79,12 @@ Markdown 语法的完整支持范围可参考 [doc/markdown-语法大全.md](./d
 ### AI 笔记助手
 
 点击标题栏机器人图标打开 AI 笔记助手面板。在设置中添加模型服务即可使用：支持 Anthropic、OpenAI 以及任何兼容两者接口的服务（自定义 Base URL、API Key 和模型 ID），对话中可随时切换模型与思考级别。
+
+
+
+![](./doc/assets/sample1.png)
+
+
 
 助手能看到当前打开的笔记，可以直接问答、总结、润色；它还内置一组笔记工具，可以搜索工作区、读取任意笔记，并新建、编辑、删除笔记。所有修改操作默认"编辑前确认"，逐条审阅后再生效，也可切换为自动执行。会话支持多开并保留历史，随时回看或删除。
 
