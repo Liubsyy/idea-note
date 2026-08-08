@@ -673,10 +673,37 @@ function buildDecorations(view: EditorView): DecorationSet {
         // doesn't pop it back open to a full empty row (a visible "double"
         // break). The caret just renders at the collapsed line's height.
         if (mathInterior.has(n)) continue;
-        if (!inRawBlock(tree, line))
-          ranges.push(
-            Decoration.line({ class: "cm-md-blank" }).range(line.from),
-          );
+        if (inRawBlock(tree, line)) continue;
+        ranges.push(Decoration.line({ class: "cm-md-blank" }).range(line.from));
+        // A blank line directly under a heading carries the heading gap itself
+        // instead of leaving it to the content line further down. The caret
+        // keeps its natural text height on a collapsed blank and centres on the
+        // 0.55em box, so it overflows ~5px above the line — with no padding
+        // here that overhang lands on an H1/H2 underline, which the caret then
+        // appears glued to. The gap below is unchanged: the padding just moves
+        // from the content line up to this blank (see the `after-h` skip below).
+        const prev = n > 1 ? state.doc.line(n - 1) : null;
+        const head =
+          prev && !inRawBlock(tree, prev) ? prev.text.match(HEADING_RE) : null;
+        if (!head) continue;
+        // Mirror the content line's own skips, so relocating the gap can't
+        // reintroduce one the layout deliberately drops: a following image
+        // renders as its own block, and a following raw (code/HTML) line draws
+        // its gutter number from an absolutely positioned ::before that the
+        // padding would not move.
+        let q = n + 1;
+        while (q <= state.doc.lines && state.doc.line(q).text.trim() === "") q++;
+        const below = q <= state.doc.lines ? state.doc.line(q) : null;
+        if (
+          below &&
+          (IMAGE_LINE_RE.test(below.text) || inRawBlock(tree, below))
+        )
+          continue;
+        ranges.push(
+          Decoration.line({
+            class: `cm-md-after-h${head[1].length}`,
+          }).range(line.from),
+        );
       } else {
         const isImage = IMAGE_LINE_RE.test(line.text);
         // Image line: hide CodeMirror's widget-buffer <img>s (see editor.css).
@@ -708,7 +735,11 @@ function buildDecorations(view: EditorView): DecorationSet {
             : null;
         // Skip the gap when the body is an image — it renders as its own block,
         // so the heading→text breathing room just leaves it floating far below.
-        if (above && !isImage && !selfRaw)
+        // Also skip it when a blank line separates this line from the heading:
+        // that blank already carries the gap (above), so keeping it here too
+        // would double it.
+        const blankAbove = p < n - 1;
+        if (above && !isImage && !selfRaw && !blankAbove)
           ranges.push(
             Decoration.line({
               class: `cm-md-after-h${above[1].length}`,

@@ -63,6 +63,7 @@ import {
   modelSelectionKey,
   modelSelectionLabel,
 } from "../lib/ai/modelSelection";
+import { ModelPicker } from "./ModelPicker";
 import {
   attachRemote,
   cloneRemote,
@@ -1143,13 +1144,17 @@ function CommitMessageCard({ ws }: { ws: string }) {
             }
           >
             {modelOptions.length > 0 && (
-              <div className="w-[220px]">
-                <Select
-                  value={modelValue}
-                  options={modelOptions}
-                  onChange={(model) => update({ model })}
-                />
-              </div>
+              <ModelPicker
+                variant="field"
+                configs={aiModels}
+                value={modelValue}
+                onChange={(model) => update({ model })}
+                className="w-[220px]"
+                label={
+                  modelOptions.find((o) => o.value === modelValue)?.label ??
+                  "选择模型"
+                }
+              />
             )}
           </Row>
           <div className="px-4 py-3" style={{ borderColor: "var(--border)" }}>

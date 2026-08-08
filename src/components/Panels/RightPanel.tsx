@@ -34,6 +34,7 @@ import type { DiffView } from "../../lib/ai/tools";
 import { basename } from "../../lib/fs";
 import { Markdown } from "./Markdown";
 import { modelIdsOf, modelSelectionKey, modelSelectionLabel } from "../../lib/ai/modelSelection";
+import { ModelPicker } from "../ModelPicker";
 
 /**
  * Right-hand AI chat panel. Hosts multiple sessions (tabs + "+"), each with its
@@ -591,8 +592,12 @@ function AssistantAvatar() {
 
 /* ----------------------------- composer controls ----------------------------- */
 
+/** Panel width from which the permission pill can carry its label (see below). */
+const COMPOSER_WIDE_W = 348;
+
 function ComposerControls({ session }: { session: ChatSession }) {
   const aiModels = useAppStore((s) => s.aiModels);
+  const rightPanelWidth = useAppStore((s) => s.rightPanelWidth);
   const openSettings = useAppStore((s) => s.openSettings);
   const setSessionModel = useChatStore((s) => s.setSessionModel);
   const setSessionMode = useChatStore((s) => s.setSessionMode);
@@ -614,14 +619,14 @@ function ComposerControls({ session }: { session: ChatSession }) {
 
   if (modelOptions.length === 0) {
     return (
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-1.5">
+      <div className="mt-2 flex items-center gap-1.5">
         <PermissionSelect
           value={session.mode}
           onChange={(mode) => setSessionMode(session.id, mode)}
         />
         <button
           onClick={() => void openSettings()}
-          className="flex h-7 items-center gap-1 rounded-full px-2 text-[0.923em] transition-colors"
+          className="ml-auto flex h-7 shrink-0 items-center gap-1 rounded-full px-2 text-[0.923em] transition-colors"
           style={{ color: "var(--accent)" }}
           onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
           onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
@@ -633,31 +638,32 @@ function ComposerControls({ session }: { session: ChatSession }) {
     );
   }
 
+  // One row, never wrapped: the panel goes down to 220px, so the pills shrink
+  // and truncate rather than dropping to a second line. Below the width where
+  // all three still read (the model id is the one that needs the room), the
+  // permission pill drops to its shield icon instead of everything going to
+  // ellipsis; the thinking pill is one glyph already and keeps its width.
   return (
-    <div className="mt-2 flex flex-wrap items-center justify-between gap-1.5">
+    <div className="mt-2 flex items-center gap-1.5">
       <PermissionSelect
         value={session.mode}
         onChange={(mode) => setSessionMode(session.id, mode)}
+        iconOnly={rightPanelWidth < COMPOSER_WIDE_W}
       />
       <div className="ml-auto flex min-w-0 items-center gap-1">
-        <CompactSelect
+        <ModelPicker
+          configs={aiModels}
           value={selectedValue}
-          onChange={(v) => setSessionModel(session.id, v || null)}
+          onChange={(v) => setSessionModel(session.id, v)}
           className="max-w-[132px]"
-          title="选择模型"
-          label={shortModelLabel(selectedValue, modelOptions)}
-        >
-          {!session.modelId && <option value="">选择模型</option>}
-          {modelOptions.map((m) => (
-            <option key={m.key} value={m.key}>
-              {m.label}
-            </option>
-          ))}
-        </CompactSelect>
+          label={
+            selectedValue ? shortModelLabel(selectedValue, modelOptions) : "选择模型"
+          }
+        />
         <CompactSelect
           value={session.thinkingLevel}
           onChange={(v) => setSessionThinkingLevel(session.id, v as ThinkingLevel)}
-          className="w-[64px]"
+          className="w-[58px] shrink-0"
           title="思考级别"
           label={thinkingLabel(session.thinkingLevel)}
         >
@@ -675,17 +681,21 @@ function ComposerControls({ session }: { session: ChatSession }) {
 function PermissionSelect({
   value,
   onChange,
+  iconOnly,
 }: {
   value: ToolMode;
   onChange: (v: ToolMode) => void;
+  /** Narrow panel: keep the shield alone rather than squeeze every pill into
+   *  an ellipsis. The mode still shows in the tooltip and in the open list. */
+  iconOnly?: boolean;
 }) {
   return (
     <CompactSelect
       value={value}
       onChange={(v) => onChange(v as ToolMode)}
-      className="w-[112px]"
-      title="操作确认"
-      label={modeLabel(value)}
+      className={iconOnly ? "w-[46px] shrink-0" : "w-[112px]"}
+      title={`操作确认 · ${modeLabel(value)}`}
+      label={iconOnly ? "" : modeLabel(value)}
       tone="accent"
       icon={<ShieldCheck size={14} />}
     >

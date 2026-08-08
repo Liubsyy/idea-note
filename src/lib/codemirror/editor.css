@@ -34,6 +34,11 @@
 .cm-content .cm-md-blank {
   height: 0.55em;
   line-height: 0.55em;
+  /* CodeMirror lines are border-box; a blank right under a heading also gets
+     `cm-md-after-hN`, and that padding must add to the collapsed height rather
+     than eat it — otherwise the line box (and the caret sitting in it) would
+     stay pinned to the heading's underline. */
+  box-sizing: content-box;
 }
 .editor-compact .cm-content .cm-md-blank {
   height: 0.4em;
@@ -41,45 +46,75 @@
 }
 /* The line right after a heading — body text OR a following (sub)heading — gets
    extra top padding, scaled by the heading level, so the heading sits apart from
-   whatever comes next, even with no blank line between them. `padding` (not
-   margin) keeps CodeMirror's caret geometry correct. The gap is anchored to
+   whatever comes next, even with no blank line between them. When a blank line
+   does separate them, that blank carries the padding instead (same total gap,
+   and it keeps the caret on the blank clear of an H1/H2 underline). `padding`
+   (not margin) keeps CodeMirror's caret geometry correct. The gap is anchored to
    `--editor-font-size` (not `em`) so it's the same whether the next line is body
    text or a large heading — the gap below an H1 is always the H1-sized gap. */
+/* Each level only declares its size; the two rules below turn it into padding,
+   because a blank line splits the same gap instead of putting it all on top. */
 .cm-content .cm-md-after-h1 {
-  padding-top: calc(var(--editor-font-size) * 1.2);
+  --md-heading-gap: calc(var(--editor-font-size) * 1.2);
 }
 .cm-content .cm-md-after-h2 {
-  padding-top: calc(var(--editor-font-size) * 1);
+  --md-heading-gap: calc(var(--editor-font-size) * 1);
 }
 .cm-content .cm-md-after-h3 {
-  padding-top: calc(var(--editor-font-size) * 0.75);
+  --md-heading-gap: calc(var(--editor-font-size) * 0.75);
 }
 .cm-content .cm-md-after-h4 {
-  padding-top: calc(var(--editor-font-size) * 0.55);
+  --md-heading-gap: calc(var(--editor-font-size) * 0.55);
 }
 .cm-content .cm-md-after-h5 {
-  padding-top: calc(var(--editor-font-size) * 0.45);
+  --md-heading-gap: calc(var(--editor-font-size) * 0.45);
 }
 .cm-content .cm-md-after-h6 {
-  padding-top: calc(var(--editor-font-size) * 0.4);
+  --md-heading-gap: calc(var(--editor-font-size) * 0.4);
 }
 .editor-compact .cm-content .cm-md-after-h1 {
-  padding-top: calc(var(--editor-font-size) * 0.75);
+  --md-heading-gap: calc(var(--editor-font-size) * 0.75);
 }
 .editor-compact .cm-content .cm-md-after-h2 {
-  padding-top: calc(var(--editor-font-size) * 0.62);
+  --md-heading-gap: calc(var(--editor-font-size) * 0.62);
 }
 .editor-compact .cm-content .cm-md-after-h3 {
-  padding-top: calc(var(--editor-font-size) * 0.47);
+  --md-heading-gap: calc(var(--editor-font-size) * 0.47);
 }
 .editor-compact .cm-content .cm-md-after-h4 {
-  padding-top: calc(var(--editor-font-size) * 0.34);
+  --md-heading-gap: calc(var(--editor-font-size) * 0.34);
 }
 .editor-compact .cm-content .cm-md-after-h5 {
-  padding-top: calc(var(--editor-font-size) * 0.28);
+  --md-heading-gap: calc(var(--editor-font-size) * 0.28);
 }
 .editor-compact .cm-content .cm-md-after-h6 {
-  padding-top: calc(var(--editor-font-size) * 0.25);
+  --md-heading-gap: calc(var(--editor-font-size) * 0.25);
+}
+/* Content line: the whole gap sits above it. */
+.cm-content .cm-md-after-h1,
+.cm-content .cm-md-after-h2,
+.cm-content .cm-md-after-h3,
+.cm-content .cm-md-after-h4,
+.cm-content .cm-md-after-h5,
+.cm-content .cm-md-after-h6 {
+  padding-top: var(--md-heading-gap);
+}
+/* Blank separator line: the same gap, split above and below its collapsed line
+   box instead of all above. The caret keeps its natural text height on a blank
+   and centres on that (0.55em) box, overhanging it by ~5px each way, so with
+   the whole gap on top it would touch the body text and with none of it there
+   it would sit on the H1/H2 underline. Two thirds above leaves the caret clear
+   of the rule — the side where contact is most visible — and still clear of the
+   text below. The document rhythm is unchanged: heading → body still measures
+   one collapsed blank plus one gap. */
+.cm-content .cm-md-blank.cm-md-after-h1,
+.cm-content .cm-md-blank.cm-md-after-h2,
+.cm-content .cm-md-blank.cm-md-after-h3,
+.cm-content .cm-md-blank.cm-md-after-h4,
+.cm-content .cm-md-blank.cm-md-after-h5,
+.cm-content .cm-md-blank.cm-md-after-h6 {
+  padding-top: calc(var(--md-heading-gap) * 0.667);
+  padding-bottom: calc(var(--md-heading-gap) * 0.333);
 }
 
 /* Top gap above a heading that follows non-heading content (set by livePreview
