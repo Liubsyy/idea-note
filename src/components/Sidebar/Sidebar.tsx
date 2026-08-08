@@ -46,6 +46,7 @@ import { FileTree } from "./FileTree";
 import { NotesTree } from "./NotesTree";
 import { OutlinePanel } from "./OutlinePanel";
 import { SearchPanel } from "./SearchPanel";
+import { isMac } from "../../lib/platform";
 
 type BrowseSidebarMode = Exclude<SidebarMode, "search">;
 
@@ -194,10 +195,10 @@ export function Sidebar() {
   // layer, so subpixel text re-rasterises crisply — and drive scrolling by hand.
   // Native `onWheel` is registered passive by React, so attach manually to be
   // able to preventDefault.
-  const zoomed = Math.abs(uiZoom - 1) > 0.001;
+  const needsManualZoomScroll = isMac && Math.abs(uiZoom - 1) > 0.001;
   useEffect(() => {
     const el = listRef.current;
-    if (!el || !zoomed) return;
+    if (!el || !needsManualZoomScroll) return;
     const onWheel = (e: WheelEvent) => {
       if (el.scrollHeight <= el.clientHeight) return;
       e.preventDefault();
@@ -206,7 +207,7 @@ export function Sidebar() {
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [zoomed]);
+  }, [needsManualZoomScroll]);
 
   useEffect(() => {
     const close = (event: Event) => {
@@ -468,7 +469,7 @@ export function Sidebar() {
           if (!(e.target as HTMLElement).closest("[data-tree-path]")) clearSelection();
         }}
         className={`scroll-auto-hide flex-1 outline-none ${
-          zoomed ? "overflow-hidden" : "overflow-y-auto"
+          needsManualZoomScroll ? "overflow-hidden" : "overflow-y-auto"
         } ${compactSidebar ? "py-0.5" : "py-1"}`}
         style={{
           fontSize:
