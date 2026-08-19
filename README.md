@@ -162,6 +162,10 @@ npm run tauri dev
 
 仅前端预览可用 `npm run dev`（浏览器中文件读写等原生能力不可用）。
 
+#### 本地 AI 测试服务
+
+无需 API Key 的固定问答服务可用 `npm run mock:ai` 启动，然后在 AI 模型设置中填写 Base URL `http://127.0.0.1:11435/v1`、模型 ID `idea-note-test`。详细说明见 [AI 测试服务](./mock-ai/README.md)。
+
 ### 常用命令
 
 | 命令 | 说明 |
@@ -170,6 +174,8 @@ npm run tauri dev
 | `npm run dev` | 启动前端开发服务器 |
 | `npm run tauri dev` | 启动桌面应用开发模式 |
 | `npm run preview` | 预览前端构建产物 |
+| `npm run mock:ai` | 启动本地固定问答 AI 测试服务 |
+| `npm run test:mock-ai` | 测试本地 AI 测试服务 |
 | `npm run build` | 执行 TypeScript 检查并构建前端 |
 | `npm run tauri build` | 构建桌面应用安装包 |
 | `cargo check --manifest-path src-tauri/Cargo.toml` | 检查 Rust / Tauri 侧代码 |
@@ -180,4 +186,3 @@ npm run tauri dev
 
 - 应用名称：`Idea Note`
 - 应用标识：`com.liubs.idea-note`
-
