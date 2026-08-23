@@ -2,8 +2,8 @@
 // (server-to-server, so no browser CORS / no dangerous-direct-browser header
 // needed). `baseUrl` is the host root, e.g. "https://api.anthropic.com".
 
-import { fetch } from "@tauri-apps/plugin-http";
 import type { AiModel, ChatMsg, OnTextDelta, ProviderOptions, ProviderReply, ToolCall, ToolDef } from "./types";
+import { fetch } from "./http";
 import { sseData } from "./sse";
 
 const joinUrl = (base: string, path: string) => base.replace(/\/+$/, "") + path;

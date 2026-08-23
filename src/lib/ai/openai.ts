@@ -3,8 +3,8 @@
 // WKWebview CORS sandbox. `baseUrl` should include the version segment, e.g.
 // "https://api.openai.com/v1".
 
-import { fetch } from "@tauri-apps/plugin-http";
 import type { AiModel, ChatMsg, OnTextDelta, ProviderOptions, ProviderReply, ThinkingLevel, ToolCall, ToolDef } from "./types";
+import { fetch } from "./http";
 import { sseData } from "./sse";
 
 const joinUrl = (base: string, path: string) => base.replace(/\/+$/, "") + path;

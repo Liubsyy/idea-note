@@ -1,5 +1,5 @@
-import { fetch } from "@tauri-apps/plugin-http";
 import type { AiProvider } from "./types";
+import { fetch } from "./http";
 
 const joinUrl = (base: string, path: string) => base.replace(/\/+$/, "") + path;
 

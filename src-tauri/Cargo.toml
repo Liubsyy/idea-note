@@ -1,6 +1,6 @@
 [package]
 name = "idea-note"
-version = "1.0.8"
+version = "1.0.9"
 description = "Idea Note - a Typora-like Markdown notebook"
 authors = ["liubsyy"]
 edition = "2021"
@@ -22,7 +22,10 @@ tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
-tauri-plugin-http = "2"
+# Let the frontend suppress the synthetic WebView Origin on loopback requests.
+# Ollama accepts the dev origin (http://localhost:<port>) but rejects the
+# packaged Windows origin (http://tauri.localhost) with HTTP 403.
+tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 portable-pty = "0.9.0"
