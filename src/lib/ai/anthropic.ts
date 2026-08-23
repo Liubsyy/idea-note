@@ -65,9 +65,11 @@ export async function send(
     model: model.model,
     system,
     messages: toMessages(history),
-    output_config: { effort: options.thinkingLevel },
     stream: true,
   };
+  if (options.thinkingLevel !== "default") {
+    body.output_config = { effort: options.thinkingLevel };
+  }
   // Omit tools entirely on tool-less calls (e.g. commit-message generation);
   // some compatible gateways reject an empty tools array.
   if (tools.length > 0) {

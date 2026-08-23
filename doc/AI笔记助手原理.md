@@ -176,7 +176,7 @@ AI 对文件内容的修改只进入编辑器缓冲区（相当于你自己打�
 - **OpenAI 兼容协议**：OpenAI、DeepSeek、Kimi、OpenRouter、Ollama 等所有兼容 Chat Completions 的服务；
 - **Anthropic 原生协议**：Claude 系列。
 
-应用内部用一套统一的对话和工具格式，发请求时才转换成对应厂商的线格式（两家的工具调用、流式事件格式差异都在适配层消化），所以换模型不影响任何功能——同一套 Prompt 和工具清单对所有模型生效。每个会话还可以单独设置思考力度（低→最高）和是否附带当前打开的文件。
+应用内部用一套统一的对话和工具格式，发请求时才转换成对应厂商的线格式（两家的工具调用、流式事件格式差异都在适配层消化），所以换模型不影响任何功能——同一套 Prompt 和工具清单对所有模型生效。每个会话还可以单独设置思考力度（默认、低→最高）和是否附带当前打开的文件；选择“默认”时不发送思考级别字段，由模型服务自行决定。
 
 ## 8. 请求与响应的格式和字段
 
@@ -194,7 +194,7 @@ AI 对文件内容的修改只进入编辑器缓冲区（相当于你自己打�
 | `ToolCall` | `id`、`name`、`args`（已解析的 JSON 对象） | 模型发起的一次工具调用 |
 | `ToolDef` | `name`、`description`、`parameters`（JSON Schema） | 工具清单中的一项 |
 | `ProviderReply` | `text`、`toolCalls` | 一轮请求归一后的结果 |
-| `ProviderOptions` | `thinkingLevel`、`signal?` | 思考力度（`low/medium/high/xhigh/max`）与中止信号 |
+| `ProviderOptions` | `thinkingLevel`、`signal?` | 思考力度（`default/low/medium/high/xhigh/max`）与中止信号；`default` 表示不发送对应字段 |
 
 发请求时统一传入 `(model, history, tools, system, options, onTextDelta)`：`system` 是第 2 节那段实时拼出的系统 Prompt，`history` 是完整 `ChatMsg[]`，`tools` 是第 3 节的七个 `ToolDef`，`onTextDelta` 用于把流式文字逐字回灌到聊天气泡。
 
@@ -211,7 +211,7 @@ AI 对文件内容的修改只进入编辑器缓冲区（相当于你自己打�
 | `messages` | 数组 | 角色 `system` / `user` / `assistant`（可带 `tool_calls`）/ `tool`（带 `tool_call_id`） |
 | `tools` | 数组 | 每项 `{ type:"function", function:{ name, description, parameters } }` |
 | `tool_choice` | `"auto"` | 由模型自行决定是否调工具 |
-| `reasoning_effort` | `low/medium/high` | 思考力度（`xhigh/max` 归并为 `high`） |
+| `reasoning_effort` | `low/medium/high` | 思考力度（`xhigh/max` 归并为 `high`）；选择“默认”时省略 |
 | `stream` | `true` | SSE 流式 |
 
 请求体示例：
@@ -273,7 +273,7 @@ data: [DONE]
 | `system` | 字符串 | 系统 Prompt 是**顶层字段**，不在 messages 里 |
 | `messages` | 数组 | 内容用 block 表达：`text` / `tool_use`（`id/name/input`）/ `tool_result`（`tool_use_id/content`，折叠进一条 user 消息） |
 | `tools` | 数组 | 每项 `{ name, description, input_schema }`（注意是 `input_schema` 而非 `parameters`） |
-| `output_config.effort` | 思考力度 | 直接透传 `low/medium/high/xhigh/max` |
+| `output_config.effort` | 思考力度 | 直接透传 `low/medium/high/xhigh/max`；选择“默认”时整个 `output_config` 省略 |
 | `stream` | `true` | SSE 流式 |
 | `max_tokens` | 数字（必填） | 默认 64000；若超模型上限，应用解析 400 报错里的上限值后**自动重试**，并缓存该模型的上限 |
 
@@ -330,7 +330,7 @@ data: {"type":"content_block_stop","index":1}
 | 鉴权头 | `Authorization: Bearer` | `x-api-key` + `anthropic-version` |
 | 系统 Prompt | `messages` 里的 `system` 角色 | 顶层 `system` 字段 |
 | 工具定义键 | `function.parameters` | `input_schema` |
-| 思考力度 | `reasoning_effort` | `output_config.effort` |
+| 思考力度 | `reasoning_effort`（默认时省略） | `output_config.effort`（默认时省略） |
 | `max_tokens` | 不传（可选） | 必填，自动学习上限 |
 | 工具结果 | 独立 `role:"tool"` 消息 | 折进 user 消息的 `tool_result` block |
 | 工具参数流式 | `function.arguments` 字符串累加 | `input_json_delta.partial_json` 累加 |

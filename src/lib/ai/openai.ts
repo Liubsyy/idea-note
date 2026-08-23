@@ -40,7 +40,7 @@ function toMessages(system: string, history: ChatMsg[]): unknown[] {
   return out;
 }
 
-function reasoningEffort(level: ThinkingLevel): "low" | "medium" | "high" {
+function reasoningEffort(level: Exclude<ThinkingLevel, "default">): "low" | "medium" | "high" {
   if (level === "low") return "low";
   if (level === "medium") return "medium";
   return "high";
@@ -57,9 +57,11 @@ export async function send(
   const body: Record<string, unknown> = {
     model: model.model,
     messages: toMessages(system, history),
-    reasoning_effort: reasoningEffort(options.thinkingLevel),
     stream: true,
   };
+  if (options.thinkingLevel !== "default") {
+    body.reasoning_effort = reasoningEffort(options.thinkingLevel);
+  }
   // OpenAI rejects an empty tools array — omit it for tool-less calls
   // (e.g. commit-message generation).
   if (tools.length > 0) {

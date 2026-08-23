@@ -667,6 +667,7 @@ function ComposerControls({ session }: { session: ChatSession }) {
           title="思考级别"
           label={thinkingLabel(session.thinkingLevel)}
         >
+          <option value="default">默认</option>
           <option value="low">低</option>
           <option value="medium">中</option>
           <option value="high">高</option>
@@ -713,6 +714,7 @@ function modeLabel(mode: ToolMode): string {
 }
 
 function thinkingLabel(level: ThinkingLevel): string {
+  if (level === "default") return "默认";
   if (level === "max") return "最高";
   if (level === "xhigh") return "超高";
   if (level === "high") return "高";

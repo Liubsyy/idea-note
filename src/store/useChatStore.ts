@@ -155,7 +155,7 @@ function sanitize(s: any): ChatSession {
     title: typeof s?.title === "string" ? s.title : "新会话",
     modelId: typeof s?.modelId === "string" ? s.modelId : null,
     mode: s?.mode === "auto" || s?.mode === "ask_all" ? s.mode : "ask",
-    thinkingLevel: isThinkingLevel(s?.thinkingLevel) ? s.thinkingLevel : "medium",
+    thinkingLevel: isThinkingLevel(s?.thinkingLevel) ? s.thinkingLevel : "default",
     useOpenFile: s?.useOpenFile !== false,
     archived: s?.archived === true,
     items,
@@ -527,7 +527,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         title: "新会话",
         modelId: previous?.modelId ?? firstModelSelection(models),
         mode: previous?.mode ?? "ask",
-        thinkingLevel: previous?.thinkingLevel ?? "medium",
+        thinkingLevel: previous?.thinkingLevel ?? "default",
         useOpenFile: true,
         archived: false,
         items: [],
@@ -718,7 +718,14 @@ export const useChatStore = create<ChatState>((set, get) => {
 });
 
 function isThinkingLevel(v: unknown): v is ThinkingLevel {
-  return v === "low" || v === "medium" || v === "high" || v === "xhigh" || v === "max";
+  return (
+    v === "default" ||
+    v === "low" ||
+    v === "medium" ||
+    v === "high" ||
+    v === "xhigh" ||
+    v === "max"
+  );
 }
 
 // Hydrate sessions from the backend once at startup. Until this resolves the

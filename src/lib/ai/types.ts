@@ -3,7 +3,7 @@
 // format — `openai.ts` and `anthropic.ts` convert to/from their own formats.
 
 export type AiProvider = "openai" | "anthropic";
-export type ThinkingLevel = "low" | "medium" | "high" | "xhigh" | "max";
+export type ThinkingLevel = "default" | "low" | "medium" | "high" | "xhigh" | "max";
 
 /**
  * A configured model the user can chat with. Persisted (plaintext for now) to
