@@ -1,7 +1,7 @@
 // One-shot AI commit-message generation for git sync. Reads the staged diff,
 // asks the configured model (no tools, no streaming UI) and returns a cleaned
-// single message. Returns null on any failure — the caller falls back to the
-// timestamp message, so sync is never blocked by the AI being slow or broken.
+// single message. AI mode is strict: generation failures abort the sync so the
+// user sees the problem instead of silently committing a timestamp fallback.
 
 import type { AiModel, ChatMsg } from "./types";
 import * as openai from "./openai";
@@ -9,7 +9,7 @@ import * as anthropic from "./anthropic";
 import { collectStagedChanges } from "../git";
 
 /** Hard cap so a hung API can't stall an (auto-)sync indefinitely. */
-const TIMEOUT_MS = 45_000;
+const TIMEOUT_MS = 120_000;
 
 const BASE_PROMPT = `你是笔记应用的 git 提交信息生成器。根据下面的暂存区改动，生成一条简洁的中文提交信息，概括本次对笔记的新增、修改或删除。
 要求：
@@ -34,21 +34,21 @@ export async function generateCommitMessage(
   model: AiModel,
   dir: string,
   convention: string,
-): Promise<string | null> {
-  const { stat, diff } = await collectStagedChanges(dir);
-  if (!stat && !diff.trim()) return null;
-
-  const spec = convention.trim();
-  const system = spec
-    ? `${BASE_PROMPT}\n\n用户的提交规范（优先于以上默认格式，严格遵守）：\n${spec}`
-    : BASE_PROMPT;
-  const history: ChatMsg[] = [
-    { role: "user", content: `变更概览：\n${stat}\n\n变更内容：\n${diff}` },
-  ];
-
+): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
+    const { stat, diff } = await collectStagedChanges(dir);
+    if (!stat && !diff.trim()) throw new Error("暂存区没有可用于生成提交文案的改动");
+
+    const spec = convention.trim();
+    const system = spec
+      ? `${BASE_PROMPT}\n\n用户的提交规范（优先于以上默认格式，严格遵守）：\n${spec}`
+      : BASE_PROMPT;
+    const history: ChatMsg[] = [
+      { role: "user", content: `变更概览：\n${stat}\n\n变更内容：\n${diff}` },
+    ];
+
     const provider = model.provider === "anthropic" ? anthropic : openai;
     const { text } = await provider.send(
       model,
@@ -58,9 +58,15 @@ export async function generateCommitMessage(
       { thinkingLevel: "low", signal: controller.signal },
       () => {},
     );
-    return cleanMessage(text) || null;
-  } catch {
-    return null;
+    const message = cleanMessage(text);
+    if (!message) throw new Error("模型返回了空的提交文案");
+    return message;
+  } catch (cause) {
+    if (controller.signal.aborted) {
+      throw new Error(`AI 提交文案生成超时（${TIMEOUT_MS / 1000} 秒）`);
+    }
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    throw new Error(`AI 提交文案生成失败：${detail}`);
   } finally {
     clearTimeout(timer);
   }

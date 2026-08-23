@@ -252,7 +252,7 @@ export interface SyncConfig {
 /** Global sync commit-message settings (shared by all workspaces). */
 export interface CommitMessageConfig {
   /** "default" = timestamp (sync: …), "ai" = generated from the staged diff
-   *  by the model below (falls back to timestamp on any failure). */
+   *  by the model below (generation failure aborts the sync). */
   mode: "default" | "ai";
   /** AI model selection key (see modelSelection.ts); null = first configured. */
   model: string | null;
@@ -2615,7 +2615,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       // AI commit messages (设置 → 远程同步 → 提交文案, global). Resolved here
       // per sync so config/model edits in the settings window take effect
-      // immediately; generation failure falls back to the timestamp.
+      // immediately; in AI mode generation failure aborts sync with an error.
       let commitMessage: CommitMessageProvider | undefined;
       const commitCfg = readCommitMessageConfig();
       if (commitCfg.mode === "ai") {
@@ -2623,7 +2623,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         const model =
           resolveModelSelection(models, commitCfg.model) ??
           resolveModelSelection(models, firstModelSelection(models));
-        if (model) commitMessage = (dir) => generateCommitMessage(model, dir, commitCfg.convention);
+        commitMessage = model
+          ? (dir) => generateCommitMessage(model, dir, commitCfg.convention)
+          : async () => {
+              throw new Error("AI 提交文案生成失败：没有可用的 AI 模型，请先在设置中配置");
+            };
       }
 
       const result = await syncWorkspace(

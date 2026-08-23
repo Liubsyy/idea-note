@@ -787,15 +787,16 @@ export interface SyncResult {
   message: string;
 }
 
-/** Supplies the sync commit's message. Called after staging (so it can read
- *  the staged diff); null or a rejection falls back to the timestamp message —
- *  a sync must never fail because of message generation. */
-export type CommitMessageProvider = (dir: string) => Promise<string | null>;
+/** Supplies the sync commit's message. Called after staging so it can read the
+ * staged diff. When configured, rejection or an empty message aborts sync;
+ * only the absence of a provider selects the default timestamp message. */
+export type CommitMessageProvider = (dir: string) => Promise<string>;
 
 /**
  * Full sync: commit local edits → fetch → merge (conflicts keep both sides)
  * → push. Every failure path leaves the repo in a stable, non-merging state;
- * local changes are always committed first so nothing is ever lost.
+ * local changes are handled before any network operation, and an AI message
+ * failure stops while those changes remain safely staged in the working tree.
  * Without a remote this is just the commit step (local snapshot).
  */
 export async function syncWorkspace(
@@ -804,8 +805,12 @@ export async function syncWorkspace(
   credentialProvider?: GitCredentialProvider,
   commitMessage?: CommitMessageProvider,
 ): Promise<SyncResult> {
-  const getMessage = async () =>
-    (await commitMessage?.(dir).catch(() => null))?.trim() || syncCommitMessage();
+  const getMessage = async () => {
+    if (!commitMessage) return syncCommitMessage();
+    const message = (await commitMessage(dir)).trim();
+    if (!message) throw new Error("AI 提交文案生成失败：模型返回了空内容");
+    return message;
+  };
   try {
     if (!(await isGitRepo(dir))) {
       return {
@@ -927,7 +932,10 @@ export async function syncWorkspace(
   } catch (err) {
     // Whatever went wrong, never leave a half-finished merge behind.
     await abortMergeIfAny(dir).catch(() => {});
-    const message = err instanceof GitError ? err.message : `同步失败：${String(err)}`;
+    const message =
+      err instanceof GitError
+        ? err.message
+        : `同步失败：${err instanceof Error ? err.message : String(err)}`;
     return { ok: false, conflictFiles: [], changed: false, message };
   }
 }
