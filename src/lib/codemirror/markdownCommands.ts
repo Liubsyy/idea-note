@@ -7,6 +7,18 @@ import type { EditorView } from "@codemirror/view";
 import { undo as cmUndo, redo as cmRedo } from "@codemirror/commands";
 
 import {
+  buildImageDest,
+  buildImgTag,
+  hasImageSize,
+  isPlainImgTag,
+  NO_IMAGE_SIZE,
+  setImgAttr,
+  wrapImageDest,
+  type ImageSize,
+  type ImgAttr,
+} from "../imageSyntax";
+import { imageAt } from "./imageAt";
+import {
   findSpanAt,
   findSpansIn,
   serializeStyle,
@@ -295,15 +307,57 @@ export const md = {
     v.focus();
   },
 
-  image: (v: EditorView, src: string, alt = "") => {
+  /**
+   * Insert an image, or rewrite the one under the cursor when there is one —
+   * the toolbar's image button doubles as "edit this image".
+   *
+   * A size means an `<img>` tag, the only sizing every markdown renderer
+   * honours; without one the image goes back to plain `![alt](…)`. Editing an
+   * existing tag keeps its own attributes (and stays a tag if it has any this
+   * app doesn't write), so a hand-written `<img class=… style=…>` survives.
+   */
+  image: (
+    v: EditorView,
+    src: string,
+    alt = "",
+    size: ImageSize = NO_IMAGE_SIZE,
+  ) => {
     const { state } = v;
-    const changes = state.changeByRange((range) => {
-      const insert = `![${alt.trim()}](${src})`;
-      return {
-        changes: { from: range.from, to: range.to, insert },
-        range: EditorSelection.cursor(range.from + insert.length),
-      };
-    });
+    const current = imageAt(state, state.selection.main.head);
+    const url = src.trim();
+    const title = current?.title ?? "";
+    const label = alt.trim();
+    const asTag = current?.kind === "html" && !isPlainImgTag(current.attrs);
+    let insert: string;
+    if (hasImageSize(size) || asTag) {
+      let attrs: ImgAttr[] = current?.kind === "html" ? current.attrs : [];
+      attrs = setImgAttr(attrs, "src", url);
+      attrs = setImgAttr(attrs, "alt", label);
+      attrs = setImgAttr(attrs, "title", title);
+      attrs = setImgAttr(attrs, "width", size.width);
+      attrs = setImgAttr(attrs, "height", size.height);
+      insert = buildImgTag(attrs);
+    } else {
+      // The destination is only re-derived when the path itself changed, so an
+      // existing note keeps the `<…>` form paste and attachments write.
+      const dest =
+        current?.kind === "markdown" && current.url === url
+          ? current.dest
+          : wrapImageDest(url);
+      insert = `![${label}](${buildImageDest(dest, title)})`;
+    }
+    if (current) {
+      v.dispatch({
+        changes: { from: current.from, to: current.to, insert },
+        selection: EditorSelection.cursor(current.from + insert.length),
+      });
+      v.focus();
+      return;
+    }
+    const changes = state.changeByRange((range) => ({
+      changes: { from: range.from, to: range.to, insert },
+      range: EditorSelection.cursor(range.from + insert.length),
+    }));
     v.dispatch(changes);
     v.focus();
   },

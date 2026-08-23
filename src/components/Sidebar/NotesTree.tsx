@@ -344,8 +344,11 @@ function NoteCard({
       }}
     >
       <div
-        className="truncate font-medium"
-        style={{ color: isActive ? "var(--accent)" : "var(--tree-text)" }}
+        className="truncate"
+        style={{
+          color: isActive ? "var(--accent)" : "var(--tree-text)",
+          fontWeight: "var(--sidebar-font-weight-strong)",
+        }}
       >
         {noteName(node.name)}
       </div>

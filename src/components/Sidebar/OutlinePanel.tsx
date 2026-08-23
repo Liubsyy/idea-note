@@ -51,7 +51,10 @@ export function OutlinePanel() {
           style={{
             paddingLeft: 12 + (item.level - 1) * 14,
             color: item.level === 1 ? "var(--tree-text)" : "var(--text-soft)",
-            fontWeight: item.level === 1 ? 600 : item.level === 2 ? 500 : 400,
+            fontWeight:
+              item.level === 1
+                ? "var(--sidebar-font-weight-strong)"
+                : "var(--sidebar-font-weight)",
           }}
           onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
           onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}

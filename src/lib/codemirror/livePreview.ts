@@ -23,6 +23,12 @@ import {
 import type { SyntaxNode, Tree } from "@lezer/common";
 
 import { toDisplaySrc } from "../imagePath";
+import {
+  imageSizeStyle,
+  NO_IMAGE_SIZE,
+  parseImageDest,
+  type ImageSize,
+} from "../imageSyntax";
 import { copyText } from "../clipboard";
 import { useAppStore } from "../../store/useAppStore";
 import { MathWidget } from "./math";
@@ -111,11 +117,18 @@ class ImageWidget extends WidgetType {
     readonly url: string,
     readonly alt: string,
     readonly title: string,
+    readonly size: ImageSize = NO_IMAGE_SIZE,
   ) {
     super();
   }
   eq(o: ImageWidget) {
-    return o.url === this.url && o.alt === this.alt && o.title === this.title;
+    return (
+      o.url === this.url &&
+      o.alt === this.alt &&
+      o.title === this.title &&
+      o.size.width === this.size.width &&
+      o.size.height === this.size.height
+    );
   }
   toDOM(view: EditorView) {
     const wrap = document.createElement("span");
@@ -127,6 +140,9 @@ class ImageWidget extends WidgetType {
     img.className = "cm-md-image";
     img.loading = "lazy";
     img.referrerPolicy = "no-referrer";
+    // An explicit size wins over the stylesheet's intrinsic sizing; the
+    // `max-width: 100%` there still clamps it to the editor width.
+    img.style.cssText = imageSizeStyle(this.size);
 
     const fallback = document.createElement("span");
     fallback.className = "cm-md-image-error";
@@ -622,19 +638,26 @@ function buildDecorations(view: EditorView): DecorationSet {
               }
               break;
             }
-            // No URL child: a raw space in the destination is invalid CommonMark,
-            // so Lezer bails and leaves an Image node spanning only "![]".
-            // Recover the full ![alt](dest) by hand so Typora-style spaced paths
-            // still render (toDisplaySrc also handles <…> and %20 forms).
+            // No URL child: a raw space in the destination is invalid CommonMark
+            // — which a spaced path and an explicit ` =300x200` size both
+            // produce — so Lezer bails and leaves an Image node spanning only
+            // "![]". Recover the full ![alt](dest) by hand so those still render
+            // (toDisplaySrc also handles <…> and %20 forms).
             const lineTo = state.doc.lineAt(nFrom).to;
             const m = /^!\[([^\]\n]*)\]\(([^)\n]+)\)/.exec(
               state.doc.sliceString(nFrom, lineTo),
             );
             if (m) {
               const imgTo = nFrom + m[0].length;
+              const parsed = parseImageDest(m[2]);
               ranges.push(
                 Decoration.replace({
-                  widget: new ImageWidget(m[2].trim(), m[1], title),
+                  widget: new ImageWidget(
+                    parsed.dest,
+                    m[1],
+                    parsed.title || title,
+                    parsed.size,
+                  ),
                 }).range(nFrom, imgTo),
               );
               // The widget covers the "![]" marks plus text the tree parsed as

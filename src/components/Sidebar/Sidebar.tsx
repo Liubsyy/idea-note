@@ -478,6 +478,8 @@ export function Sidebar() {
               : sidebarMode === "notes"
                 ? "var(--sidebar-notes-font-size)"
                 : "var(--sidebar-outline-font-size)",
+          // Rows that don't set a weight of their own inherit this one.
+          fontWeight: "var(--sidebar-font-weight)",
         }}
       >
         {workspacePath ? (

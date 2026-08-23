@@ -5,6 +5,7 @@ import type { EditorState } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 
 import { findSpanAt } from "./spanStyle";
+import { imageAt } from "./imageAt";
 
 export interface ActiveFormats {
   bold: boolean;
@@ -12,6 +13,8 @@ export interface ActiveFormats {
   strike: boolean;
   code: boolean;
   link: boolean;
+  /** Cursor sits on an image, so the toolbar's image button edits that one. */
+  image: boolean;
   blockquote: boolean;
   bulletList: boolean;
   orderedList: boolean;
@@ -29,6 +32,7 @@ export const emptyFormats: ActiveFormats = {
   strike: false,
   code: false,
   link: false,
+  image: false,
   blockquote: false,
   bulletList: false,
   orderedList: false,
@@ -50,6 +54,10 @@ export function computeActiveFormats(state: EditorState): ActiveFormats {
     result.textColor = span.style.get("color") ?? null;
     result.bgColor = span.style.get("background-color") ?? null;
   }
+
+  // Scanned separately: a sized or spaced destination defeats Lezer's image
+  // parse, so the tree alone would miss exactly those images.
+  result.image = imageAt(state, pos) !== null;
 
   let node: ReturnType<typeof syntaxTree>["topNode"] | null =
     syntaxTree(state).resolveInner(pos, -1);

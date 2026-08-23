@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { useAppStore } from "../store/useAppStore";
+import { useAppStore, type PromptRequest } from "../store/useAppStore";
+
+type PromptField = NonNullable<PromptRequest["fields"]>[number];
 
 /**
  * App-level text-input dialog used for naming files/folders and renaming.
@@ -40,6 +42,16 @@ export function PromptModal() {
 
   if (!prompt) return null;
 
+  // Fields render one per row, except that consecutive fields sharing a `group`
+  // (the image dialog's 宽 × 高) share a row, its label and its hint line.
+  const rows: PromptField[][] = [];
+  for (const field of prompt.fields ?? []) {
+    const last = rows[rows.length - 1];
+    if (field.group && last?.[0].group === field.group) last.push(field);
+    else rows.push([field]);
+  }
+  let fieldIndex = 0;
+
   const submit = async () => {
     if (busy) return;
     setBusy(true);
@@ -53,9 +65,7 @@ export function PromptModal() {
     }
   };
 
-  const runFieldAction = async (
-    field: NonNullable<typeof prompt.fields>[number],
-  ) => {
+  const runFieldAction = async (field: PromptField) => {
     if (!field.onAction || actionBusy) return;
     setActionBusy(field.name);
     setError(null);
@@ -98,64 +108,90 @@ export function PromptModal() {
         >
           {prompt.title}
         </div>
-        {prompt.fields?.length ? (
+        {rows.length ? (
           <div className="space-y-3">
-            {prompt.fields.map((field, index) => (
-              <div key={field.name}>
-                <div
-                  className="mb-1 text-xs"
-                  style={{ color: "var(--text-soft)" }}
-                >
-                  {field.label}
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    ref={index === 0 ? inputRef : undefined}
-                    value={values[field.name] ?? ""}
-                    placeholder={field.placeholder}
-                    onChange={(e) =>
-                      setValues((prev) => ({
-                        ...prev,
-                        [field.name]: e.target.value,
-                      }))
-                    }
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        submit();
-                      } else if (e.key === "Escape") {
-                        e.preventDefault();
-                        closePrompt();
-                      }
-                    }}
-                    className="min-w-0 flex-1 rounded-md px-2.5 py-1.5 text-sm outline-none"
-                    style={{
-                      background: "var(--bg)",
-                      border: `1px solid ${
-                        error ? "#e5484d" : "var(--border)"
-                      }`,
-                      color: "var(--text)",
-                    }}
-                  />
-                  {field.actionLabel && field.onAction && (
-                    <button
-                      type="button"
-                      disabled={actionBusy === field.name}
-                      onClick={() => runFieldAction(field)}
-                      className="shrink-0 rounded-md px-2.5 py-1.5 text-sm transition-colors"
-                      style={{
-                        background: "var(--bg)",
-                        border: "1px solid var(--border)",
-                        color: "var(--text-soft)",
-                        opacity: actionBusy === field.name ? 0.65 : 1,
-                      }}
+            {rows.map((row) => {
+              const hint = row.find((f) => f.hint)?.hint;
+              return (
+                <div key={row[0].name}>
+                  <div
+                    className="mb-1 text-xs"
+                    style={{ color: "var(--text-soft)" }}
+                  >
+                    {row[0].label}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {row.map((field) => (
+                      <div
+                        key={field.name}
+                        className="flex min-w-0 flex-1 items-center gap-2"
+                      >
+                        {field.prefix && (
+                          <span
+                            className="shrink-0 text-sm"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            {field.prefix}
+                          </span>
+                        )}
+                        <input
+                          ref={fieldIndex++ === 0 ? inputRef : undefined}
+                          value={values[field.name] ?? ""}
+                          placeholder={field.placeholder}
+                          onChange={(e) =>
+                            setValues((prev) => ({
+                              ...prev,
+                              [field.name]: e.target.value,
+                            }))
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              submit();
+                            } else if (e.key === "Escape") {
+                              e.preventDefault();
+                              closePrompt();
+                            }
+                          }}
+                          className="min-w-0 flex-1 rounded-md px-2.5 py-1.5 text-sm outline-none"
+                          style={{
+                            background: "var(--bg)",
+                            border: `1px solid ${
+                              error ? "#e5484d" : "var(--border)"
+                            }`,
+                            color: "var(--text)",
+                          }}
+                        />
+                        {field.actionLabel && field.onAction && (
+                          <button
+                            type="button"
+                            disabled={actionBusy === field.name}
+                            onClick={() => runFieldAction(field)}
+                            className="shrink-0 rounded-md px-2.5 py-1.5 text-sm transition-colors"
+                            style={{
+                              background: "var(--bg)",
+                              border: "1px solid var(--border)",
+                              color: "var(--text-soft)",
+                              opacity: actionBusy === field.name ? 0.65 : 1,
+                            }}
+                          >
+                            {field.actionLabel}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {hint && (
+                    <div
+                      className="mt-1 text-xs"
+                      style={{ color: "var(--text-muted)" }}
                     >
-                      {field.actionLabel}
-                    </button>
+                      {hint}
+                    </div>
                   )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <input

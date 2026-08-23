@@ -8,6 +8,16 @@
 import DOMPurify from "dompurify";
 
 import { toDisplaySrc } from "../imagePath";
+import {
+  appendStyle,
+  buildImgTag,
+  getImgAttr,
+  imageSizeStyle,
+  parseImageDest,
+  parseImgTag,
+  setImgAttr,
+  type ImageSize,
+} from "../imageSyntax";
 
 /** Escape text so it renders literally (not as markup), but keep valid HTML
  *  entities (`&copy;`, `&amp;`, `&#169;`, `&#xA9;`) intact so they still decode. */
@@ -91,22 +101,46 @@ function linkAt(
 }
 
 /** Match an image `![alt](url)` or a linked-image badge `[![alt](url)](link)`
- *  at `i`. Returns the image's alt + url (the link wrapper is dropped) and end
- *  offset. Must be tried before {@link linkAt}, whose greedy `]`/`)` scan would
- *  otherwise grab `[![alt](url)` as a plain link. */
-function imageAt(text: string, i: number): { alt: string; url: string; end: number } | null {
+ *  at `i`. Returns the image's alt, url and explicit size (the link wrapper and
+ *  any title are dropped) plus the end offset. Must be tried before
+ *  {@link linkAt}, whose greedy `]`/`)` scan would otherwise grab
+ *  `[![alt](url)` as a plain link. */
+function imageAt(
+  text: string,
+  i: number,
+): { alt: string; url: string; size: ImageSize; end: number } | null {
   const rest = text.slice(i);
-  // Destination: either a <…>-wrapped path (may contain spaces) or a bare one.
-  let m = /^\[!\[([^\]]*)\]\((?:<([^<>]*)>|([^)\s]+))(?:\s+"[^"]*")?\)\]\((?:<[^<>]*>|[^)\s]+)(?:\s+"[^"]*")?\)/.exec(rest);
-  if (m) return { alt: m[1], url: (m[2] ?? m[3]).trim(), end: i + m[0].length };
-  m = /^!\[([^\]]*)\]\((?:<([^<>]*)>|([^)\s]+))(?:\s+"[^"]*")?\)/.exec(rest);
-  if (m) return { alt: m[1], url: (m[2] ?? m[3]).trim(), end: i + m[0].length };
-  return null;
+  // The destination is taken whole and split by parseImageDest, so a
+  // <…>-wrapped path, a title and a ` =300x200` size are all handled there.
+  let m = /^\[!\[([^\]]*)\]\(([^)\n]*)\)\]\([^)\n]*\)/.exec(rest);
+  if (!m) m = /^!\[([^\]]*)\]\(([^)\n]*)\)/.exec(rest);
+  if (!m) return null;
+  const { dest, size } = parseImageDest(m[2]);
+  if (!dest) return null;
+  return { alt: m[1], url: unwrapDest(dest), size, end: i + m[0].length };
+}
+
+/** Resolve a raw `<img>` tag's path and restate its width/height as a style —
+ *  the attributes alone lose to the stylesheet's `img { height: auto }`. */
+function renderImgTag(tag: string): string {
+  let attrs = parseImgTag(tag);
+  const src = getImgAttr(attrs, "src");
+  if (!src) return tag;
+  attrs = setImgAttr(attrs, "src", toDisplaySrc(src));
+  const style = appendStyle(
+    getImgAttr(attrs, "style"),
+    imageSizeStyle({
+      width: getImgAttr(attrs, "width"),
+      height: getImgAttr(attrs, "height"),
+    }),
+  );
+  return buildImgTag(setImgAttr(attrs, "style", style));
 }
 
 /**
  * Render inline markdown (bold/italic/strike/code/links + `\` escapes) to an
- * HTML string, passing raw HTML tags through verbatim. Plain text is escaped so
+ * HTML string, passing raw HTML tags through verbatim (`<img>` excepted, see
+ * renderImgTag). Plain text is escaped so
  * stray `<`/`&` stay literal. The result still needs {@link sanitizeHtml} before
  * being inserted into the DOM.
  */
@@ -129,13 +163,15 @@ export function renderInlineHtml(text: string): string {
       continue;
     }
 
-    // Raw HTML tag/comment: pass through untouched (sanitized later).
+    // Raw HTML tag/comment: pass through untouched (sanitized later), except
+    // for <img>, which needs the same path resolution and size handling as a
+    // markdown image — a sized image is written as a tag.
     if (c === "<") {
       HTML_TAG.lastIndex = i;
       const tag = HTML_TAG.exec(text);
       if (tag) {
         flush();
-        out += tag[0];
+        out += /^<img\b/i.test(tag[0]) ? renderImgTag(tag[0]) : tag[0];
         i += tag[0].length;
         continue;
       }
@@ -158,7 +194,8 @@ export function renderInlineHtml(text: string): string {
       const image = imageAt(text, i);
       if (image) {
         flush();
-        out += `<img class="cm-md-inline-img" src="${escAttr(toDisplaySrc(image.url))}" alt="${escAttr(image.alt)}" loading="lazy" />`;
+        const style = imageSizeStyle(image.size);
+        out += `<img class="cm-md-inline-img" src="${escAttr(toDisplaySrc(image.url))}" alt="${escAttr(image.alt)}"${style ? ` style="${escAttr(style)}"` : ""} loading="lazy" />`;
         i = image.end;
         continue;
       }

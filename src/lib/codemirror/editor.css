@@ -158,50 +158,52 @@
   padding-top: calc(var(--editor-font-size) * 0.22);
 }
 
-/* Headings — a ~1.2 modular scale. Weight is a single 700 across all levels:
-   the system fonts (PingFang SC caps at Semibold, SF rounds to Bold) can't
-   render the in-between weights, so the hierarchy comes from size plus a color
-   step on the lowest two levels (H5 softened, H6 muted). */
+/* Headings — a ~1.2 modular scale. Weight is one shared value across all
+   levels: the system fonts (PingFang SC caps at Semibold, SF rounds to Bold)
+   can't render the in-between weights, so the hierarchy comes from size plus a
+   color step on the lowest two levels (H5 softened, H6 muted). That value is
+   `--editor-strong-font-weight` (700 unless the body weight setting is heavy
+   enough that bold has to lift out of its way — see editorStrongFontWeight). */
 /* All six levels are scaled together by `--editor-heading-scale` (Settings ›
    编辑器, default 1) on top of their per-level modular ratio, so one control
    grows/shrinks every heading while keeping the hierarchy. */
 .cm-md-h1 {
   font-size: calc(var(--editor-font-size) * 2.2 * var(--editor-heading-scale, 1));
-  font-weight: 700;
+  font-weight: var(--editor-strong-font-weight, 700);
   line-height: 1.25;
   padding-bottom: 0.3em;
   border-bottom: 1px solid var(--border);
 }
 .cm-md-h2 {
   font-size: calc(var(--editor-font-size) * 1.8 * var(--editor-heading-scale, 1));
-  font-weight: 700;
+  font-weight: var(--editor-strong-font-weight, 700);
   line-height: 1.3;
   padding-bottom: 0.25em;
   border-bottom: 1px solid var(--border);
 }
 .cm-md-h3 {
   font-size: calc(var(--editor-font-size) * 1.5 * var(--editor-heading-scale, 1));
-  font-weight: 700;
+  font-weight: var(--editor-strong-font-weight, 700);
   line-height: 1.3;
 }
 .cm-md-h4 {
   font-size: calc(var(--editor-font-size) * 1.3 * var(--editor-heading-scale, 1));
-  font-weight: 700;
+  font-weight: var(--editor-strong-font-weight, 700);
 }
 .cm-md-h5 {
   font-size: calc(var(--editor-font-size) * 1.1 * var(--editor-heading-scale, 1));
-  font-weight: 700;
+  font-weight: var(--editor-strong-font-weight, 700);
   color: var(--text-soft);
 }
 .cm-md-h6 {
   font-size: calc(var(--editor-font-size) * 0.95 * var(--editor-heading-scale, 1));
-  font-weight: 700;
+  font-weight: var(--editor-strong-font-weight, 700);
   color: var(--text-muted);
 }
 
 /* Inline marks */
 .cm-md-strong {
-  font-weight: 700;
+  font-weight: var(--editor-strong-font-weight, 700);
 }
 .cm-md-em {
   font-style: italic;
@@ -616,16 +618,88 @@
    spacing on the wrapper as padding, not table margin: CodeMirror measures the
    widget's bounding box for click-to-position mapping, and margins are outside
    that box. */
+/* Hugs the table (rather than the editor width) so the source button anchors to
+   the table's own top-right corner, and sits outside the scrolling box so it
+   stays put when a wide table scrolls sideways. Reserve a separate action row
+   above the table: an overlaid button can invisibly intercept clicks meant for
+   the last header cell while its hover fade-in is still in progress. */
+.cm-md-table-block {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  padding: calc(0.6em + 26px) 0 0.6em;
+}
 .cm-md-table-wrap {
-  padding: 0.6em 0;
+  /* Positioning context for the cell editor, which is parked over its cell and
+     has to scroll along with the table. */
+  position: relative;
   cursor: text;
   overflow-x: auto;
   /* Allow selecting the rendered cell text. Needed for read-only mode in
      WKWebView, which won't select text in non-editable content without this.
-     In editable mode the widget's mousedown handler still intercepts first
-     (click-to-edit), so this doesn't change that behavior. */
+     A click that doesn't drag still opens the cell editor (tablePreview.ts). */
   -webkit-user-select: text;
   user-select: text;
+}
+.cm-md-table-source {
+  position: absolute;
+  top: 0.6em;
+  right: 2px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  opacity: 0;
+  transition:
+    opacity 120ms ease,
+    color 150ms ease,
+    background 150ms ease;
+  z-index: 2;
+}
+.cm-md-table-block:hover .cm-md-table-source,
+.cm-md-table-source:focus-visible {
+  opacity: 0.9;
+}
+.cm-md-table-source:hover {
+  background: var(--hover);
+  color: var(--text);
+  opacity: 1;
+}
+.cm-md-table-source:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.cm-md-table-source svg {
+  width: 13px;
+  height: 13px;
+}
+/* The cell being edited keeps its raw source as invisible text: it is what
+   sizes the column while the textarea on top of it shows the same text. */
+.cm-md-table th.cm-md-cell-editing,
+.cm-md-table td.cm-md-cell-editing {
+  color: transparent;
+  min-width: 3ch;
+}
+.cm-md-cell-input {
+  position: absolute;
+  z-index: 1;
+  margin: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  box-sizing: border-box;
+  background: transparent;
+  color: var(--text);
+  caret-color: var(--accent);
+  /* Box, font and padding are copied from the cell it covers, so the text lands
+     exactly on top of the transparent source behind it (tablePreview.ts). */
 }
 .cm-md-table {
   border-collapse: collapse;

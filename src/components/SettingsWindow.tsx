@@ -48,6 +48,10 @@ import {
   editorFontStack,
   HEADING_SCALE_MIN,
   HEADING_SCALE_MAX,
+  FONT_WEIGHT_MIN,
+  FONT_WEIGHT_MAX,
+  FONT_WEIGHT_STEP,
+  editorStrongFontWeight,
   type AiModel,
   type AiProvider,
   type AttachmentConfig,
@@ -143,6 +147,8 @@ export function SettingsWindow() {
   const setEditorLineHeight = useAppStore((s) => s.setEditorLineHeight);
   const editorFontFamily = useAppStore((s) => s.editorFontFamily);
   const setEditorFontFamily = useAppStore((s) => s.setEditorFontFamily);
+  const editorFontWeight = useAppStore((s) => s.editorFontWeight);
+  const setEditorFontWeight = useAppStore((s) => s.setEditorFontWeight);
   const editorHeadingScale = useAppStore((s) => s.editorHeadingScale);
   const setEditorHeadingScale = useAppStore((s) => s.setEditorHeadingScale);
   const editorLineNumbers = useAppStore((s) => s.editorLineNumbers);
@@ -164,6 +170,8 @@ export function SettingsWindow() {
   const sidebarNotesFontSize = useAppStore((s) => s.sidebarNotesFontSize);
   const sidebarOutlineFontSize = useAppStore((s) => s.sidebarOutlineFontSize);
   const setSidebarFontSize = useAppStore((s) => s.setSidebarFontSize);
+  const sidebarFontWeight = useAppStore((s) => s.sidebarFontWeight);
+  const setSidebarFontWeight = useAppStore((s) => s.setSidebarFontWeight);
 
   const [activeTab, setActiveTab] = useState<TabId>(readInitialTab);
   const active = tabs.find((t) => t.id === activeTab)!;
@@ -308,6 +316,16 @@ export function SettingsWindow() {
                     />
                   </div>
                 </Row>
+                <Row title="字重" desc="编辑区正文的粗细；400 常规、500 中等、600 半粗">
+                  <Stepper
+                    value={editorFontWeight}
+                    min={FONT_WEIGHT_MIN}
+                    max={FONT_WEIGHT_MAX}
+                    step={FONT_WEIGHT_STEP}
+                    format={(v) => String(v)}
+                    onChange={setEditorFontWeight}
+                  />
+                </Row>
                 <Row title="显示行号" desc="仅在非 Markdown 文本文件中显示">
                   <Toggle checked={editorLineNumbers} onChange={setEditorLineNumbers} />
                 </Row>
@@ -332,6 +350,7 @@ export function SettingsWindow() {
                     fontSize: editorFontSize,
                     lineHeight: compactEditor ? editorLineHeight * 0.78 : editorLineHeight,
                     fontFamily: editorFontStack(editorFontFamily),
+                    fontWeight: editorFontWeight,
                     color: "var(--text)",
                   }}
                 >
@@ -340,7 +359,9 @@ export function SettingsWindow() {
                     style={{
                       // Mirrors .cm-md-h2 (1.8× base) scaled by the heading setting.
                       fontSize: editorFontSize * 1.8 * editorHeadingScale,
-                      fontWeight: 700,
+                      // Same derivation the editor uses, so the preview shows
+                      // headings lifting away from a heavy body weight.
+                      fontWeight: editorStrongFontWeight(editorFontWeight),
                       lineHeight: 1.3,
                       marginBottom: "0.35em",
                     }}
@@ -414,6 +435,16 @@ export function SettingsWindow() {
                     onChange={(v) => setSidebarFontSize("outline", v)}
                   />
                 </Row>
+                <Row title="字重" desc="所有列表共用的粗细；400 常规、500 中等、600 半粗">
+                  <Stepper
+                    value={sidebarFontWeight}
+                    min={FONT_WEIGHT_MIN}
+                    max={FONT_WEIGHT_MAX}
+                    step={FONT_WEIGHT_STEP}
+                    format={(v) => String(v)}
+                    onChange={setSidebarFontWeight}
+                  />
+                </Row>
               </Card>
 
               <Preview label="预览">
@@ -432,7 +463,13 @@ export function SettingsWindow() {
                       >
                         {label}
                       </span>
-                      <span style={{ fontSize: size, color: "var(--tree-text)" }}>
+                      <span
+                        style={{
+                          fontSize: size,
+                          fontWeight: sidebarFontWeight,
+                          color: "var(--tree-text)",
+                        }}
+                      >
                         {sample}
                       </span>
                     </div>

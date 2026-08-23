@@ -672,7 +672,8 @@ export function Toolbar() {
         <LinkIcon size={iconSize} />
       </Btn>
       <Btn
-        title={shortcut("图片", "markdownImage")}
+        title={shortcut(active.image ? "编辑图片" : "图片", "markdownImage")}
+        active={active.image}
         onClick={() => runCommand("markdownImage")}
       >
         <ImageIcon size={iconSize} />

@@ -42,10 +42,18 @@
   --toolbar-bg: rgba(255, 255, 255, 0.85);
   --editor-font-size: 15px;
   --editor-line-height: 1.75;
+  /* Body weight, plus the derived weight for headings and bold. Both are
+     rewritten by applyEditorSettings(); these defaults cover the first paint. */
+  --editor-font-weight: 400;
+  --editor-strong-font-weight: 700;
   --ai-assistant-font-size: 13px;
   --sidebar-files-font-size: 14px;
   --sidebar-notes-font-size: 14px;
   --sidebar-outline-font-size: 14px;
+  /* One weight for every sidebar list, plus the derived weight for the rows
+     that need to sit above their neighbours (note titles, top-level outline). */
+  --sidebar-font-weight: 400;
+  --sidebar-font-weight-strong: 500;
 }
 
 /* `.dark` no longer carries colour overrides — applyThemeColors() injects the

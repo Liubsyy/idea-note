@@ -26,6 +26,7 @@ import {
 import { parseAdvanced } from "./livePreview";
 import { renderInlineHtml, sanitizeHtml } from "./inlineHtml";
 import { toDisplaySrc } from "../imagePath";
+import { cssLength } from "../imageSyntax";
 
 class HtmlWidget extends WidgetType {
   constructor(
@@ -50,6 +51,13 @@ class HtmlWidget extends WidgetType {
       // protocol (remote URLs pass through) so <img> matches Markdown images.
       const raw = img.getAttribute("src");
       if (raw) img.src = toDisplaySrc(raw);
+      // width/height are presentational hints, which lose to Tailwind
+      // preflight's `img { height: auto }`; restate them as inline styles so an
+      // explicit size in the note actually applies (max-width still clamps).
+      const w = img.getAttribute("width");
+      const h = img.getAttribute("height");
+      if (w) img.style.width = cssLength(w);
+      if (h) img.style.height = cssLength(h);
       const requestMeasure = () => view.requestMeasure();
       img.addEventListener("load", requestMeasure);
       img.addEventListener("error", requestMeasure);

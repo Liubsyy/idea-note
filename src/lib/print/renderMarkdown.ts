@@ -13,6 +13,7 @@ import MarkdownIt from "markdown-it";
 import katex from "katex";
 
 import { toDisplaySrc } from "../imagePath";
+import { appendStyle, imageSizeStyle, parseImageDest } from "../imageSyntax";
 
 // --- mermaid (replicates diagram.ts's lazy, WebKit-safe loader) -------------
 
@@ -56,9 +57,10 @@ md.renderer.rules.image = (tokens, idx, options, env, self) => {
 };
 
 // Typora-style leniency: a raw space in an image destination is invalid
-// CommonMark, so markdown-it's image rule rejects `![](assets/image 3.png)`
-// and the path would print as literal text (dropping the image from the PDF).
-// The editor's live preview hand-recovers exactly this shape (livePreview.ts,
+// CommonMark, so markdown-it's image rule rejects `![](assets/image 3.png)` —
+// and equally `![](<a.png> =300x200)`, the app's explicit-size form — and the
+// path would print as literal text (dropping the image from the PDF).
+// The editor's live preview hand-recovers exactly these shapes (livePreview.ts,
 // "Image" case); mirror it here so preview and export stay in sync. Registered
 // after "image", so it only fires where the strict rule already failed.
 const spacedImage: RuleInline = (state, silent) => {
@@ -66,11 +68,15 @@ const spacedImage: RuleInline = (state, silent) => {
   const m = /^!\[([^\]\n]*)\]\(([^)\n]+)\)/.exec(state.src.slice(state.pos));
   if (!m) return false;
   if (!silent) {
+    const { dest, size, title } = parseImageDest(m[2]);
     const token = state.push("image", "img", 0);
     token.attrs = [
-      ["src", m[2].trim()],
+      ["src", dest],
       ["alt", ""],
     ];
+    const style = imageSizeStyle(size);
+    if (style) token.attrs.push(["style", style]);
+    if (title) token.attrs.push(["title", title]);
     token.content = m[1];
     token.children = [];
     state.md.inline.parse(m[1], state.md, state.env, token.children);
@@ -252,6 +258,24 @@ export async function renderMarkdownToHtml(markdown: string): Promise<string> {
   tpl.innerHTML = md.render(markdown ?? "");
 
   applyTaskLists(tpl.content);
+
+  // Raw `<img>` tags (the form a sized image takes) reach here verbatim: markdown-it
+  // only routes its own image tokens through the rule above. Resolve their paths
+  // the same way, and restate width/height as a style so print.css's
+  // `img { height: auto }` can't drop an explicit height.
+  tpl.content.querySelectorAll("img").forEach((img) => {
+    const raw = img.getAttribute("src");
+    if (raw) img.setAttribute("src", toDisplaySrc(raw));
+    const style = imageSizeStyle({
+      width: img.getAttribute("width") ?? "",
+      height: img.getAttribute("height") ?? "",
+    });
+    if (style)
+      img.setAttribute(
+        "style",
+        appendStyle(img.getAttribute("style") ?? "", style),
+      );
+  });
 
   const mermaidNodes = Array.from(
     tpl.content.querySelectorAll<HTMLElement>("div.print-mermaid"),

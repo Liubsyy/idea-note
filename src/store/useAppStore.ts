@@ -112,6 +112,9 @@ interface AppSettings {
   /** Editor body font. The persisted value is an `EDITOR_FONT_OPTIONS` key
    *  (`""` = system default); the actual CSS stack is resolved by editorFontStack. */
   editorFontFamily: string;
+  /** Editor body font weight (100-700). Headings and bold derive from it via
+   *  editorStrongFontWeight, so they stay clear of a heavy body. */
+  editorFontWeight: number;
   /** Multiplier scaling every heading level together (1 = default). */
   editorHeadingScale: number;
   /** How many files may be open in the editor tab strip at once. */
@@ -126,6 +129,9 @@ interface AppSettings {
   sidebarFilesFontSize: number;
   sidebarNotesFontSize: number;
   sidebarOutlineFontSize: number;
+  /** Font weight (100-700) shared by every sidebar list — unlike the size, it
+   *  reads as one overall preference rather than a per-mode tweak. */
+  sidebarFontWeight: number;
   /** Editor keyboard-shortcut overrides: command id -> key (CodeMirror notation).
    *  Absent ids fall back to their built-in default. See lib/codemirror/keybindings. */
   editorKeybindings: Record<string, string>;
@@ -162,6 +168,39 @@ export const HEADING_SCALE_MIN = 0.7;
 export const HEADING_SCALE_MAX = 1.6;
 export const HEADING_SCALE_DEFAULT = 1;
 
+/** Font-weight steppers (editor body + sidebar lists). The step is finer than
+ *  the CSS 100 grid so variable fonts can be nudged; static faces snap to the
+ *  nearest weight they ship, so neighbouring stops there may look identical. */
+export const FONT_WEIGHT_MIN = 100;
+export const FONT_WEIGHT_MAX = 700;
+export const FONT_WEIGHT_STEP = 20;
+export const FONT_WEIGHT_DEFAULT = 400;
+
+/** Snap a font weight to the step grid and clamp it to the stepper's range.
+ *  Non-finite input falls back to the default rather than propagating NaN into
+ *  the CSS variable, which would silently drop the weight everywhere. */
+export function clampFontWeight(value: number): number {
+  if (!Number.isFinite(value)) return FONT_WEIGHT_DEFAULT;
+  const snapped = Math.round(value / FONT_WEIGHT_STEP) * FONT_WEIGHT_STEP;
+  return Math.min(FONT_WEIGHT_MAX, Math.max(FONT_WEIGHT_MIN, snapped));
+}
+
+/** Weight for editor headings and `**bold**`, derived from the body weight.
+ *  It only ever moves UP: at a body weight of 500 or less the result is the
+ *  historical 700, so lightening the body leaves headings untouched. Past that
+ *  the body is closing in on bold, so bold lifts out of its way (600 -> 800,
+ *  700 -> 900). Fonts without those faces (PingFang caps at Semibold) simply
+ *  render the heaviest they have — the contrast narrows but nothing breaks. */
+export function editorStrongFontWeight(body: number): number {
+  return Math.min(900, Math.max(700, body + 200));
+}
+
+/** Sidebar counterpart of editorStrongFontWeight, for the note-card titles and
+ *  top-level outline entries that need to sit above the surrounding rows. */
+export function sidebarStrongFontWeight(base: number): number {
+  return Math.min(700, Math.max(500, base + 100));
+}
+
 const ZOOM_MIN = 0.8;
 const ZOOM_MAX = 1.5;
 const EDITOR_MAX_TABS_MIN = 1;
@@ -194,6 +233,13 @@ export interface PromptRequest {
     label: string;
     defaultValue: string;
     placeholder?: string;
+    /** Consecutive fields sharing a group id share one row and one label —
+     *  used for the image dialog's 宽 × 高 pair. */
+    group?: string;
+    /** Separator drawn just before the input inside a group (e.g. "×"). */
+    prefix?: string;
+    /** Explanatory line under the row; the row shows the first one it finds. */
+    hint?: string;
     actionLabel?: string;
     onAction?: () =>
       | string
@@ -329,6 +375,7 @@ interface AppState {
   editorLineHeight: number;
   editorLineNumbers: boolean;
   editorFontFamily: string;
+  editorFontWeight: number;
   editorHeadingScale: number;
   editorMaxTabs: number;
   aiAssistantFontSize: number;
@@ -338,6 +385,7 @@ interface AppState {
   sidebarFilesFontSize: number;
   sidebarNotesFontSize: number;
   sidebarOutlineFontSize: number;
+  sidebarFontWeight: number;
   /** Editor keyboard-shortcut overrides (command id -> key). */
   editorKeybindings: Record<string, string>;
   /** Pasted image / attachment save locations (see AttachmentLocation). */
@@ -496,6 +544,7 @@ interface AppState {
   setEditorFontSize: (size: number) => void;
   setEditorLineHeight: (height: number) => void;
   setEditorFontFamily: (value: string) => void;
+  setEditorFontWeight: (weight: number) => void;
   setEditorHeadingScale: (scale: number) => void;
   setEditorLineNumbers: (show: boolean) => void;
   setEditorMaxTabs: (max: number) => void;
@@ -509,6 +558,8 @@ interface AppState {
   setUiZoom: (zoom: number) => void;
   /** Set the list font size (px) for one sidebar mode. */
   setSidebarFontSize: (mode: SidebarMode, size: number) => void;
+  /** Set the font weight shared by every sidebar list. */
+  setSidebarFontWeight: (weight: number) => void;
   /** Update the active workspace's pasted-image / attachment save locations. */
   setAttachmentSettings: (patch: Partial<AttachmentConfig>) => void;
   toggleTheme: () => void;
@@ -1018,6 +1069,7 @@ function readSettings(): AppSettings {
     editorLineHeight: 1.75,
     editorLineNumbers: true,
     editorFontFamily: "",
+    editorFontWeight: FONT_WEIGHT_DEFAULT,
     editorHeadingScale: HEADING_SCALE_DEFAULT,
     editorMaxTabs: EDITOR_MAX_TABS_DEFAULT,
     aiAssistantFontSize: AI_ASSISTANT_FONT_DEFAULT,
@@ -1027,6 +1079,7 @@ function readSettings(): AppSettings {
     sidebarFilesFontSize: SIDEBAR_FONT_DEFAULT,
     sidebarNotesFontSize: SIDEBAR_FONT_DEFAULT,
     sidebarOutlineFontSize: SIDEBAR_FONT_DEFAULT,
+    sidebarFontWeight: FONT_WEIGHT_DEFAULT,
     editorKeybindings: {},
   };
 
@@ -1084,6 +1137,10 @@ function readSettings(): AppSettings {
         typeof parsed.editorFontFamily === "string"
           ? parsed.editorFontFamily
           : fallback.editorFontFamily,
+      editorFontWeight:
+        typeof parsed.editorFontWeight === "number"
+          ? clampFontWeight(parsed.editorFontWeight)
+          : fallback.editorFontWeight,
       editorHeadingScale:
         typeof parsed.editorHeadingScale === "number"
           ? Math.min(HEADING_SCALE_MAX, Math.max(HEADING_SCALE_MIN, parsed.editorHeadingScale))
@@ -1117,6 +1174,10 @@ function readSettings(): AppSettings {
       sidebarFilesFontSize: sidebarFont(parsed.sidebarFilesFontSize, fallback.sidebarFilesFontSize),
       sidebarNotesFontSize: sidebarFont(parsed.sidebarNotesFontSize, fallback.sidebarNotesFontSize),
       sidebarOutlineFontSize: sidebarFont(parsed.sidebarOutlineFontSize, fallback.sidebarOutlineFontSize),
+      sidebarFontWeight:
+        typeof parsed.sidebarFontWeight === "number"
+          ? clampFontWeight(parsed.sidebarFontWeight)
+          : fallback.sidebarFontWeight,
       editorKeybindings: sanitizeKeybindings(parsed.editorKeybindings),
     };
   } catch {
@@ -1141,6 +1202,7 @@ function applyEditorSettings(
     | "editorLineHeight"
     | "compactEditor"
     | "editorFontFamily"
+    | "editorFontWeight"
     | "editorHeadingScale"
   >,
 ) {
@@ -1155,6 +1217,14 @@ function applyEditorSettings(
   document.documentElement.style.setProperty(
     "--editor-font-family",
     editorFontStack(settings.editorFontFamily),
+  );
+  document.documentElement.style.setProperty(
+    "--editor-font-weight",
+    String(settings.editorFontWeight),
+  );
+  document.documentElement.style.setProperty(
+    "--editor-strong-font-weight",
+    String(editorStrongFontWeight(settings.editorFontWeight)),
   );
   document.documentElement.style.setProperty(
     "--editor-heading-scale",
@@ -1173,13 +1243,21 @@ function applyAiAssistantSettings(settings: Pick<AppSettings, "aiAssistantFontSi
 function applySidebarSettings(
   settings: Pick<
     AppSettings,
-    "sidebarFilesFontSize" | "sidebarNotesFontSize" | "sidebarOutlineFontSize"
+    | "sidebarFilesFontSize"
+    | "sidebarNotesFontSize"
+    | "sidebarOutlineFontSize"
+    | "sidebarFontWeight"
   >,
 ) {
   const root = document.documentElement.style;
   root.setProperty("--sidebar-files-font-size", `${settings.sidebarFilesFontSize}px`);
   root.setProperty("--sidebar-notes-font-size", `${settings.sidebarNotesFontSize}px`);
   root.setProperty("--sidebar-outline-font-size", `${settings.sidebarOutlineFontSize}px`);
+  root.setProperty("--sidebar-font-weight", String(settings.sidebarFontWeight));
+  root.setProperty(
+    "--sidebar-font-weight-strong",
+    String(sidebarStrongFontWeight(settings.sidebarFontWeight)),
+  );
 }
 
 let isSettingsWindow = false;
@@ -1223,6 +1301,7 @@ function snapshotSettings(get: () => AppState): AppSettings {
     editorLineHeight: s.editorLineHeight,
     editorLineNumbers: s.editorLineNumbers,
     editorFontFamily: s.editorFontFamily,
+    editorFontWeight: s.editorFontWeight,
     editorHeadingScale: s.editorHeadingScale,
     editorMaxTabs: s.editorMaxTabs,
     aiAssistantFontSize: s.aiAssistantFontSize,
@@ -1232,6 +1311,7 @@ function snapshotSettings(get: () => AppState): AppSettings {
     sidebarFilesFontSize: s.sidebarFilesFontSize,
     sidebarNotesFontSize: s.sidebarNotesFontSize,
     sidebarOutlineFontSize: s.sidebarOutlineFontSize,
+    sidebarFontWeight: s.sidebarFontWeight,
     editorKeybindings: s.editorKeybindings,
   };
 }
@@ -1315,6 +1395,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   editorLineHeight: initialSettings.editorLineHeight,
   editorLineNumbers: initialSettings.editorLineNumbers,
   editorFontFamily: initialSettings.editorFontFamily,
+  editorFontWeight: initialSettings.editorFontWeight,
   editorHeadingScale: initialSettings.editorHeadingScale,
   editorMaxTabs: initialSettings.editorMaxTabs,
   aiAssistantFontSize: initialSettings.aiAssistantFontSize,
@@ -1324,6 +1405,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   sidebarFilesFontSize: initialSettings.sidebarFilesFontSize,
   sidebarNotesFontSize: initialSettings.sidebarNotesFontSize,
   sidebarOutlineFontSize: initialSettings.sidebarOutlineFontSize,
+  sidebarFontWeight: initialSettings.sidebarFontWeight,
   editorKeybindings: initialSettings.editorKeybindings,
   // Image/attachment dirs are per-workspace (persisted in sync-config.json);
   // these mirror the active workspace and are hydrated on open/restore below.
@@ -2452,6 +2534,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ editorFontFamily });
   },
 
+  setEditorFontWeight: (weight) => {
+    const editorFontWeight = clampFontWeight(weight);
+    commitSettings({ ...snapshotSettings(get), editorFontWeight });
+    set({ editorFontWeight });
+  },
+
   setEditorHeadingScale: (scale) => {
     const editorHeadingScale = Math.min(
       HEADING_SCALE_MAX,
@@ -2524,6 +2612,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           : "sidebarOutlineFontSize";
     commitSettings({ ...snapshotSettings(get), [key]: clamped });
     set({ [key]: clamped });
+  },
+
+  setSidebarFontWeight: (weight) => {
+    const sidebarFontWeight = clampFontWeight(weight);
+    commitSettings({ ...snapshotSettings(get), sidebarFontWeight });
+    set({ sidebarFontWeight });
   },
 
   setAttachmentSettings: (patch) => {
@@ -2857,6 +2951,7 @@ listen<AppSettings>(SETTINGS_EVENT, ({ payload }) => {
     editorLineHeight: payload.editorLineHeight,
     editorLineNumbers: payload.editorLineNumbers,
     editorFontFamily: payload.editorFontFamily,
+    editorFontWeight: payload.editorFontWeight,
     editorHeadingScale: payload.editorHeadingScale,
     editorMaxTabs: payload.editorMaxTabs,
     aiAssistantFontSize: payload.aiAssistantFontSize,
@@ -2866,6 +2961,7 @@ listen<AppSettings>(SETTINGS_EVENT, ({ payload }) => {
     sidebarFilesFontSize: payload.sidebarFilesFontSize,
     sidebarNotesFontSize: payload.sidebarNotesFontSize,
     sidebarOutlineFontSize: payload.sidebarOutlineFontSize,
+    sidebarFontWeight: payload.sidebarFontWeight,
     editorKeybindings: payload.editorKeybindings ?? {},
   }));
 }).catch(() => {});

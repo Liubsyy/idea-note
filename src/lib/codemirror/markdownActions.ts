@@ -5,8 +5,10 @@
 import type { Command, EditorView } from "@codemirror/view";
 
 import { pickImage } from "../fs";
+import { NO_IMAGE_SIZE, parseImageDimension } from "../imageSyntax";
 import { useAppStore } from "../../store/useAppStore";
 import { getActiveView } from "./activeView";
+import { imageAt } from "./imageAt";
 import { md } from "./markdownCommands";
 
 const LAST_COLORS_KEY = "idea-note:last-colors";
@@ -119,30 +121,56 @@ const openLinkPrompt = editableAction((view) => {
   });
 });
 
+// Insert an image, or edit the one under the cursor — same dialog either way
+// (so a size can be set right when inserting), prefilled from that image when
+// there is one. md.image() resolves the target again on submit, so it stays
+// correct even if the document moved while the dialog was open.
 const openImagePrompt = editableAction((view) => {
+  const current = imageAt(view.state, view.state.selection.main.head);
+  const size = current?.size ?? NO_IMAGE_SIZE;
   useAppStore.getState().openPrompt({
-    title: "插入图片",
+    title: current ? "编辑图片" : "插入图片",
     defaultValue: "",
     fields: [
       {
         name: "alt",
         label: "替代文本",
-        defaultValue: selectedText(view),
+        defaultValue: current?.alt ?? selectedText(view),
         placeholder: "图片说明",
       },
       {
         name: "src",
         label: "图片地址或本地路径",
-        defaultValue: "",
+        defaultValue: current?.url ?? "",
         placeholder: "https://example.com/image.png",
         actionLabel: "选择本地图片",
         onAction: pickImage,
+      },
+      {
+        name: "width",
+        label: "显示尺寸",
+        defaultValue: size.width,
+        placeholder: "宽",
+        group: "size",
+        hint: "留空为原始尺寸；只填一边时另一边按比例缩放，可用像素或百分比（如 300、50%）",
+      },
+      {
+        name: "height",
+        label: "高度",
+        defaultValue: size.height,
+        placeholder: "高",
+        group: "size",
+        prefix: "×",
       },
     ],
     onSubmit: (_value, values) => {
       const src = values.src?.trim();
       if (!src) throw "请选择本地图片或填写图片地址";
-      md.image(activeEditableView(), src, values.alt);
+      const width = parseImageDimension(values.width ?? "");
+      const height = parseImageDimension(values.height ?? "");
+      if (width === null || height === null)
+        throw "尺寸只能填数字或百分比，如 300、50%";
+      md.image(activeEditableView(), src, values.alt, { width, height });
     },
   });
 });

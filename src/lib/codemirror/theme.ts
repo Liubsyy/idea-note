@@ -18,6 +18,7 @@ export const cmTheme = EditorView.theme({
     // system fallback, and the literal here is a safety net if it's ever unset.
     fontFamily:
       'var(--editor-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif)',
+    fontWeight: "var(--editor-font-weight, 400)",
     lineHeight: "var(--editor-line-height)",
     overflow: "auto",
   },
@@ -51,6 +52,7 @@ export const cmPlainTextTheme = EditorView.theme({
   ".cm-scroller": {
     fontFamily:
       'var(--editor-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif)',
+    fontWeight: "var(--editor-font-weight, 400)",
     lineHeight: "var(--editor-line-height)",
   },
   // Override the centered prose layout with a left-aligned, full-width one.
@@ -142,7 +144,7 @@ export const cmHistoryDiffTheme = EditorView.theme({
 // Syntax highlighting for fenced code blocks (markdown's nested languages).
 const codeHighlight = HighlightStyle.define([
   { tag: [t.heading1, t.heading2, t.heading3, t.heading4, t.heading5, t.heading6], color: "var(--heading)", fontWeight: "700" },
-  { tag: t.strong, fontWeight: "700" },
+  { tag: t.strong, fontWeight: "var(--editor-strong-font-weight, 700)" },
   { tag: t.emphasis, fontStyle: "italic" },
   { tag: t.strikethrough, textDecoration: "line-through" },
   { tag: [t.link, t.url], color: "var(--accent)" },
