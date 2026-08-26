@@ -31,6 +31,11 @@ import type { EditorView } from "@codemirror/view";
 import { md } from "../../lib/codemirror/markdownCommands";
 import { getActiveView } from "../../lib/codemirror/activeView";
 import {
+  hasActiveTableCell,
+  prepareActiveTableCellSelection,
+  restoreActiveTableCell,
+} from "../../lib/codemirror/tablePreview";
+import {
   commandTitle,
   runEditorCommand,
 } from "../../lib/codemirror/keybindings";
@@ -41,6 +46,23 @@ import {
 } from "../../lib/codemirror/markdownActions";
 import { useAppStore } from "../../store/useAppStore";
 import { ColorPicker } from "./ColorPicker";
+
+// GFM cells support inline content only. Running a block command such as a
+// heading or list against a cell would rewrite the table row's prefix and break
+// the table, so only commands that stay within the current cell are admitted.
+const TABLE_CELL_COMMANDS = new Set([
+  "undo",
+  "redo",
+  "markdownBold",
+  "markdownItalic",
+  "markdownStrike",
+  "markdownInlineCode",
+  "markdownTextColor",
+  "markdownBgColor",
+  "markdownClearColor",
+  "markdownLink",
+  "markdownImage",
+]);
 
 /** Text-colour glyph without the extra baseline drawn by Lucide's Baseline icon. */
 function TextColorIcon({ size }: { size: number }) {
@@ -503,11 +525,37 @@ export function Toolbar() {
   // Run a command against the active editor view, if any.
   const run = (fn: (v: EditorView) => void) => {
     const v = getActiveView();
-    if (v && !v.state.readOnly) fn(v);
+    if (!v || v.state.readOnly) return;
+    const inTable = hasActiveTableCell(v);
+    const cell = prepareActiveTableCellSelection(v);
+    if (inTable && !cell) {
+      useAppStore
+        .getState()
+        .showToast("请只选择一个表格单元格", "error");
+      return;
+    }
+    fn(v);
+    if (cell) restoreActiveTableCell(v, cell);
   };
   const runCommand = (id: string) => {
     const v = getActiveView();
-    if (v) runEditorCommand(id, v);
+    if (!v) return;
+    const inTable = hasActiveTableCell(v);
+    if (inTable && !TABLE_CELL_COMMANDS.has(id)) {
+      useAppStore
+        .getState()
+        .showToast("表格单元格仅支持行内格式", "error");
+      return;
+    }
+    const cell = prepareActiveTableCellSelection(v);
+    if (inTable && !cell) {
+      useAppStore
+        .getState()
+        .showToast("请只选择一个表格单元格", "error");
+      return;
+    }
+    const handled = runEditorCommand(id, v);
+    if (cell && handled) restoreActiveTableCell(v, cell);
   };
   const shortcut = (label: string, id: string) =>
     commandTitle(label, id, editorKeybindings);

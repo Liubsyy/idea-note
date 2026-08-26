@@ -227,7 +227,21 @@ function wrapColumns(model: TableModel): boolean[] {
 // ---------------------------------------------------------------------------
 
 /** The cell being edited in place, addressed by its table's start offset. */
-type CellEdit = { table: number; row: number; col: number; caret: number };
+type CellEdit = {
+  table: number;
+  row: number;
+  col: number;
+  /** Selection offsets inside the cell source, kept in textarea direction. */
+  anchor: number;
+  head: number;
+};
+
+/** Opaque coordinates used to return to the same cell after a toolbar edit. */
+export type TableCellCommandContext = {
+  table: number;
+  row: number;
+  col: number;
+};
 
 const setCellEdit = StateEffect.define<CellEdit | null>();
 
@@ -296,12 +310,27 @@ type CellHost = {
   composing: boolean;
   press: { x: number; y: number } | null;
   resize: ResizeObserver | null;
+  menu: { element: HTMLElement; cleanup: () => void } | null;
 };
 
 const hosts = new WeakMap<HTMLElement, CellHost>();
 
-const setCaret = (input: HTMLTextAreaElement, at: number): void =>
-  input.setSelectionRange(at, at);
+// The toolbar lives outside CodeMirror's widget DOM. Keep the last cell host
+// for each view so a toolbar click can translate the textarea selection into
+// the corresponding Markdown document range before it runs a normal command.
+const cellHostByView = new WeakMap<EditorView, CellHost>();
+
+function setInputSelection(
+  input: HTMLTextAreaElement,
+  anchor: number,
+  head: number,
+): void {
+  input.setSelectionRange(
+    Math.min(anchor, head),
+    Math.max(anchor, head),
+    anchor > head ? "backward" : "forward",
+  );
+}
 
 const atStart = (input: HTMLTextAreaElement): boolean =>
   input.selectionStart === 0 && input.selectionEnd === 0;
@@ -369,12 +398,14 @@ function startEdit(
   const cell = host.model.rows[row]?.[col];
   const table = host.model.lines[0]?.from;
   if (!cell || table === undefined) return;
+  const at = Math.min(caret ?? cell.text.length, cell.text.length);
   view.dispatch({
     effects: setCellEdit.of({
       table,
       row,
       col,
-      caret: Math.min(caret ?? cell.text.length, cell.text.length),
+      anchor: at,
+      head: at,
     }),
   });
 }
@@ -387,8 +418,152 @@ function appendRow(host: CellHost, col: number): void {
   if (!last || table === undefined) return;
   view.dispatch({
     changes: { from: last.to, insert: `\n|${"  |".repeat(model.cols)}` },
-    effects: setCellEdit.of({ table, row: model.lines.length, col, caret: 0 }),
+    effects: setCellEdit.of({
+      table,
+      row: model.lines.length,
+      col,
+      anchor: 0,
+      head: 0,
+    }),
     userEvent: "input",
+  });
+}
+
+const emptyTableRow = (cols: number): string => `|${"  |".repeat(cols)}`;
+
+/** Insert a body row beside the clicked row and start editing the same column. */
+function insertRowAt(
+  host: CellHost,
+  row: number,
+  col: number,
+  after: boolean,
+): void {
+  commitInput(host);
+  const { view, model } = host;
+  const table = model.lines[0]?.from;
+  if (table === undefined || !model.cols) return;
+  let change: { from: number; insert: string };
+  let targetRow: number;
+  if (row === 0) {
+    // A Markdown header must stay immediately before its delimiter. Both
+    // directions therefore add the first body row after that delimiter; the
+    // menu disables "above" for the header to make this rule explicit.
+    const delimiter = model.lines[DELIM_ROW];
+    if (!delimiter || !after) return;
+    change = { from: delimiter.to, insert: `\n${emptyTableRow(model.cols)}` };
+    targetRow = DELIM_ROW + 1;
+  } else {
+    const line = model.lines[row];
+    if (!line || row === DELIM_ROW) return;
+    change = after
+      ? { from: line.to, insert: `\n${emptyTableRow(model.cols)}` }
+      : { from: line.from, insert: `${emptyTableRow(model.cols)}\n` };
+    targetRow = after ? row + 1 : row;
+  }
+  view.dispatch({
+    changes: change,
+    effects: setCellEdit.of({
+      table,
+      row: targetRow,
+      col: Math.min(model.cols - 1, Math.max(0, col)),
+      anchor: 0,
+      head: 0,
+    }),
+    userEvent: "input",
+  });
+}
+
+/** Canonical source rows used for structural column edits. */
+function tableRows(model: TableModel): string[][] {
+  return model.rows.map((row) =>
+    Array.from({ length: model.cols }, (_, col) => row[col]?.text ?? ""),
+  );
+}
+
+const serializeTableRows = (rows: string[][]): string =>
+  rows.map((row) => `| ${row.join(" | ")} |`).join("\n");
+
+/** Add an empty column beside the clicked one across every source row. */
+function insertColumnAt(host: CellHost, row: number, col: number, after: boolean): void {
+  commitInput(host);
+  const { view, model } = host;
+  const first = model.lines[0];
+  const last = model.lines[model.lines.length - 1];
+  if (!first || !last || !model.cols) return;
+  const at = Math.min(model.cols, col + (after ? 1 : 0));
+  const rows = tableRows(model);
+  for (let i = 0; i < rows.length; i++)
+    rows[i].splice(at, 0, i === DELIM_ROW ? "---" : "");
+  view.dispatch({
+    changes: {
+      from: first.from,
+      to: last.to,
+      insert: serializeTableRows(rows),
+    },
+    effects: setCellEdit.of({
+      table: first.from,
+      row,
+      col: at,
+      anchor: 0,
+      head: 0,
+    }),
+    userEvent: "input",
+  });
+}
+
+/** Delete one body row; the header and delimiter are structural and stay. */
+function deleteRowAt(host: CellHost, row: number, col: number): void {
+  commitInput(host);
+  const { view, model } = host;
+  if (row <= DELIM_ROW) return;
+  const line = model.lines[row];
+  if (!line) return;
+  const next = model.lines[row + 1];
+  const prev = model.lines[row - 1];
+  const from = next ? line.from : prev?.to;
+  const to = next ? next.from : line.to;
+  if (from === undefined) return;
+  const bodyRowsAfter = model.rows.length - DELIM_ROW - 2;
+  const targetRow =
+    bodyRowsAfter <= 0 ? 0 : row < model.rows.length - 1 ? row : row - 1;
+  const table = model.lines[0]?.from;
+  if (table === undefined) return;
+  view.dispatch({
+    changes: { from, to },
+    effects: setCellEdit.of({
+      table,
+      row: targetRow,
+      col: Math.min(col, model.cols - 1),
+      anchor: 0,
+      head: 0,
+    }),
+    userEvent: "delete",
+  });
+}
+
+/** Delete one column across the header, delimiter and every body row. */
+function deleteColumnAt(host: CellHost, row: number, col: number): void {
+  commitInput(host);
+  const { view, model } = host;
+  const first = model.lines[0];
+  const last = model.lines[model.lines.length - 1];
+  if (!first || !last || model.cols <= 1 || col >= model.cols) return;
+  const rows = tableRows(model);
+  for (const cells of rows) cells.splice(col, 1);
+  view.dispatch({
+    changes: {
+      from: first.from,
+      to: last.to,
+      insert: serializeTableRows(rows),
+    },
+    effects: setCellEdit.of({
+      table: first.from,
+      row,
+      col: Math.min(col, model.cols - 2),
+      anchor: 0,
+      head: 0,
+    }),
+    userEvent: "delete",
   });
 }
 
@@ -417,7 +592,7 @@ function revealSource(host: CellHost): void {
   const last = model.lines[model.lines.length - 1];
   if (!first || !last) return;
   const anchor = cell
-    ? cell.from + Math.min(edit?.caret ?? 0, cell.text.length)
+    ? cell.from + Math.min(edit?.head ?? 0, cell.text.length)
     : first.from;
   view.dispatch({
     selection: { anchor },
@@ -444,16 +619,210 @@ function commitInput(host: CellHost): void {
   if (!input || !edit) return;
   const cell = host.model.rows[edit.row]?.[edit.col];
   if (!cell) return;
-  const clean = sanitizeCellInput(input.value, input.selectionStart);
+  const direction = input.selectionDirection;
+  const cleanStart = sanitizeCellInput(input.value, input.selectionStart);
+  const cleanEnd = sanitizeCellInput(input.value, input.selectionEnd);
+  const clean = cleanStart;
   if (clean.text !== input.value) {
     input.value = clean.text;
-    setCaret(input, clean.caret);
+    setInputSelection(
+      input,
+      direction === "backward" ? cleanEnd.caret : cleanStart.caret,
+      direction === "backward" ? cleanStart.caret : cleanEnd.caret,
+    );
   }
   if (clean.text === cell.text) return;
+  const anchor =
+    direction === "backward" ? cleanEnd.caret : cleanStart.caret;
+  const head = direction === "backward" ? cleanStart.caret : cleanEnd.caret;
   view.dispatch({
     changes: { from: cell.from, to: cell.to, insert: clean.text },
-    effects: setCellEdit.of({ ...edit, caret: clean.caret }),
+    selection: {
+      anchor: cell.from + anchor,
+      head: cell.from + head,
+    },
+    effects: setCellEdit.of({ ...edit, anchor, head }),
     userEvent: "input.type",
+  });
+}
+
+/** Mirror the textarea selection into CodeMirror without ending cell editing. */
+function syncCellSelection(host: CellHost): boolean {
+  const { view, input, edit } = host;
+  if (!input || !edit || host.composing) return false;
+  const cell = host.model.rows[edit.row]?.[edit.col];
+  if (!cell) return false;
+  const start = Math.min(input.selectionStart, cell.text.length);
+  const end = Math.min(input.selectionEnd, cell.text.length);
+  const anchor = input.selectionDirection === "backward" ? end : start;
+  const head = input.selectionDirection === "backward" ? start : end;
+  const docAnchor = cell.from + anchor;
+  const docHead = cell.from + head;
+  const current = view.state.selection.main;
+  if (
+    current.anchor === docAnchor &&
+    current.head === docHead &&
+    edit.anchor === anchor &&
+    edit.head === head
+  )
+    return true;
+  view.dispatch({
+    selection: { anchor: docAnchor, head: docHead },
+    effects: setCellEdit.of({ ...edit, anchor, head }),
+  });
+  return true;
+}
+
+type RenderedCellSelection =
+  | {
+      host: CellHost;
+      context: TableCellCommandContext;
+      anchor: number;
+      head: number;
+    }
+  | { invalid: true };
+
+type RenderedCellPoint = {
+  host: CellHost;
+  element: HTMLTableCellElement;
+  row: number;
+  col: number;
+  visibleOffset: number;
+};
+
+function renderedCellPoint(
+  node: Node,
+  offset: number,
+): RenderedCellPoint | null {
+  const element = node instanceof Element ? node : node.parentElement;
+  const cell = element?.closest?.("th,td");
+  if (!(cell instanceof HTMLTableCellElement)) return null;
+  const block = cell.closest(".cm-md-table-block");
+  if (!(block instanceof HTMLElement)) return null;
+  const host = hosts.get(block);
+  if (!host || !host.table.contains(cell)) return null;
+  const row = Number(cell.dataset.row);
+  const col = Number(cell.dataset.col);
+  if (!Number.isInteger(row) || !Number.isInteger(col)) return null;
+  try {
+    const before = cell.ownerDocument.createRange();
+    before.setStart(cell, 0);
+    before.setEnd(node, offset);
+    return {
+      host,
+      element: cell,
+      row,
+      col,
+      visibleOffset: before.toString().length,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read a browser-native selection made over the rendered table. Plain cells
+ * map character-for-character; when inline Markdown changed the visible text,
+ * the safe fallback is the whole current cell rather than a guessed range.
+ */
+function renderedTableSelection(view: EditorView): RenderedCellSelection | null {
+  const selection = view.dom.ownerDocument.getSelection();
+  if (
+    !selection ||
+    selection.isCollapsed ||
+    !selection.anchorNode ||
+    !selection.focusNode
+  )
+    return null;
+  const anchorPoint = renderedCellPoint(
+    selection.anchorNode,
+    selection.anchorOffset,
+  );
+  const headPoint = renderedCellPoint(selection.focusNode, selection.focusOffset);
+  if (!anchorPoint && !headPoint) return null;
+  if (
+    !anchorPoint ||
+    !headPoint ||
+    anchorPoint.host !== headPoint.host ||
+    anchorPoint.row !== headPoint.row ||
+    anchorPoint.col !== headPoint.col
+  )
+    return { invalid: true };
+  const cell = anchorPoint.host.model.rows[anchorPoint.row]?.[anchorPoint.col];
+  const table = anchorPoint.host.model.lines[0]?.from;
+  if (!cell || table === undefined) return { invalid: true };
+  const plain = anchorPoint.element.textContent === cell.text;
+  const anchor = plain
+    ? Math.min(anchorPoint.visibleOffset, cell.text.length)
+    : 0;
+  const head = plain
+    ? Math.min(headPoint.visibleOffset, cell.text.length)
+    : cell.text.length;
+  return {
+    host: anchorPoint.host,
+    context: { table, row: anchorPoint.row, col: anchorPoint.col },
+    anchor,
+    head,
+  };
+}
+
+/** Whether the current live interaction belongs to a rendered table cell. */
+export function hasActiveTableCell(view: EditorView): boolean {
+  const host = cellHostByView.get(view);
+  if (host?.edit && host.input?.isConnected) return true;
+  return renderedTableSelection(view) !== null;
+}
+
+/**
+ * Commit and map the active cell selection before running a toolbar command.
+ * The returned coordinates can be used to restore the same in-place editor.
+ */
+export function prepareActiveTableCellSelection(
+  view: EditorView,
+): TableCellCommandContext | null {
+  const host = cellHostByView.get(view);
+  if (host?.edit && host.input?.isConnected) {
+    commitInput(host);
+    if (!syncCellSelection(host) || !host.edit) return null;
+    return {
+      table: host.edit.table,
+      row: host.edit.row,
+      col: host.edit.col,
+    };
+  }
+  const rendered = renderedTableSelection(view);
+  if (!rendered || "invalid" in rendered) return null;
+  const cell =
+    rendered.host.model.rows[rendered.context.row]?.[rendered.context.col];
+  if (!cell) return null;
+  cellHostByView.set(view, rendered.host);
+  view.dispatch({
+    selection: {
+      anchor: cell.from + rendered.anchor,
+      head: cell.from + rendered.head,
+    },
+  });
+  return rendered.context;
+}
+
+/** Reopen the same cell after an inline toolbar command changed its source. */
+export function restoreActiveTableCell(
+  view: EditorView,
+  context: TableCellCommandContext,
+): void {
+  const host = cellHostByView.get(view);
+  if (!host?.block.isConnected) return;
+  const table = host.model.lines[0]?.from;
+  const cell = host.model.rows[context.row]?.[context.col];
+  if (table !== context.table || !cell) return;
+  const range = view.state.selection.main;
+  const anchor = Math.max(
+    0,
+    Math.min(range.anchor - cell.from, cell.text.length),
+  );
+  const head = Math.max(0, Math.min(range.head - cell.from, cell.text.length));
+  view.dispatch({
+    effects: setCellEdit.of({ ...context, anchor, head }),
   });
 }
 
@@ -566,6 +935,7 @@ function createInput(host: CellHost): HTMLTextAreaElement {
     // widget and cancel the IME session.
     if (!host.composing) commitInput(host);
   });
+  input.addEventListener("select", () => syncCellSelection(host));
   input.addEventListener("keydown", (e) => onInputKey(host, e));
   input.addEventListener("blur", () => onInputBlur(host));
   host.wrap.appendChild(input);
@@ -591,12 +961,15 @@ function layoutInput(host: CellHost): void {
   if (!cell) return;
   const style = getComputedStyle(cell);
   const s = input.style;
+  // The table wrapper scrolls horizontally only. Clear any stale vertical
+  // offset before measuring so the cell and wrapper rects share one origin.
+  if (host.wrap.scrollTop !== 0) host.wrap.scrollTop = 0;
   // Rects rather than offsetLeft/Top: those round to whole pixels, which is
   // enough to shift the caret off the text drawn behind it.
   const box = cell.getBoundingClientRect();
   const origin = host.wrap.getBoundingClientRect();
   s.left = `${box.left - origin.left + host.wrap.scrollLeft}px`;
-  s.top = `${box.top - origin.top + host.wrap.scrollTop}px`;
+  s.top = `${box.top - origin.top}px`;
   s.width = `${box.width}px`;
   s.height = `${box.height}px`;
   // Match the cell's own text box so the caret sits exactly where the
@@ -625,6 +998,7 @@ function syncInput(host: CellHost): void {
     host.input = null;
     return;
   }
+  cellHostByView.set(host.view, host);
   const cell = host.model.rows[edit.row]?.[edit.col];
   if (!cell) {
     // The cell went away under us (undo, external change); let the state catch
@@ -641,11 +1015,12 @@ function syncInput(host: CellHost): void {
     input.dataset.col !== String(edit.col);
   input.dataset.row = String(edit.row);
   input.dataset.col = String(edit.col);
-  const caret = Math.min(edit.caret, cell.text.length);
+  const anchor = Math.min(edit.anchor, cell.text.length);
+  const head = Math.min(edit.head, cell.text.length);
   // While composing, the textarea is ahead of the document on purpose.
   if (!host.composing && input.value !== cell.text) {
     input.value = cell.text;
-    setCaret(input, caret);
+    setInputSelection(input, anchor, head);
   }
   // Take focus only for a newly built element (the widget DOM was rebuilt under
   // an active edit) or a move to another cell — never on a plain re-render,
@@ -654,7 +1029,14 @@ function syncInput(host: CellHost): void {
     const place = () => {
       if (!input.isConnected) return;
       input.focus({ preventScroll: true });
-      setCaret(input, caret);
+      setInputSelection(input, anchor, head);
+      // Sync only after the textarea owns focus. A CodeMirror selection inside
+      // a replaced table block is visually drawn after the block while the
+      // editor itself is focused, causing a one-frame cursor jump.
+      queueMicrotask(() => {
+        if (input.isConnected && host.view.root.activeElement === input)
+          syncCellSelection(host);
+      });
     };
     if (input.isConnected) place();
     else requestAnimationFrame(place);
@@ -693,7 +1075,7 @@ function createSourceButton(host: CellHost): HTMLButtonElement {
 function onCellClick(host: CellHost, event: MouseEvent): void {
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey)
     return;
-  // A press that travelled is a text selection, not a request to edit.
+  // A press that travelled is a rendered-text selection, not a request to edit.
   const press = host.press;
   host.press = null;
   if (
@@ -763,6 +1145,167 @@ function caretFromPoint(
   return null;
 }
 
+function closeTableMenu(host: CellHost): void {
+  const menu = host.menu;
+  if (!menu) return;
+  host.menu = null;
+  menu.cleanup();
+  menu.element.remove();
+}
+
+type TableMenuAction = {
+  label: string;
+  disabled?: boolean;
+  run: () => void;
+};
+
+function tableMenuButton(
+  host: CellHost,
+  action: TableMenuAction,
+): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "cm-md-table-menu-item";
+  button.textContent = action.label;
+  button.disabled = !!action.disabled;
+  button.addEventListener("mousedown", (event) => event.preventDefault());
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (action.disabled) return;
+    closeTableMenu(host);
+    action.run();
+  });
+  return button;
+}
+
+function tableSubmenu(
+  host: CellHost,
+  label: string,
+  actions: TableMenuAction[],
+): HTMLElement {
+  const group = document.createElement("div");
+  group.className = "cm-md-table-menu-group";
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "cm-md-table-menu-item cm-md-table-menu-trigger";
+  trigger.addEventListener("mousedown", (event) => event.preventDefault());
+  const text = document.createElement("span");
+  text.textContent = label;
+  const arrow = document.createElement("span");
+  arrow.className = "cm-md-table-menu-arrow";
+  arrow.textContent = "›";
+  trigger.append(text, arrow);
+  const submenu = document.createElement("div");
+  submenu.className = "cm-md-table-submenu";
+  for (const action of actions)
+    submenu.appendChild(tableMenuButton(host, action));
+  group.append(trigger, submenu);
+  return group;
+}
+
+function openTableMenu(
+  host: CellHost,
+  event: MouseEvent,
+  row: number,
+  col: number,
+): void {
+  closeTableMenu(host);
+  commitInput(host);
+  const menu = document.createElement("div");
+  menu.className = "cm-md-table-menu";
+  menu.setAttribute("role", "menu");
+  menu.addEventListener("contextmenu", (e) => e.preventDefault());
+  menu.append(
+    tableSubmenu(host, "新增行", [
+      {
+        label: "上一行增加行",
+        disabled: row === 0,
+        run: () => insertRowAt(host, row, col, false),
+      },
+      {
+        label: "下一行增加行",
+        run: () => insertRowAt(host, row, col, true),
+      },
+    ]),
+    tableSubmenu(host, "新增列", [
+      {
+        label: "左边增加列",
+        run: () => insertColumnAt(host, row, col, false),
+      },
+      {
+        label: "右边增加列",
+        run: () => insertColumnAt(host, row, col, true),
+      },
+    ]),
+    tableSubmenu(host, "删除", [
+      {
+        label: "删除当前行",
+        disabled: row === 0,
+        run: () => deleteRowAt(host, row, col),
+      },
+      {
+        label: "删除当前列",
+        disabled: host.model.cols <= 1,
+        run: () => deleteColumnAt(host, row, col),
+      },
+    ]),
+  );
+
+  const doc = host.block.ownerDocument;
+  const win = doc.defaultView ?? window;
+  doc.body.appendChild(menu);
+  const width = menu.getBoundingClientRect().width;
+  const height = menu.getBoundingClientRect().height;
+  const submenuWidth = 164;
+  const opensLeft = event.clientX + width + submenuWidth > win.innerWidth - 8;
+  menu.classList.toggle("cm-md-table-menu-left", opensLeft);
+  menu.style.left = `${Math.max(8, Math.min(event.clientX, win.innerWidth - width - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(event.clientY, win.innerHeight - height - 8))}px`;
+
+  const onDown = (e: MouseEvent) => {
+    if (!menu.contains(e.target as Node)) closeTableMenu(host);
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") closeTableMenu(host);
+  };
+  const onBlur = () => closeTableMenu(host);
+  doc.addEventListener("mousedown", onDown, true);
+  win.addEventListener("keydown", onKey);
+  win.addEventListener("blur", onBlur);
+  host.menu = {
+    element: menu,
+    cleanup: () => {
+      doc.removeEventListener("mousedown", onDown, true);
+      win.removeEventListener("keydown", onKey);
+      win.removeEventListener("blur", onBlur);
+    },
+  };
+}
+
+function onTableContextMenu(host: CellHost, event: MouseEvent): void {
+  const target = event.target as HTMLElement;
+  const input = target.closest?.(".cm-md-cell-input") as HTMLTextAreaElement | null;
+  const cell = target.closest?.("th,td");
+  let row: number;
+  let col: number;
+  if (input && host.wrap.contains(input)) {
+    row = Number(input.dataset.row);
+    col = Number(input.dataset.col);
+  } else if (cell instanceof HTMLTableCellElement && host.table.contains(cell)) {
+    row = Number(cell.dataset.row);
+    col = Number(cell.dataset.col);
+  } else {
+    return;
+  }
+  if (!Number.isInteger(row) || !Number.isInteger(col)) return;
+  event.preventDefault();
+  event.stopPropagation();
+  host.press = null;
+  cellHostByView.set(host.view, host);
+  openTableMenu(host, event, row, col);
+}
+
 function createHost(view: EditorView, readOnly: boolean): CellHost {
   const block = document.createElement("div");
   block.className = "cm-md-table-block";
@@ -784,6 +1327,7 @@ function createHost(view: EditorView, readOnly: boolean): CellHost {
     composing: false,
     press: null,
     resize: null,
+    menu: null,
   };
   hosts.set(block, host);
 
@@ -803,8 +1347,29 @@ function createHost(view: EditorView, readOnly: boolean): CellHost {
   if (!readOnly) {
     table.addEventListener("mousedown", (e) => {
       host.press = { x: e.clientX, y: e.clientY };
+      // The table widget sits inside CodeMirror's contenteditable surface. Its
+      // native mousedown default places a temporary caret after the replaced
+      // block; hide that caret until the click handler focuses the cell input.
+      // We deliberately keep the default action so dragging can still select
+      // rendered cell text for toolbar formatting.
+      if (
+        e.button === 0 &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !e.shiftKey
+      ) {
+        host.view.dom.classList.add("cm-md-table-pointer");
+        const clear = () =>
+          setTimeout(
+            () => host.view.dom.classList.remove("cm-md-table-pointer"),
+            0,
+          );
+        window.addEventListener("mouseup", clear, { once: true });
+      }
     });
     table.addEventListener("click", (e) => onCellClick(host, e));
+    wrap.addEventListener("contextmenu", (e) => onTableContextMenu(host, e));
     block.appendChild(createSourceButton(host));
     // The overlay is placed from its cell's box, so follow every reflow of the
     // table (window resize, sidebar toggle, font change).
@@ -915,7 +1480,11 @@ class TableWidget extends WidgetType {
     return true;
   }
   destroy(dom: HTMLElement) {
-    hosts.get(dom)?.resize?.disconnect();
+    const host = hosts.get(dom);
+    if (host) closeTableMenu(host);
+    host?.resize?.disconnect();
+    if (host && cellHostByView.get(host.view) === host)
+      cellHostByView.delete(host.view);
   }
   // The widget runs its own mouse and keyboard handling (cell editing, the
   // source button, selecting rendered text), so the editor has to stay out of

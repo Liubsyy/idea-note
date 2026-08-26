@@ -635,11 +635,22 @@
   position: relative;
   cursor: text;
   overflow-x: auto;
+  /* `overflow-x: auto` otherwise computes overflow-y to `auto` as well. The
+     absolutely-positioned textarea can then extend the scroll area by a
+     fractional pixel; focusing a cell in the last row scrolls the wrapper
+     vertically and makes the input appear one row below its cell. */
+  overflow-y: hidden;
   /* Allow selecting the rendered cell text. Needed for read-only mode in
      WKWebView, which won't select text in non-editable content without this.
      A click that doesn't drag still opens the cell editor (tablePreview.ts). */
   -webkit-user-select: text;
   user-select: text;
+}
+/* A click on a block-replacement widget makes the browser briefly place its
+   native contenteditable caret after the table. Keep that transient caret
+   invisible; the cell textarea has its own explicit accent-coloured caret. */
+.cm-editor.cm-md-table-pointer .cm-content {
+  caret-color: transparent;
 }
 .cm-md-table-source {
   position: absolute;
@@ -733,6 +744,78 @@
 }
 .cm-md-table tbody tr:nth-child(even) td {
   background: var(--bg-elev);
+}
+
+/* Portaled right-click menu for structural table edits. Submenus open toward
+   the viewport's roomier side; tablePreview.ts toggles the left variant near
+   the right edge. */
+.cm-md-table-menu,
+.cm-md-table-submenu {
+  position: fixed;
+  z-index: 80;
+  width: 164px;
+  padding: 4px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elev);
+  box-shadow: 0 8px 24px var(--shadow);
+  color: var(--text);
+  font-family: var(--editor-font-family);
+  font-size: 14px;
+}
+.cm-md-table-menu-group {
+  position: relative;
+}
+.cm-md-table-menu-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 1.35;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cm-md-table-menu-item:hover:not(:disabled),
+.cm-md-table-menu-item:focus-visible:not(:disabled),
+.cm-md-table-menu-group:hover > .cm-md-table-menu-trigger,
+.cm-md-table-menu-group:focus-within > .cm-md-table-menu-trigger {
+  background: var(--hover);
+}
+.cm-md-table-menu-item:focus-visible {
+  outline: none;
+}
+.cm-md-table-menu-item:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+.cm-md-table-menu-arrow {
+  color: var(--text-muted);
+  font-size: 17px;
+  line-height: 1;
+}
+.cm-md-table-submenu {
+  display: none;
+  position: absolute;
+  top: -5px;
+  left: calc(100% - 1px);
+}
+.cm-md-table-menu-group:hover > .cm-md-table-submenu,
+.cm-md-table-menu-group:focus-within > .cm-md-table-submenu {
+  display: block;
+}
+.cm-md-table-menu-left .cm-md-table-submenu {
+  right: calc(100% - 1px);
+  left: auto;
+}
+.cm-md-table-menu-left .cm-md-table-menu-arrow {
+  transform: rotate(180deg);
 }
 
 /* Embedded raw HTML (rendered widget from htmlPreview.ts) */
