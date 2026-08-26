@@ -233,9 +233,9 @@ const SearchResults = memo(function SearchResults() {
     const idx = matched ? docLine.text.indexOf(matched) : -1;
     const from = idx >= 0 ? docLine.from + idx : docLine.from;
     const to = idx >= 0 ? from + matched.length : docLine.from;
-    // Unlike the outline's scroll-only jump, search selects the match: the
-    // view is explicitly focused, so live preview reveals the line's source
-    // the same way a manual click there would.
+    // Unlike the outline's scroll-only jump, search selects the match. Normal
+    // text uses CodeMirror's selection paint; block widgets such as rendered
+    // tables mirror this document selection inside their own DOM.
     view.focus();
     view.dispatch({
       selection: EditorSelection.range(from, to),

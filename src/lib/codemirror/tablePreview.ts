@@ -17,6 +17,7 @@
 
 import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import { redo, undo } from "@codemirror/commands";
+import { getSearchQuery, searchPanelOpen } from "@codemirror/search";
 import {
   EditorState,
   Range,
@@ -50,6 +51,15 @@ type TableModel = {
   align: Align[];
   /** Column count, taken from the header row. */
   cols: number;
+};
+
+/** A search/selection highlight mapped from document offsets into one cell. */
+type CellHighlight = {
+  row: number;
+  col: number;
+  from: number;
+  to: number;
+  selected: boolean;
 };
 
 /** Index of the `---|---` row, which has no rendered cells to edit. */
@@ -141,6 +151,82 @@ function parseTable(source: string, base: number): TableModel {
   };
 }
 
+/** Map active editor-search matches and non-empty selections into table cells. */
+function collectCellHighlights(
+  state: EditorState,
+  model: TableModel,
+  tableFrom: number,
+  tableTo: number,
+): CellHighlight[] {
+  const ranges = new Map<
+    string,
+    { from: number; to: number; selected: boolean }
+  >();
+  const selections = state.selection.ranges;
+  const add = (from: number, to: number, selected: boolean) => {
+    if (to <= from) return;
+    const key = `${from}:${to}`;
+    const previous = ranges.get(key);
+    ranges.set(key, { from, to, selected: selected || !!previous?.selected });
+  };
+
+  // Match CodeMirror's own behaviour: query highlights are shown only while
+  // the find panel is open. The selected match is still retained below as a
+  // normal selection when the panel closes.
+  const query = getSearchQuery(state);
+  if (searchPanelOpen(state) && query.valid) {
+    const cursor = query.getCursor(state, tableFrom, tableTo);
+    for (let item = cursor.next(); !item.done; item = cursor.next()) {
+      const { from, to } = item.value;
+      add(
+        from,
+        to,
+        selections.some((range) => range.from === from && range.to === to),
+      );
+    }
+  }
+  for (const range of selections) add(range.from, range.to, true);
+
+  const result: CellHighlight[] = [];
+  for (const range of ranges.values()) {
+    for (let row = 0; row < model.rows.length; row++) {
+      if (row === DELIM_ROW) continue;
+      for (let col = 0; col < model.rows[row].length; col++) {
+        const cell = model.rows[row][col];
+        if (range.from < cell.from || range.to > cell.to) continue;
+        result.push({
+          row,
+          col,
+          from: range.from - cell.from,
+          to: range.to - cell.from,
+          selected: range.selected,
+        });
+      }
+    }
+  }
+  return result.sort(
+    (a, b) =>
+      a.row - b.row || a.col - b.col || a.from - b.from || a.to - b.to,
+  );
+}
+
+function sameHighlights(
+  a: readonly CellHighlight[],
+  b: readonly CellHighlight[],
+): boolean {
+  return (
+    a.length === b.length &&
+    a.every(
+      (item, i) =>
+        item.row === b[i].row &&
+        item.col === b[i].col &&
+        item.from === b[i].from &&
+        item.to === b[i].to &&
+        item.selected === b[i].selected,
+    )
+  );
+}
+
 /**
  * Append `count` empty cells to a row line. A row that doesn't end in `|` is
  * closed first, because GFM (and parseRow) drop one trailing pipe as the row's
@@ -178,9 +264,37 @@ function sanitizeCellInput(
   return { text, caret: mapped };
 }
 
-/** Render a cell's inline markdown + HTML into `el` (sanitized). */
-function renderCell(text: string, el: HTMLElement): void {
-  el.innerHTML = sanitizeHtml(renderInlineHtml(text));
+/**
+ * Render a cell's inline markdown + HTML into `el` (sanitized), inserting the
+ * same classes used by CodeMirror's search extension around visible matches.
+ * The markers are added before inline Markdown is rendered, so matches inside
+ * bold, links, code, etc. keep their normal preview formatting.
+ */
+function renderCell(
+  text: string,
+  el: HTMLElement,
+  highlights: readonly CellHighlight[] = [],
+): void {
+  let marked = text;
+  for (let i = highlights.length - 1; i >= 0; i--) {
+    const { from, to } = highlights[i];
+    if (from < 0 || to <= from || to > text.length) continue;
+    const start = `\uE000${i}\uE001`;
+    const end = `\uE002${i}\uE003`;
+    marked = `${marked.slice(0, from)}${start}${marked.slice(from, to)}${end}${marked.slice(to)}`;
+  }
+  let html = renderInlineHtml(marked);
+  for (let i = 0; i < highlights.length; i++) {
+    const cls = highlights[i].selected
+      ? "cm-searchMatch cm-searchMatch-selected"
+      : "cm-searchMatch";
+    html = html
+      .split(`\uE000${i}\uE001`)
+      .join(`<span class="${cls}">`)
+      .split(`\uE002${i}\uE003`)
+      .join("</span>");
+  }
+  el.innerHTML = sanitizeHtml(html);
 }
 
 /**
@@ -1417,6 +1531,7 @@ function render(
   host: CellHost,
   model: TableModel,
   edit: CellEdit | null,
+  highlights: readonly CellHighlight[],
 ): void {
   host.model = model;
   host.edit = edit;
@@ -1429,17 +1544,29 @@ function render(
       const el = cellElement(host.table, row, col);
       if (!el) continue;
       const text = model.rows[row][col]?.text ?? "";
+      const cellHighlights = highlights.filter(
+        (highlight) => highlight.row === row && highlight.col === col,
+      );
+      const highlightKey = cellHighlights
+        .map(({ from, to, selected }) => `${from}:${to}:${selected ? 1 : 0}`)
+        .join(",");
       const editing = !!edit && edit.row === row && edit.col === col;
       const wasEditing = el.classList.contains("cm-md-cell-editing");
       // data-text records what the cell was last rendered from, so a keystroke
       // only re-renders the one cell that changed.
-      if (!reuse || el.dataset.text !== text || editing !== wasEditing) {
+      if (
+        !reuse ||
+        el.dataset.text !== text ||
+        el.dataset.highlights !== highlightKey ||
+        editing !== wasEditing
+      ) {
         el.classList.toggle("cm-md-cell-editing", editing);
         // The edited cell shows its raw source, painted transparent: it is what
         // keeps the column sized to the text the textarea on top is showing.
         if (editing) el.textContent = text || " ";
-        else renderCell(text, el);
+        else renderCell(text, el, cellHighlights);
         el.dataset.text = text;
+        el.dataset.highlights = highlightKey;
       }
       el.style.textAlign = model.align[col] || "";
       el.classList.toggle("cm-md-cell-wrap", wraps[col]);
@@ -1454,6 +1581,7 @@ class TableWidget extends WidgetType {
     readonly from: number,
     readonly readOnly: boolean,
     readonly edit: CellEdit | null,
+    readonly highlights: readonly CellHighlight[],
   ) {
     super();
   }
@@ -1463,12 +1591,13 @@ class TableWidget extends WidgetType {
       o.from === this.from &&
       o.readOnly === this.readOnly &&
       o.edit?.row === this.edit?.row &&
-      o.edit?.col === this.edit?.col
+      o.edit?.col === this.edit?.col &&
+      sameHighlights(o.highlights, this.highlights)
     );
   }
   toDOM(view: EditorView) {
     const host = createHost(view, this.readOnly);
-    render(host, parseTable(this.source, this.from), this.edit);
+    render(host, parseTable(this.source, this.from), this.edit, this.highlights);
     return host.block;
   }
   // Reuse the DOM instead of rebuilding it: the cell editor lives in there and
@@ -1476,7 +1605,7 @@ class TableWidget extends WidgetType {
   updateDOM(dom: HTMLElement, _view: EditorView, prev: TableWidget) {
     const host = hosts.get(dom);
     if (!host || prev.readOnly !== this.readOnly) return false;
-    render(host, parseTable(this.source, this.from), this.edit);
+    render(host, parseTable(this.source, this.from), this.edit, this.highlights);
     return true;
   }
   destroy(dom: HTMLElement) {
@@ -1520,9 +1649,17 @@ function buildTables(state: EditorState): DecorationSet {
         sourceTable.to === to;
       if (explicitlyRevealed) return false;
       const source = state.doc.sliceString(from, to);
+      const model = parseTable(source, from);
+      const highlights = collectCellHighlights(state, model, from, to);
       ranges.push(
         Decoration.replace({
-          widget: new TableWidget(source, from, state.readOnly, edit),
+          widget: new TableWidget(
+            source,
+            from,
+            state.readOnly,
+            edit,
+            highlights,
+          ),
           block: true,
         }).range(from, to),
       );
@@ -1535,9 +1672,13 @@ function buildTables(state: EditorState): DecorationSet {
 const tableDecorations = StateField.define<DecorationSet>({
   create: (state) => buildTables(state),
   update(deco, tr) {
+    const searchChanged =
+      searchPanelOpen(tr.startState) !== searchPanelOpen(tr.state) ||
+      !getSearchQuery(tr.startState).eq(getSearchQuery(tr.state));
     if (
       tr.docChanged ||
       tr.selection ||
+      searchChanged ||
       tr.startState.readOnly !== tr.state.readOnly ||
       tr.effects.some(
         (e) =>
