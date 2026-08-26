@@ -729,9 +729,9 @@ export interface AttachmentConfig {
   attachmentDir: string;
 }
 const DEFAULT_ATTACHMENT_CONFIG: AttachmentConfig = {
-  imageLocation: "relative",
+  imageLocation: "project",
   imageDir: IMAGE_DIR_DEFAULT,
-  attachmentLocation: "relative",
+  attachmentLocation: "project",
   attachmentDir: ATTACHMENT_DIR_DEFAULT,
 };
 
