@@ -65,6 +65,21 @@ export function highlightColorCss(color: HighlightColor): string {
     : HIGHLIGHT_COLOR_CSS[color as HighlightPresetColor];
 }
 
+/**
+ * Return an old-WebView-safe translucent background colour. Tauri uses the
+ * system webview, and older macOS/WebKit releases don't support color-mix().
+ */
+export function highlightBackgroundCss(
+  color: HighlightColor,
+  alpha = 0.18,
+): string {
+  const hex = highlightColorCss(color).slice(1);
+  const red = Number.parseInt(hex.slice(0, 2), 16);
+  const green = Number.parseInt(hex.slice(2, 4), 16);
+  const blue = Number.parseInt(hex.slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+}
+
 export function isCustomHighlightColor(
   color: HighlightColor,
 ): color is `#${string}` {

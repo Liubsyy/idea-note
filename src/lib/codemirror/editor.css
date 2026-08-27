@@ -260,11 +260,12 @@
    cursor movement and undo history keep their normal behaviour. */
 .cm-content .cm-md-highlight-block {
   --md-highlight-color: #3b82f6;
+  --md-highlight-background: rgba(59, 130, 246, 0.18);
   position: relative;
   padding-left: 1em;
   padding-right: 1em;
   color: var(--text);
-  background: color-mix(in srgb, var(--md-highlight-color) 18%, transparent);
+  background: var(--md-highlight-background);
 }
 .cm-content .cm-md-highlight-first {
   padding-top: 0.5em;

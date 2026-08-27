@@ -215,8 +215,9 @@
 }
 #print-root .print-doc blockquote.print-highlight-custom {
   --print-highlight-color: #e6b94a;
+  --print-highlight-background: rgba(230, 185, 74, 0.14);
   color: #1f2329;
-  background: color-mix(in srgb, var(--print-highlight-color) 14%, white);
+  background: var(--print-highlight-background);
 }
 #print-root .print-doc blockquote.print-highlight-block > :first-child {
   margin-top: 0;

@@ -15,6 +15,7 @@ import katex from "katex";
 import { toDisplaySrc } from "../imagePath";
 import { appendStyle, imageSizeStyle, parseImageDest } from "../imageSyntax";
 import {
+  highlightBackgroundCss,
   isCustomHighlightColor,
   highlightTagAtStart,
 } from "../highlightBlock";
@@ -270,6 +271,10 @@ function applyHighlightBlocks(root: DocumentFragment) {
     if (isCustomHighlightColor(marker.color)) {
       blockquote.classList.add("print-highlight-custom");
       blockquote.style.setProperty("--print-highlight-color", marker.color);
+      blockquote.style.setProperty(
+        "--print-highlight-background",
+        highlightBackgroundCss(marker.color, 0.14),
+      );
     } else {
       blockquote.classList.add(`print-highlight-${marker.color}`);
     }

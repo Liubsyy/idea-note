@@ -34,6 +34,7 @@ import { useAppStore } from "../../store/useAppStore";
 import { MathWidget } from "./math";
 import { MERMAID_FENCE } from "./diagram";
 import {
+  highlightBackgroundCss,
   highlightColorCss,
   highlightColorFromLine,
 } from "../highlightBlock";
@@ -411,7 +412,10 @@ function buildDecorations(view: EditorView): DecorationSet {
                   Decoration.line({
                     class: `cm-md-highlight-block ${edgeClasses}`,
                     attributes: {
-                      style: `--md-highlight-color:${highlightColorCss(highlightColor)}`,
+                      style: [
+                        `--md-highlight-color:${highlightColorCss(highlightColor)}`,
+                        `--md-highlight-background:${highlightBackgroundCss(highlightColor)}`,
+                      ].join(";"),
                     },
                   }).range(line.from),
                 );
