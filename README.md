@@ -157,8 +157,10 @@ npm install
 #### 2. 启动桌面应用调试
 
 ```bash
-npm run tauri dev
+npm run tauri:dev
 ```
+
+调试版使用独立的应用标识 `com.liubs.idea-note.dev`，可与正式版同时运行，并且不共用应用数据目录。
 
 仅前端预览可用 `npm run dev`（浏览器中文件读写等原生能力不可用）。
 
@@ -172,7 +174,7 @@ npm run tauri dev
 | --- | --- |
 | `npm install` | 安装前端依赖 |
 | `npm run dev` | 启动前端开发服务器 |
-| `npm run tauri dev` | 启动桌面应用开发模式 |
+| `npm run tauri:dev` | 以独立应用标识启动桌面应用开发模式 |
 | `npm run preview` | 预览前端构建产物 |
 | `npm run mock:ai` | 启动本地固定问答 AI 测试服务 |
 | `npm run test:mock-ai` | 测试本地 AI 测试服务 |

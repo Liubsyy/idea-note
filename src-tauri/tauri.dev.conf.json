@@ -1,0 +1,5 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Idea Note Dev",
+  "identifier": "com.liubs.idea-note.dev"
+}

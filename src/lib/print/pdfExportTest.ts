@@ -1,6 +1,6 @@
 // Dev-only automated test for the native PDF export pipeline.
 //
-// `VITE_PDF_EXPORT_TEST=/abs/out.pdf npm run tauri dev` exports a fixture
+// `VITE_PDF_EXPORT_TEST=/abs/out.pdf npm run tauri:dev` exports a fixture
 // document (Chinese text, headings, table, code, KaTeX, mermaid, task list,
 // enough content to paginate) shortly after startup, then writes
 // `<out.pdf>.result.json` with {ok, error} so an external harness can assert

@@ -7,7 +7,7 @@
       "type": "node-terminal",
       "request": "launch",
       "name": "Tauri Dev (按 F5 启动)",
-      "command": "npm run tauri dev",
+      "command": "npm run tauri:dev",
       "cwd": "${workspaceFolder}"
     },
     {
@@ -21,7 +21,10 @@
           "build",
           "--manifest-path=./src-tauri/Cargo.toml",
           "--no-default-features"
-        ]
+        ],
+        "env": {
+          "TAURI_CONFIG": "{\"productName\":\"Idea Note Dev\",\"identifier\":\"com.liubs.idea-note.dev\"}"
+        }
       },
       "preLaunchTask": "ui:dev"
     },

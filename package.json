@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "mock:ai": "node mock-ai/server.mjs",
     "test:mock-ai": "node --test mock-ai/server.test.mjs",
+    "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
     "tauri": "tauri"
   },
   "dependencies": {

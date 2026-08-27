@@ -522,9 +522,9 @@ export function Sidebar() {
             className="truncate text-xs font-medium"
             style={{ color: "var(--text-soft)", letterSpacing: "0.02em" }}
           >
-            Idea Note
+            {import.meta.env.DEV ? "Idea Note Dev" : "Idea Note"}
           </span>
-          {appVersion && (
+          {!import.meta.env.DEV && appVersion && (
             <span
               className="shrink-0 text-[11px]"
               style={{ color: "var(--text-muted)", opacity: 0.75 }}
