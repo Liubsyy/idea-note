@@ -23,6 +23,7 @@ import {
   Workflow,
   ChevronRight,
   Highlighter,
+  StickyNote,
   Pipette,
   Ban,
 } from "lucide-react";
@@ -46,6 +47,11 @@ import {
 } from "../../lib/codemirror/markdownActions";
 import { useAppStore } from "../../store/useAppStore";
 import { ColorPicker } from "./ColorPicker";
+import {
+  highlightColorCss,
+  parseHighlightColor,
+  type HighlightColor,
+} from "../../lib/highlightBlock";
 
 // GFM cells support inline content only. Running a block command such as a
 // heading or list against a cell would rewrite the table row's prefix and break
@@ -417,6 +423,18 @@ const BG_COLORS = [
   "#fca5a5", "#fdba74", "#fde047", "#86efac", "#67e8f9", "#93c5fd", "#c4b5fd", "#f9a8d4",
 ];
 
+const HIGHLIGHT_OPTIONS: {
+  color: HighlightColor;
+  label: string;
+  swatch: string;
+}[] = [
+  { color: "blue", label: "蓝色", swatch: "#3b82f6" },
+  { color: "yellow", label: "黄色", swatch: "#eab308" },
+  { color: "green", label: "绿色", swatch: "#22c55e" },
+  { color: "red", label: "红色", swatch: "#ef4444" },
+  { color: "purple", label: "紫色", swatch: "#a855f7" },
+];
+
 /**
  * A colour tool: a split button whose icon half reapplies `last` and whose
  * chevron opens the menu. The menu shows the palette, and swaps to the custom
@@ -507,6 +525,101 @@ function ColorDropdown({
   );
 }
 
+/** Highlight-block colour picker with named shortcuts, a broad palette and a
+ * custom panel. Every non-preset choice is stored as a validated hex value. */
+function HighlightBlockDropdown({
+  current,
+  iconSize,
+  primaryTitle,
+  onPrimary,
+  onPick,
+}: {
+  current: HighlightColor | null;
+  iconSize: number;
+  primaryTitle: string;
+  onPrimary: () => void;
+  onPick: (color: HighlightColor) => void;
+}) {
+  const [custom, setCustom] = useState(false);
+  const defaultColor = highlightColorCss("blue");
+  const pickerColor = highlightColorCss(current ?? "blue");
+
+  return (
+    <Dropdown
+      title="高亮块颜色"
+      primaryTitle={primaryTitle}
+      active={current !== null}
+      menuWidth={212}
+      onPrimary={onPrimary}
+      onClose={() => setCustom(false)}
+      trigger={
+        <span className="flex flex-col items-center">
+          <StickyNote size={iconSize} />
+          <span
+            className="mt-px h-[3px] w-4 rounded-sm"
+            style={{ background: defaultColor }}
+          />
+        </span>
+      }
+      render={(close) =>
+        custom ? (
+          <ColorPicker
+            initial={pickerColor}
+            onBack={() => setCustom(false)}
+            onSubmit={(color) => {
+              const parsed = parseHighlightColor(color);
+              if (parsed) onPick(parsed);
+              close();
+            }}
+          />
+        ) : (
+          <>
+            {HIGHLIGHT_OPTIONS.map((item) => (
+              <MenuItem
+                key={item.color}
+                icon={
+                  <span
+                    className="h-3.5 w-3.5 rounded-sm"
+                    style={{ background: item.swatch }}
+                  />
+                }
+                label={item.label}
+                active={current === item.color}
+                onClick={() => {
+                  onPick(item.color);
+                  close();
+                }}
+              />
+            ))}
+            <div className="my-1 h-px" style={{ background: "var(--border)" }} />
+            <div
+              className="px-2 pt-1 text-xs"
+              style={{ color: "var(--text-muted)" }}
+            >
+              更多颜色
+            </div>
+            <Swatches
+              colors={BG_COLORS}
+              current={current}
+              onPick={(color) => {
+                const parsed = parseHighlightColor(color);
+                if (parsed) onPick(parsed);
+                close();
+              }}
+            />
+            <div className="my-1 h-px" style={{ background: "var(--border)" }} />
+            <MenuItem
+              icon={<Pipette size={15} />}
+              label="自定义…"
+              onClick={() => setCustom(true)}
+            />
+          </>
+        )
+      }
+    />
+  );
+}
+
 export function Toolbar() {
   const active = useAppStore((s) => s.activeFormats);
   const editorKeybindings = useAppStore((s) => s.editorKeybindings);
@@ -559,6 +672,17 @@ export function Toolbar() {
   };
   const shortcut = (label: string, id: string) =>
     commandTitle(label, id, editorKeybindings);
+  const applyHighlightColor = (color: HighlightColor) => {
+    const v = getActiveView();
+    if (!v || v.state.readOnly) return;
+    if (hasActiveTableCell(v)) {
+      useAppStore
+        .getState()
+        .showToast("表格单元格仅支持行内格式", "error");
+      return;
+    }
+    md.highlightBlockColor(v, color);
+  };
 
   return (
     <div className="flex items-center gap-0.5 overflow-x-auto px-2">
@@ -696,6 +820,13 @@ export function Toolbar() {
       >
         <Quote size={iconSize} />
       </Btn>
+      <HighlightBlockDropdown
+        primaryTitle={shortcut("高亮块", "markdownHighlightBlock")}
+        current={active.highlightColor}
+        iconSize={iconSize}
+        onPrimary={() => runCommand("markdownHighlightBlock")}
+        onPick={applyHighlightColor}
+      />
       <Btn
         title={shortcut("代码块", "markdownCodeBlock")}
         active={active.codeBlock}

@@ -70,11 +70,11 @@ function TreeRow({
   const openFolder = useAppStore((s) => s.openFolder);
   const compactSidebar = useAppStore((s) => s.compactSidebar);
   const drag = useTreeDrag();
-  // Expand state lives in the store (keyed by path) so it persists across
-  // sidebar-mode switches; default to "top level open" when never toggled.
+  // Expand state lives in the store (keyed by path) and is persisted per
+  // workspace. Folders that have never been opened default to collapsed.
   const storedOpen = useAppStore((s) => s.expanded[node.path]);
   const setExpanded = useAppStore((s) => s.setExpanded);
-  const open = storedOpen ?? depth < 1;
+  const open = storedOpen ?? false;
 
   // The multi-selection set takes over highlighting once it's non-empty.
   const isActive = selectedPaths.length

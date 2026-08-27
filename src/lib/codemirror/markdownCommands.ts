@@ -19,6 +19,11 @@ import {
 } from "../imageSyntax";
 import { imageAt } from "./imageAt";
 import {
+  highlightColorFromLine,
+  highlightMarker,
+  type HighlightColor,
+} from "../highlightBlock";
+import {
   findSpanAt,
   findSpansIn,
   serializeStyle,
@@ -273,6 +278,133 @@ const QUOTE_RE = /^>\s+/;
 const BULLET_RE = /^[-*+]\s+/;
 const ORDERED_RE = /^\d+\.\s+/;
 const PREFIX_RE = /^(#{1,6}|>|[-*+]|\d+\.)\s+/;
+const QUOTED_LINE_RE = /^\s*>/;
+
+/** Find the highlight block containing `pos`, if any. */
+function highlightBlockAt(state: EditorState, pos: number) {
+  const lineNumber = state.doc.lineAt(pos).number;
+  let first = lineNumber;
+  while (first > 1 && QUOTED_LINE_RE.test(state.doc.line(first - 1).text))
+    first--;
+
+  const color = highlightColorFromLine(state.doc.line(first).text);
+  if (!color) return null;
+
+  let last = first;
+  while (
+    last < state.doc.lines &&
+    QUOTED_LINE_RE.test(state.doc.line(last + 1).text)
+  )
+    last++;
+
+  return lineNumber <= last ? { first, last, color } : null;
+}
+
+/**
+ * Insert a highlight block, wrap the selected lines, or unwrap the highlight
+ * block under the cursor. The source remains an ordinary Markdown blockquote,
+ * so other editors still show readable content even without this extension.
+ */
+function editHighlightBlock(
+  view: EditorView,
+  color: HighlightColor,
+  toggleCurrent: boolean,
+) {
+  const { state } = view;
+  const range = state.selection.main;
+  const current = highlightBlockAt(state, range.head);
+
+  if (current) {
+    const marker = state.doc.line(current.first);
+    if (!toggleCurrent) {
+      const insert = highlightMarker(color);
+      const changeSet = state.changes({
+        from: marker.from,
+        to: marker.to,
+        insert,
+      });
+      view.dispatch({
+        changes: changeSet,
+        selection: state.selection.map(changeSet),
+        userEvent: "input",
+      });
+      view.focus();
+      return;
+    }
+    const changes: { from: number; to?: number; insert?: string }[] = [];
+    if (marker.to < state.doc.length) {
+      changes.push({ from: marker.from, to: marker.to + 1 });
+    } else {
+      changes.push({ from: marker.from, to: marker.to });
+    }
+    let contentStart = current.first + 1;
+    if (contentStart <= current.last) {
+      const separator = state.doc.line(contentStart);
+      if (/^\s*(?:>\s*)+$/.test(separator.text)) {
+        // New highlight blocks keep the extension marker in its own Markdown
+        // paragraph. Remove that structural separator together with the marker
+        // when unwrapping so it does not turn into a leading blank line.
+        changes.push({
+          from: separator.from,
+          to:
+            separator.to < state.doc.length
+              ? separator.to + 1
+              : separator.to,
+        });
+        contentStart++;
+      }
+    }
+    for (let n = contentStart; n <= current.last; n++) {
+      const line = state.doc.line(n);
+      const prefix = line.text.match(/^(\s*)>\s?/);
+      if (prefix)
+        changes.push({
+          from: line.from + prefix[1].length,
+          to: line.from + prefix[0].length,
+        });
+    }
+    const changeSet = state.changes(changes);
+    view.dispatch({
+      changes: changeSet,
+      selection: state.selection.map(changeSet),
+      userEvent: "input",
+    });
+    view.focus();
+    return;
+  }
+
+  if (range.empty) {
+    insertBlock(
+      view,
+      `${highlightMarker(color)}\n>\n> 高亮内容`,
+      "高亮内容",
+    );
+    return;
+  }
+
+  const startLine = state.doc.lineAt(range.from).number;
+  const rawEndLine = state.doc.lineAt(range.to);
+  const endLine =
+    range.to > range.from && range.to === rawEndLine.from
+      ? rawEndLine.number - 1
+      : rawEndLine.number;
+  const changes = [];
+  for (let n = startLine; n <= endLine; n++) {
+    const line = state.doc.line(n);
+    changes.push({
+      from: line.from,
+      insert:
+        n === startLine ? `${highlightMarker(color)}\n>\n> ` : "> ",
+    });
+  }
+  const changeSet = state.changes(changes);
+  view.dispatch({
+    changes: changeSet,
+    selection: state.selection.map(changeSet, 1),
+    userEvent: "input",
+  });
+  view.focus();
+}
 
 export const md = {
   bold: (v: EditorView) => toggleInline(v, "**"),
@@ -289,6 +421,9 @@ export const md = {
     setLinePrefix(v, "#".repeat(level) + " ", PREFIX_RE),
   paragraph: (v: EditorView) => setLinePrefix(v, "", PREFIX_RE),
   quote: (v: EditorView) => setLinePrefix(v, "> ", QUOTE_RE),
+  highlightBlock: (v: EditorView) => editHighlightBlock(v, "blue", true),
+  highlightBlockColor: (v: EditorView, color: HighlightColor) =>
+    editHighlightBlock(v, color, false),
   bulletList: (v: EditorView) => setLinePrefix(v, "- ", BULLET_RE),
   orderedList: (v: EditorView) => setLinePrefix(v, "1. ", ORDERED_RE),
 

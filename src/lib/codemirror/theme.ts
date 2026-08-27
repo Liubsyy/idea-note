@@ -91,6 +91,23 @@ export const cmPlainTextTheme = EditorView.theme({
   },
 });
 
+// Line-number gutter for markdown source mode (Settings › 编辑器 › 显示行号).
+// cmTheme keeps the prose layout centered, so the gutter sits at the scroller's
+// left edge and the content's own side padding forms the gap to the text —
+// only the numbers themselves need styling here. No border or panel fill: a
+// gutter panel 40px+ away from the text would read as a stray vertical rule.
+export const cmSourceGutterTheme = EditorView.theme({
+  ".cm-lineNumbers": { minWidth: "2.5em" },
+  ".cm-lineNumbers .cm-gutterElement": {
+    padding: "0 6px 0 12px",
+    textAlign: "right",
+    fontSize: "0.85em",
+    fontVariantNumeric: "tabular-nums",
+    color: "var(--text-muted)",
+    opacity: "0.5",
+  },
+});
+
 // Compact read-only editor styling used inside the history diff. It borrows
 // the app colors and code/prose font choices without the main editor's
 // centered, document-like padding.

@@ -19,6 +19,13 @@ import {
   WidgetType,
 } from "@codemirror/view";
 
+import {
+  blockHeightKey,
+  estimatedBlockHeight,
+  trackBlockHeight,
+  untrackBlockHeight,
+} from "./blockHeight";
+
 const svgCache = new Map<string, string>();
 let idCounter = 0;
 const PAN_STEP = 48;
@@ -182,6 +189,12 @@ class MermaidWidget extends WidgetType {
   eq(o: MermaidWidget) {
     return o.code === this.code && o.theme === this.theme;
   }
+  // Stand-in height until CodeMirror measures the real DOM; see blockHeight.ts.
+  // It also covers the gap before `mermaid.render` resolves, where the widget
+  // is still an empty container.
+  get estimatedHeight() {
+    return estimatedBlockHeight(blockHeightKey("mermaid", this.from));
+  }
   toDOM(view: EditorView) {
     const wrap = document.createElement("div");
     wrap.className = "cm-md-mermaid";
@@ -200,7 +213,11 @@ class MermaidWidget extends WidgetType {
     const cached = svgCache.get(cacheKey(this.theme, this.code));
     if (cached) svgHost.innerHTML = cached;
     else void renderDiagram(view, this.code, this.theme, svgHost, wrap);
+    trackBlockHeight(wrap, () => blockHeightKey("mermaid", this.from));
     return wrap;
+  }
+  destroy(dom: HTMLElement) {
+    untrackBlockHeight(dom);
   }
   ignoreEvent() {
     return false;

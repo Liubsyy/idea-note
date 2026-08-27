@@ -137,11 +137,36 @@ function App() {
   const [isDragging, setIsDragging] = useState(false);
   const dragging = useRef(false);
 
-  // Global Ctrl/Cmd+S to save; Ctrl/Cmd+F (⌥ for replace) opens editor search
-  // even when focus is elsewhere — except other text inputs (chat, terminal),
-  // which keep their own keys. Ctrl/Cmd+Shift+F opens the sidebar global search.
+  // Global Ctrl/Cmd+N creates an untitled draft and Ctrl/Cmd+S saves;
+  // Ctrl/Cmd+F (⌥ for replace) opens editor search even when focus is elsewhere
+  // — except other text inputs (chat, terminal), which keep their own keys.
+  // Ctrl/Cmd+Shift+F opens the sidebar global search.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.altKey &&
+        !e.shiftKey &&
+        e.key.toLowerCase() === "n"
+      ) {
+        e.preventDefault();
+        const state = useAppStore.getState();
+        const view = getActiveView();
+        const target = e.target as HTMLElement | null;
+        const inOtherInput =
+          !!target &&
+          !view?.dom.contains(target) &&
+          (target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.isContentEditable);
+        const modalOpen =
+          !!state.prompt ||
+          !!state.confirm ||
+          !!state.gitCredentialPrompt ||
+          !!state.history;
+        if (!inOtherInput && !modalOpen) void state.newDraft();
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
         save();

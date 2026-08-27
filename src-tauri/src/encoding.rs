@@ -66,6 +66,21 @@ pub fn decode_text(bytes: Vec<u8>) -> Option<String> {
     decode(bytes).ok().map(|(text, _)| text)
 }
 
+/// Decode the head of a file (a fixed-size prefix read, not the whole file).
+/// A multibyte character cut at the read boundary would fail the strict UTF-8
+/// check and send a perfectly normal UTF-8 file down the legacy-detection
+/// path, turning the whole excerpt into mojibake; drop that dangling sequence
+/// first. `error_len() == None` is exactly "input ended mid-character", so
+/// real encoding errors still fall through to detection.
+pub fn decode_head(mut bytes: Vec<u8>) -> Option<String> {
+    if let Err(err) = std::str::from_utf8(&bytes) {
+        if err.error_len().is_none() {
+            bytes.truncate(err.valid_up_to());
+        }
+    }
+    decode_text(bytes)
+}
+
 /// Encode `content` back into `enc`. The second value is false when a legacy
 /// codepage couldn't represent every character — the bytes are then UTF-8,
 /// trading a one-time encoding flip for not corrupting the user's text.
@@ -194,6 +209,24 @@ mod tests {
         assert_eq!(text, "中文 note");
         assert_eq!(enc, FileEncoding::Utf16Le);
         assert_eq!(encode(&text, enc), (on_disk, true));
+    }
+
+    #[test]
+    fn head_cut_mid_character_stays_utf8() {
+        let text = "本文介绍灵感笔记的 AI 助手是如何工作的。".repeat(4);
+        let bytes = text.as_bytes();
+        // Cut one byte into the last character of the prefix.
+        let cut = bytes.len() - 1;
+        let head = decode_head(bytes[..cut].to_vec()).unwrap();
+        assert!(head.starts_with("本文介绍灵感笔记"));
+        assert!(!head.contains('\u{fffd}'));
+    }
+
+    #[test]
+    fn head_still_detects_legacy_encoding() {
+        let (gbk_bytes, _, _) = GBK.encode(GBK_SAMPLE);
+        let head = decode_head(gbk_bytes.to_vec()).unwrap();
+        assert!(head.starts_with("这是一段"));
     }
 
     #[test]

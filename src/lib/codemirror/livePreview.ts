@@ -33,6 +33,10 @@ import { copyText } from "../clipboard";
 import { useAppStore } from "../../store/useAppStore";
 import { MathWidget } from "./math";
 import { MERMAID_FENCE } from "./diagram";
+import {
+  highlightColorCss,
+  highlightColorFromLine,
+} from "../highlightBlock";
 
 /** Lines (1-based) the selection intersects — these reveal their source. */
 function activeLineSet(state: EditorState): Set<number> {
@@ -369,6 +373,51 @@ function buildDecorations(view: EditorView): DecorationSet {
             if (node.node.parent?.name === "Blockquote") return;
             const a = state.doc.lineAt(nFrom).number;
             const b = state.doc.lineAt(nTo).number;
+            const highlightColor = highlightColorFromLine(
+              state.doc.line(a).text,
+            );
+            if (highlightColor) {
+              const marker = state.doc.line(a);
+              if (!active.has(a))
+                ranges.push(
+                  Decoration.line({ class: "cm-md-hidden" }).range(marker.from),
+                );
+              let contentStart = a + 1;
+              if (contentStart <= b) {
+                const separator = state.doc.line(contentStart);
+                if (/^\s*(?:>\s*)+$/.test(separator.text)) {
+                  // New blocks put a quoted blank line after the extension
+                  // marker for standards-friendly fallback rendering. It is
+                  // structural, like the marker, so hide it unless edited and
+                  // start the visual card at the actual body line.
+                  if (!active.has(contentStart))
+                    ranges.push(
+                      Decoration.line({ class: "cm-md-hidden" }).range(
+                        separator.from,
+                      ),
+                    );
+                  contentStart++;
+                }
+              }
+              for (let n = contentStart; n <= b; n++) {
+                const line = state.doc.line(n);
+                const edgeClasses = [
+                  n === contentStart ? "cm-md-highlight-first" : "",
+                  n === b ? "cm-md-highlight-last" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ");
+                ranges.push(
+                  Decoration.line({
+                    class: `cm-md-highlight-block ${edgeClasses}`,
+                    attributes: {
+                      style: `--md-highlight-color:${highlightColorCss(highlightColor)}`,
+                    },
+                  }).range(line.from),
+                );
+              }
+              return;
+            }
             for (let n = a; n <= b; n++) {
               const line = state.doc.line(n);
               const m = line.text.match(/^(?:\s*>)+/);
@@ -689,7 +738,13 @@ function buildDecorations(view: EditorView): DecorationSet {
     const last = state.doc.lineAt(to).number;
     for (let n = first; n <= last; n++) {
       const line = state.doc.line(n);
-      if (line.text.trim() === "") {
+      // A quote-only line (`>`, `> >`, etc.) is the Markdown source marker for
+      // a paragraph break. Its marker is hidden in preview mode, so give it the
+      // same compact rhythm as a genuinely empty source line instead of
+      // leaving behind a full-height visual row.
+      const isBlankSeparator =
+        line.text.trim() === "" || /^\s*(?:>\s*)+$/.test(line.text);
+      if (isBlankSeparator) {
         // A blank line inside a math block keeps its full height (it's real
         // content). Otherwise it always collapses to a compact gap — including
         // when the cursor sits on it, so clicking into a paragraph separator

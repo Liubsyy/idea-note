@@ -108,6 +108,7 @@ export const EDITOR_COMMANDS: EditorCommandDef[] = [
   { id: "markdownOrderedList", label: "有序列表", desc: "切换所选行为有序列表", defaultKey: "Mod-Shift-7", run: MARKDOWN_ACTIONS.markdownOrderedList, group: "markdown" },
   { id: "markdownTaskList", label: "任务列表", desc: "插入任务列表项", defaultKey: "Mod-Shift-9", run: MARKDOWN_ACTIONS.markdownTaskList, group: "markdown" },
   { id: "markdownQuote", label: "引用", desc: "切换所选行为引用", defaultKey: "Mod-Shift-q", run: MARKDOWN_ACTIONS.markdownQuote, group: "markdown" },
+  { id: "markdownHighlightBlock", label: "高亮块", desc: "插入高亮块或转换所选段落", defaultKey: "Mod-Alt-Shift-h", run: MARKDOWN_ACTIONS.markdownHighlightBlock, group: "markdown" },
   { id: "markdownCodeBlock", label: "代码块", desc: "插入代码块", defaultKey: "Mod-Alt-c", run: MARKDOWN_ACTIONS.markdownCodeBlock, group: "markdown" },
   { id: "markdownHr", label: "分割线", desc: "插入水平分割线", defaultKey: "Mod-Alt-h", run: MARKDOWN_ACTIONS.markdownHr, group: "markdown" },
   { id: "markdownLink", label: "链接", desc: "插入 Markdown 链接", defaultKey: "Mod-k", run: MARKDOWN_ACTIONS.markdownLink, group: "markdown" },

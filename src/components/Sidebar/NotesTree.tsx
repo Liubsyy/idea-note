@@ -230,7 +230,7 @@ function CardGroup({
   const drag = useTreeDrag();
   const storedOpen = useAppStore((s) => s.expanded[folderNode.path]);
   const setExpanded = useAppStore((s) => s.setExpanded);
-  const open = storedOpen ?? depth < 1;
+  const open = storedOpen ?? false;
   const isActive = selectedPaths.length
     ? folded.paths.some((p) => selectedPaths.includes(p))
     : selectedPath
@@ -422,7 +422,7 @@ function FolderRow({
   // Shared with the file tree: expand state persists in the store by path.
   const storedOpen = useAppStore((s) => s.expanded[folderNode.path]);
   const setExpanded = useAppStore((s) => s.setExpanded);
-  const open = storedOpen ?? depth < 1;
+  const open = storedOpen ?? false;
   const isActive = selectedPaths.length
     ? folded.paths.some((p) => selectedPaths.includes(p))
     : selectedPath

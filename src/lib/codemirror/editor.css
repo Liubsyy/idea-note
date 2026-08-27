@@ -255,6 +255,29 @@
   border-left: 3px solid var(--border);
 }
 
+/* Highlight block (`> [!HIGHLIGHT]`) — the marker line is collapsed outside
+   edit mode; the quoted body stays native CodeMirror text so selections,
+   cursor movement and undo history keep their normal behaviour. */
+.cm-content .cm-md-highlight-block {
+  --md-highlight-color: #3b82f6;
+  position: relative;
+  padding-left: 1em;
+  padding-right: 1em;
+  color: var(--text);
+  background: color-mix(in srgb, var(--md-highlight-color) 18%, transparent);
+}
+.cm-content .cm-md-highlight-first {
+  padding-top: 0.5em;
+  border-radius: 8px 8px 0 0;
+}
+.cm-content .cm-md-highlight-last {
+  padding-bottom: 0.5em;
+  border-radius: 0 0 8px 8px;
+}
+.cm-content .cm-md-highlight-first.cm-md-highlight-last {
+  border-radius: 8px;
+}
+
 /* Fenced / indented code — a rounded block with a left line-number gutter.
    Each code line carries a data-ln; the gutter is drawn as an absolutely
    positioned ::before inside the line's left padding, with a divider rule.
@@ -618,16 +641,17 @@
    spacing on the wrapper as padding, not table margin: CodeMirror measures the
    widget's bounding box for click-to-position mapping, and margins are outside
    that box. */
-/* Hugs the table (rather than the editor width) so the source button anchors to
-   the table's own top-right corner, and sits outside the scrolling box so it
-   stays put when a wide table scrolls sideways. Reserve a separate action row
-   above the table: an overlaid button can invisibly intercept clicks meant for
-   the last header cell while its hover fade-in is still in progress. */
+/* Hugs the table (rather than the editor width) so the table keeps its own
+   width, and the source button sits outside the scrolling box — parked in the
+   gutter left of the table, level with the header row — so it stays put when a
+   wide table scrolls sideways. Vertical padding matches the other block
+   widgets: the button claims no row of its own above the table, and no space
+   over a header cell either, so it can never intercept a click meant for one. */
 .cm-md-table-block {
   position: relative;
   width: fit-content;
   max-width: 100%;
-  padding: calc(0.6em + 26px) 0 0.6em;
+  padding: 0.6em 0;
 }
 .cm-md-table-wrap {
   /* Positioning context for the cell editor, which is parked over its cell and
@@ -654,8 +678,15 @@
 }
 .cm-md-table-source {
   position: absolute;
-  top: 0.6em;
-  right: 2px;
+  /* In the gutter to the left of the table, level with its first row: the
+     block's 0.6em top padding plus the table's 1px border plus the header
+     cell's 0.4em padding puts the button on the header's first line of text (a
+     header that wraps to two lines keeps it on the first one). The block starts
+     at the content box's left edge, so the button falls into .cm-content's own
+     side padding (>= 40px) rather than widening the editor's scroll area. */
+  top: calc(0.6em + 0.4em + 1px);
+  right: 100%;
+  margin-right: 4px;
   display: grid;
   place-items: center;
   width: 22px;
@@ -666,7 +697,11 @@
   color: var(--text-muted);
   cursor: pointer;
   padding: 0;
-  opacity: 0;
+  /* Always visible: it sits in the side gutter, clear of both the text and the
+     table, so there is nothing for it to cover while it is not in use. Muted
+     until pointed at, so it stays a hint rather than competing with the table
+     for attention. */
+  opacity: 0.55;
   transition:
     opacity 120ms ease,
     color 150ms ease,
@@ -794,6 +829,14 @@
 .cm-md-table-menu-item:disabled {
   cursor: default;
   opacity: 0.4;
+}
+.cm-md-table-menu-hint {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.cm-md-table-menu-separator {
+  margin: 4px 0;
+  border-top: 1px solid var(--border);
 }
 .cm-md-table-menu-arrow {
   color: var(--text-muted);

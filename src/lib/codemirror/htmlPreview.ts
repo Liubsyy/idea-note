@@ -23,6 +23,12 @@ import {
   WidgetType,
 } from "@codemirror/view";
 
+import {
+  blockHeightKey,
+  estimatedBlockHeight,
+  trackBlockHeight,
+  untrackBlockHeight,
+} from "./blockHeight";
 import { parseAdvanced } from "./livePreview";
 import { renderInlineHtml, sanitizeHtml } from "./inlineHtml";
 import { toDisplaySrc } from "../imagePath";
@@ -41,6 +47,14 @@ class HtmlWidget extends WidgetType {
   }
   eq(o: HtmlWidget) {
     return o.html === this.html && o.from === this.from && o.inline === this.inline;
+  }
+  // Stand-in height until CodeMirror measures the real DOM; see blockHeight.ts.
+  // Only the block form gets one — an inline widget is measured as part of its
+  // line, where a height of its own would change how the line is sized.
+  get estimatedHeight() {
+    return this.inline
+      ? -1
+      : estimatedBlockHeight(blockHeightKey("html", this.from));
   }
   toDOM(view: EditorView) {
     const el = document.createElement(this.inline ? "span" : "div");
@@ -71,7 +85,12 @@ class HtmlWidget extends WidgetType {
       view.dispatch({ selection: { anchor: this.from } });
       view.focus();
     });
+    if (!this.inline)
+      trackBlockHeight(el, () => blockHeightKey("html", this.from));
     return el;
+  }
+  destroy(dom: HTMLElement) {
+    untrackBlockHeight(dom);
   }
   ignoreEvent() {
     return false;

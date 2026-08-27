@@ -331,7 +331,8 @@ interface AppState {
   /**
    * Folder expand/collapse state, keyed by absolute path. Lives in the store
    * (not per-row local state) so it survives sidebar-mode switches, which
-   * unmount and remount the tree. Absent key = default (top level open).
+   * unmount and remount the tree. Open folders are also persisted per workspace;
+   * an absent key means collapsed.
    */
   expanded: Record<string, boolean>;
   /** Recently opened workspaces, most recent first. */
@@ -355,8 +356,11 @@ interface AppState {
   selectedPaths: string[];
   /** When set, the right pane shows this folder's contents listing. */
   folderViewPath: string | null;
-  /** Markdown content of the active file, last persisted version. */
+  /** Live Markdown/text content of the active editor. */
   content: string;
+  /** In-memory fingerprint of the active file's most recently loaded/saved
+   *  content. Null when no text file is active or the disk baseline is unknown. */
+  savedContentHash: string | null;
   /** Bumped whenever a new file is loaded, so the editor can reset. */
   docKey: number;
   isDirty: boolean;
@@ -588,6 +592,7 @@ const SIDEBAR_MODE_KEY = "idea-note:sidebar-mode";
 const NOTES_VIEW_KEY = "idea-note:notes-view-mode";
 const SEARCH_OPTIONS_KEY = "idea-note:search-options";
 const RECENT_WORKSPACES_KEY = "idea-note:recent-workspaces";
+const EXPANDED_FOLDERS_KEY = "idea-note:expanded-folders";
 const RECENT_MAX = 30;
 
 function readSidebarMode(): SidebarMode {
@@ -634,6 +639,46 @@ function dropRecent(path: string): string[] {
   return recents;
 }
 
+/** Read the folders left open in one workspace. Only open paths are stored;
+ * missing paths therefore retain the default collapsed state. */
+function readExpandedFolders(workspacePath: string): Record<string, boolean> {
+  try {
+    const all = JSON.parse(localStorage.getItem(EXPANDED_FOLDERS_KEY) ?? "{}");
+    if (!all || typeof all !== "object" || Array.isArray(all)) return {};
+    const paths = (all as Record<string, unknown>)[workspacePath];
+    if (!Array.isArray(paths)) return {};
+    return Object.fromEntries(
+      paths
+        .filter((path): path is string => typeof path === "string")
+        .map((path) => [path, true]),
+    );
+  } catch {
+    return {};
+  }
+}
+
+/** Persist one expansion change without overwriting other workspaces (or
+ * changes made by another window since this window last loaded its tree). */
+function saveExpandedFolder(workspacePath: string, folderPath: string, open: boolean): void {
+  try {
+    const raw = JSON.parse(localStorage.getItem(EXPANDED_FOLDERS_KEY) ?? "{}");
+    const all: Record<string, unknown> =
+      raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    const saved = all[workspacePath];
+    const paths = new Set(
+      Array.isArray(saved)
+        ? saved.filter((path): path is string => typeof path === "string")
+        : [],
+    );
+    if (open) paths.add(folderPath);
+    else paths.delete(folderPath);
+    all[workspacePath] = [...paths];
+    localStorage.setItem(EXPANDED_FOLDERS_KEY, JSON.stringify(all));
+  } catch {
+    // Expansion still works for this session when local storage is unavailable.
+  }
+}
+
 /**
  * Append `path` to the open-tab list, evicting the oldest tab(s) when the list
  * would exceed `max`. The just-opened `path` and the previously-active tab are
@@ -648,6 +693,22 @@ function dropRecent(path: string): string[] {
 const DRAFT_PREFIX = "untitled://";
 export const isDraftPath = (p: string | null | undefined): p is string =>
   !!p && p.startsWith(DRAFT_PREFIX);
+
+/** Fast, non-cryptographic 64-bit-ish fingerprint used only for dirty-state
+ * comparisons. Keeping the length and two independent 32-bit lanes makes an
+ * accidental match far less likely without retaining a second copy of a note. */
+function hashContent(content: string): string {
+  let a = 0x811c9dc5;
+  let b = 0x9e3779b9;
+  for (let i = 0; i < content.length; i++) {
+    const code = content.charCodeAt(i);
+    a = Math.imul(a ^ code, 0x01000193);
+    b = Math.imul(b ^ code, 0x85ebca6b);
+  }
+  const left = (a >>> 0).toString(16).padStart(8, "0");
+  const right = (b >>> 0).toString(16).padStart(8, "0");
+  return `${content.length}:${left}${right}`;
+}
 
 function addTab(
   tabs: string[],
@@ -1383,6 +1444,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedPaths: [],
   folderViewPath: null,
   content: "",
+  savedContentHash: null,
   docKey: 0,
   isDirty: false,
   diskStat: null,
@@ -1450,7 +1512,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({
       workspacePath: path,
       tree,
-      expanded: {},
+      expanded: readExpandedFolders(path),
       recentWorkspaces: pushRecent(path),
       activeFilePath: null,
       openTabs: [],
@@ -1458,6 +1520,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedPath: null,
       folderViewPath: null,
       content: "",
+      savedContentHash: null,
       isDirty: false,
       docKey: s.docKey + 1,
       activeFormats: emptyFormats,
@@ -1507,6 +1570,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedPath: null,
       folderViewPath: null,
       content: "",
+      savedContentHash: null,
       isDirty: false,
       docKey: s.docKey + 1,
       activeFormats: emptyFormats,
@@ -1569,6 +1633,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         workspacePath: saved,
         tree,
+        expanded: readExpandedFolders(saved),
         recentWorkspaces: pushRecent(saved),
         syncConfig: readSyncConfig(saved),
         ...readAttachmentConfig(saved),
@@ -1713,8 +1778,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ notesViewMode });
   },
 
-  setExpanded: (path, open) =>
-    set((s) => ({ expanded: { ...s.expanded, [path]: open } })),
+  setExpanded: (path, open) => {
+    const { workspacePath, expanded } = get();
+    const next = { ...expanded };
+    if (open) next[path] = true;
+    else delete next[path];
+    if (workspacePath) saveExpandedFolder(workspacePath, path, open);
+    set({ expanded: next });
+  },
 
   refreshTree: async () => {
     const { workspacePath } = get();
@@ -1728,12 +1799,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ selectedPaths: [] });
     // Drafts have no disk file: restore their stashed text instead of reading.
     if (isDraftPath(path)) {
+      const content = get().draftContents[path] ?? "";
       set((s) => ({
         activeFilePath: path,
         openTabs: addTab(s.openTabs, path, get().editorMaxTabs, s.activeFilePath),
         selectedPath: null,
         folderViewPath: null,
-        content: s.draftContents[path] ?? "",
+        content,
+        savedContentHash: hashContent(content),
         isDirty: false,
         diskStat: null,
         docKey: s.docKey + 1,
@@ -1749,6 +1822,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedPath: path,
         folderViewPath: null,
         content: "",
+        savedContentHash: null,
         isDirty: false,
         diskStat: null,
         docKey: s.docKey + 1,
@@ -1770,6 +1844,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedPath: path,
       folderViewPath: null,
       content,
+      savedContentHash: hashContent(content),
       isDirty: false,
       // Cleared now, then filled by the stat probe — so a focus check in the
       // brief gap sees no baseline and stays quiet rather than false-firing.
@@ -1798,6 +1873,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       folderViewPath: node.path,
       activeFilePath: null,
       content: "",
+      savedContentHash: null,
       isDirty: false,
       docKey: s.docKey + 1,
       activeFormats: emptyFormats,
@@ -1817,6 +1893,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedPath: null,
       folderViewPath: null,
       content: "",
+      savedContentHash: null,
       isDirty: false,
       docKey: s.docKey + 1,
       activeFormats: emptyFormats,
@@ -1870,6 +1947,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedPath: null,
         folderViewPath: null,
         content: "",
+        savedContentHash: null,
         isDirty: false,
         docKey: s.docKey + 1,
         activeFormats: emptyFormats,
@@ -1879,7 +1957,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     const neighbor = remaining[Math.min(idx, remaining.length - 1)];
     // Clear the active pointer before activating the neighbor so the upcoming
     // flush (in openFile) doesn't re-stash the just-closed draft.
-    set({ openTabs: remaining, activeFilePath: null, content: "", isDirty: false });
+    set({
+      openTabs: remaining,
+      activeFilePath: null,
+      content: "",
+      savedContentHash: null,
+      isDirty: false,
+    });
     await get().openFile(neighbor);
   },
 
@@ -1917,7 +2001,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     // Kept tab wasn't active: clear the pointer (so openFile doesn't re-stash a
     // just-closed draft) before activating it.
-    set({ openTabs: [path], activeFilePath: null, content: "", isDirty: false });
+    set({
+      openTabs: [path],
+      activeFilePath: null,
+      content: "",
+      savedContentHash: null,
+      isDirty: false,
+    });
     await get().openFile(path);
   },
 
@@ -1945,6 +2035,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedPath: null,
       folderViewPath: null,
       content: "",
+      savedContentHash: null,
       isDirty: false,
       docKey: s.docKey + 1,
       activeFormats: emptyFormats,
@@ -1972,8 +2063,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setContent: (markdown) => {
-    if (markdown === get().content) return;
-    set({ content: markdown, isDirty: true });
+    const { content, savedContentHash } = get();
+    if (markdown === content) return;
+    set({
+      content: markdown,
+      isDirty: savedContentHash === null || hashContent(markdown) !== savedContentHash,
+    });
   },
 
   setActiveFormats: (formats) => set({ activeFormats: formats }),
@@ -2003,7 +2098,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       try {
         const disk = await readFile(path);
         if (get().activeFilePath !== path) return; // switched files mid-read
-        set((s) => ({ content: disk, docKey: s.docKey + 1, diskStat: now }));
+        set((s) => ({
+          content: disk,
+          savedContentHash: hashContent(disk),
+          docKey: s.docKey + 1,
+          diskStat: now,
+        }));
       } catch {
         // Vanished between stat and read — leave the buffer alone.
       }
@@ -2020,13 +2120,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         confirmLabel: "保留我的修改",
         // Keep the buffer; adopt the new on-disk stat so the same external
         // change won't prompt again. A later save overwrites the disk version.
-        onConfirm: () => set({ diskStat: now }),
+        // The external content was deliberately not read, so its hash is
+        // unknown. Keep the editor dirty until the user explicitly saves.
+        onConfirm: () => set({ diskStat: now, savedContentHash: null }),
         altLabel: "重新加载",
         onAlt: async () => {
           const disk = await readFile(path);
           if (get().activeFilePath !== path) return;
           set((s) => ({
             content: disk,
+            savedContentHash: hashContent(disk),
             isDirty: false,
             docKey: s.docKey + 1,
             diskStat: now,
@@ -2045,9 +2148,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       const ws = get().workspacePath;
       const chosen = await pickSavePath(ws ? `${ws}/未命名.md` : "未命名.md");
       if (!chosen) return; // cancelled
+      const savedContent = get().content;
+      const savedContentHash = hashContent(savedContent);
       set({ saving: true });
       try {
-        await writeFile(chosen, get().content);
+        await writeFile(chosen, savedContent);
         set((s) => {
           const { [draftPath]: _drop, ...rest } = s.draftContents;
           return {
@@ -2055,7 +2160,8 @@ export const useAppStore = create<AppState>((set, get) => ({
             openTabs: s.openTabs.map((p) => (p === draftPath ? chosen : p)),
             activeFilePath: s.activeFilePath === draftPath ? chosen : s.activeFilePath,
             selectedPath: chosen,
-            isDirty: false,
+            savedContentHash,
+            isDirty: hashContent(s.content) !== savedContentHash,
           };
         });
         void captureDiskStat(chosen);
@@ -2069,7 +2175,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ saving: true });
     try {
       await writeFile(activeFilePath, content);
-      set({ isDirty: false });
+      const savedContentHash = hashContent(content);
+      set((s) =>
+        s.activeFilePath === activeFilePath
+          ? {
+              savedContentHash,
+              isDirty: hashContent(s.content) !== savedContentHash,
+            }
+          : {},
+      );
       void captureDiskStat(activeFilePath);
       // Keep the notes-mode excerpt/mtime of this file fresh in the sidebar.
       void get().refreshTree();
@@ -2097,6 +2211,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedPath: null,
         folderViewPath: null,
         content: "",
+        savedContentHash: hashContent(""),
         isDirty: false,
         docKey: s.docKey + 1,
         activeFormats: emptyFormats,
@@ -2110,6 +2225,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Stash the live text so it survives while the draft is backgrounded.
       set((s) => ({
         draftContents: { ...s.draftContents, [activeFilePath]: content },
+        savedContentHash: hashContent(content),
         isDirty: false,
       }));
       return;
@@ -2269,12 +2385,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (remaining.length > 0) {
         const idx = openTabs.indexOf(activeFilePath!);
         const neighbor = remaining[Math.min(Math.max(idx, 0), remaining.length - 1)];
-        set({ activeFilePath: null, content: "", isDirty: false });
+        set({
+          activeFilePath: null,
+          content: "",
+          savedContentHash: null,
+          isDirty: false,
+        });
         await get().openFile(neighbor);
       } else {
         set((s) => ({
           activeFilePath: null,
           content: "",
+          savedContentHash: null,
           isDirty: false,
           docKey: s.docKey + 1,
           activeFormats: emptyFormats,
@@ -2746,7 +2868,14 @@ export const useAppStore = create<AppState>((set, get) => ({
           try {
             const fresh = await readFile(activeFilePath);
             if (fresh !== get().content) {
-              set((s) => ({ content: fresh, docKey: s.docKey + 1 }));
+              set((s) => ({
+                content: fresh,
+                savedContentHash: hashContent(fresh),
+                isDirty: false,
+                docKey: s.docKey + 1,
+              }));
+            } else {
+              set({ savedContentHash: hashContent(fresh), isDirty: false });
             }
             // Sync rewrote the file on disk; refresh the stat baseline so the
             // next focus check doesn't re-trigger on this same change.
@@ -2757,6 +2886,8 @@ export const useAppStore = create<AppState>((set, get) => ({
               activeFilePath: null,
               selectedPath: null,
               content: "",
+              savedContentHash: null,
+              isDirty: false,
               openTabs: s.openTabs.filter((p) => p !== activeFilePath),
             }));
           }
@@ -2814,7 +2945,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     await writeFile(history.path, oldContent);
     if (get().activeFilePath === history.path) {
-      set((s) => ({ content: oldContent, docKey: s.docKey + 1, isDirty: false }));
+      set((s) => ({
+        content: oldContent,
+        savedContentHash: hashContent(oldContent),
+        docKey: s.docKey + 1,
+        isDirty: false,
+      }));
       void captureDiskStat(history.path);
     }
     set({ history: null });
@@ -2859,6 +2995,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             selectedPath: null,
             folderViewPath: null,
             content: "",
+            savedContentHash: null,
             isDirty: false,
             docKey: s.docKey + 1,
             activeFormats: emptyFormats,
@@ -2895,7 +3032,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (activeFilePath && touchesActive) {
       try {
         const fresh = await readFile(activeFilePath);
-        set((s) => ({ content: fresh, docKey: s.docKey + 1, isDirty: false }));
+        set((s) => ({
+          content: fresh,
+          savedContentHash: hashContent(fresh),
+          docKey: s.docKey + 1,
+          isDirty: false,
+        }));
         void captureDiskStat(activeFilePath);
       } catch {
         set((s) => ({
@@ -2903,6 +3045,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           selectedPath: null,
           folderViewPath: null,
           content: "",
+          savedContentHash: null,
           isDirty: false,
           docKey: s.docKey + 1,
           activeFormats: emptyFormats,

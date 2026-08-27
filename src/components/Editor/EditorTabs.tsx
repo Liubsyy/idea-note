@@ -246,7 +246,7 @@ export function EditorTabs() {
         {canRight && <ArrowButton dir="right" onClick={() => scrollBy(1)} />}
         <button
           onClick={() => void newDraft()}
-          title="新建空白页"
+          title="新建空白页（⌘/Ctrl+N）"
           className="flex w-8 shrink-0 items-center justify-center transition-colors hover:bg-[var(--hover)]"
           style={{ color: "var(--text-muted)", borderLeft: "1px solid var(--border)" }}
         >

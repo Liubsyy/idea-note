@@ -19,6 +19,13 @@ import {
   WidgetType,
 } from "@codemirror/view";
 
+import {
+  blockHeightKey,
+  estimatedBlockHeight,
+  trackBlockHeight,
+  untrackBlockHeight,
+} from "./blockHeight";
+
 const DOLLAR = 36; // '$'
 
 const isSpace = (c: number) => c === 32 || c === 9 || c === 10 || c === -1;
@@ -45,6 +52,14 @@ export class MathWidget extends WidgetType {
   eq(o: MathWidget) {
     return o.tex === this.tex && o.block === this.block;
   }
+  // Stand-in height until CodeMirror measures the real DOM; see blockHeight.ts.
+  // Only display mode is a block widget — an inline one is measured as part of
+  // its line, where a height of its own would change how the line is sized.
+  get estimatedHeight() {
+    return this.block
+      ? estimatedBlockHeight(blockHeightKey("math", this.from))
+      : -1;
+  }
   toDOM(view: EditorView) {
     const el = document.createElement(this.block ? "div" : "span");
     el.className = this.block ? "cm-md-math-block" : "cm-md-math-inline";
@@ -56,8 +71,12 @@ export class MathWidget extends WidgetType {
         view.dispatch({ selection: { anchor: this.from } });
         view.focus();
       });
+      trackBlockHeight(el, () => blockHeightKey("math", this.from));
     }
     return el;
+  }
+  destroy(dom: HTMLElement) {
+    untrackBlockHeight(dom);
   }
   ignoreEvent() {
     return false;

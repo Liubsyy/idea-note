@@ -14,6 +14,10 @@ import katex from "katex";
 
 import { toDisplaySrc } from "../imagePath";
 import { appendStyle, imageSizeStyle, parseImageDest } from "../imageSyntax";
+import {
+  isCustomHighlightColor,
+  highlightTagAtStart,
+} from "../highlightBlock";
 
 // --- mermaid (replicates diagram.ts's lazy, WebKit-safe loader) -------------
 
@@ -251,6 +255,29 @@ function applyTaskLists(root: DocumentFragment) {
   });
 }
 
+// Idea Note highlight blocks remain valid Markdown blockquotes on disk. Remove
+// the extension marker after rendering and add a print-only class to the quote.
+function applyHighlightBlocks(root: DocumentFragment) {
+  root.querySelectorAll("blockquote").forEach((blockquote) => {
+    const first = blockquote.firstElementChild;
+    if (!first || first.tagName !== "P") return;
+    const marker = highlightTagAtStart(first.innerHTML);
+    if (!marker) return;
+    const content = first.innerHTML
+      .slice(marker.length)
+      .replace(/^(?:\r?\n|<br\s*\/?>)?\s*/i, "");
+    blockquote.classList.add("print-highlight-block");
+    if (isCustomHighlightColor(marker.color)) {
+      blockquote.classList.add("print-highlight-custom");
+      blockquote.style.setProperty("--print-highlight-color", marker.color);
+    } else {
+      blockquote.classList.add(`print-highlight-${marker.color}`);
+    }
+    if (content.trim()) first.innerHTML = content;
+    else first.remove();
+  });
+}
+
 // --- Public API -------------------------------------------------------------
 
 export async function renderMarkdownToHtml(markdown: string): Promise<string> {
@@ -258,6 +285,7 @@ export async function renderMarkdownToHtml(markdown: string): Promise<string> {
   tpl.innerHTML = md.render(markdown ?? "");
 
   applyTaskLists(tpl.content);
+  applyHighlightBlocks(tpl.content);
 
   // Raw `<img>` tags (the form a sized image takes) reach here verbatim: markdown-it
   // only routes its own image tokens through the rule above. Resolve their paths

@@ -32,9 +32,16 @@ import {
   WidgetType,
 } from "@codemirror/view";
 
+import {
+  blockHeightKey,
+  estimatedBlockHeight,
+  trackBlockHeight,
+  untrackBlockHeight,
+} from "./blockHeight";
 import { parseAdvanced } from "./livePreview";
 import { renderInlineHtml, sanitizeHtml } from "./inlineHtml";
 import { openLinkTargetSafe } from "./linkClick";
+import { copyText, readClipboardText } from "../clipboard";
 
 type Align = "left" | "center" | "right" | "";
 
@@ -423,6 +430,8 @@ type CellHost = {
   input: HTMLTextAreaElement | null;
   composing: boolean;
   press: { x: number; y: number } | null;
+  /** mousedown already opened the pressed cell, so the click has nothing left. */
+  pressOpened: boolean;
   resize: ResizeObserver | null;
   menu: { element: HTMLElement; cleanup: () => void } | null;
 };
@@ -514,6 +523,13 @@ function startEdit(
   if (!cell || table === undefined) return;
   const at = Math.min(caret ?? cell.text.length, cell.text.length);
   view.dispatch({
+    // Move the document caret in the same transaction that parks the editor.
+    // Without it the caret stays on whatever line it was, which keeps showing
+    // its markdown source until the textarea reports its own selection a frame
+    // or two later — read as the caret landing outside the table and only then
+    // snapping into the clicked cell. The effect is checked before `tr.selection`
+    // in cellEditField, so carrying both here does not end the edit.
+    selection: { anchor: cell.from + at },
     effects: setCellEdit.of({
       table,
       row,
@@ -681,6 +697,39 @@ function deleteColumnAt(host: CellHost, row: number, col: number): void {
   });
 }
 
+/** Set the clicked column's Markdown delimiter (`:---`, `:---:`, `---:`). */
+function alignColumnAt(
+  host: CellHost,
+  row: number,
+  col: number,
+  align: Exclude<Align, "">,
+): void {
+  commitInput(host);
+  const { view, model } = host;
+  const delimiter = model.rows[DELIM_ROW]?.[col];
+  const table = model.lines[0]?.from;
+  if (!delimiter || table === undefined) return;
+  const dashes = delimiter.text.match(/-+/)?.[0] ?? "---";
+  const text =
+    align === "left"
+      ? `:${dashes}`
+      : align === "center"
+        ? `:${dashes}:`
+        : `${dashes}:`;
+  const edit = host.edit;
+  view.dispatch({
+    changes: { from: delimiter.from, to: delimiter.to, insert: text },
+    effects: setCellEdit.of({
+      table,
+      row,
+      col,
+      anchor: edit?.row === row && edit.col === col ? edit.anchor : 0,
+      head: edit?.row === row && edit.col === col ? edit.head : 0,
+    }),
+    userEvent: "input",
+  });
+}
+
 /** End the edit and hand focus back to the editor, just outside the table. */
 function leaveTable(host: CellHost): void {
   const { view, model } = host;
@@ -728,7 +777,7 @@ function scheduleClear(host: CellHost, at: CellEdit): void {
 }
 
 /** Write the textarea back into its cell's source range. */
-function commitInput(host: CellHost): void {
+function commitInput(host: CellHost, userEvent = "input.type"): void {
   const { view, input, edit } = host;
   if (!input || !edit) return;
   const cell = host.model.rows[edit.row]?.[edit.col];
@@ -756,7 +805,7 @@ function commitInput(host: CellHost): void {
       head: cell.from + head,
     },
     effects: setCellEdit.of({ ...edit, anchor, head }),
-    userEvent: "input.type",
+    userEvent,
   });
 }
 
@@ -1200,6 +1249,12 @@ function onCellClick(host: CellHost, event: MouseEvent): void {
     ) > 3
   )
     return;
+  // mousedown already opened the cell and placed the caret; re-running the
+  // whole thing here would only collapse a selection made inside the editor.
+  if (host.pressOpened) {
+    host.pressOpened = false;
+    return;
+  }
   const cell = (event.target as HTMLElement).closest?.("th,td");
   if (!(cell instanceof HTMLTableCellElement) || !host.table.contains(cell))
     return;
@@ -1269,6 +1324,7 @@ function closeTableMenu(host: CellHost): void {
 
 type TableMenuAction = {
   label: string;
+  hint?: string;
   disabled?: boolean;
   run: () => void;
 };
@@ -1280,7 +1336,15 @@ function tableMenuButton(
   const button = document.createElement("button");
   button.type = "button";
   button.className = "cm-md-table-menu-item";
-  button.textContent = action.label;
+  const label = document.createElement("span");
+  label.textContent = action.label;
+  button.appendChild(label);
+  if (action.hint) {
+    const hint = document.createElement("span");
+    hint.className = "cm-md-table-menu-hint";
+    hint.textContent = action.hint;
+    button.appendChild(hint);
+  }
   button.disabled = !!action.disabled;
   button.addEventListener("mousedown", (event) => event.preventDefault());
   button.addEventListener("click", (event) => {
@@ -1291,6 +1355,13 @@ function tableMenuButton(
     action.run();
   });
   return button;
+}
+
+function tableMenuSeparator(): HTMLElement {
+  const separator = document.createElement("div");
+  separator.className = "cm-md-table-menu-separator";
+  separator.setAttribute("role", "separator");
+  return separator;
 }
 
 function tableSubmenu(
@@ -1318,6 +1389,33 @@ function tableSubmenu(
   return group;
 }
 
+/** Replace one cell range through its textarea so the existing sanitization
+ * keeps newlines and bare pipes from breaking the Markdown table. */
+function replaceCellRange(
+  host: CellHost,
+  row: number,
+  col: number,
+  from: number,
+  to: number,
+  insert: string,
+  userEvent: string,
+): void {
+  const current = host.edit;
+  if (!current || current.row !== row || current.col !== col)
+    startEdit(host, row, col, from);
+  const input = host.input;
+  if (!input) return;
+  const start = Math.min(from, input.value.length);
+  const end = Math.min(Math.max(start, to), input.value.length);
+  input.setRangeText(insert, start, end, "end");
+  commitInput(host, userEvent);
+  input.focus({ preventScroll: true });
+}
+
+const tableMenuMod = navigator.platform.toLowerCase().includes("mac")
+  ? "⌘"
+  : "Ctrl+";
+
 function openTableMenu(
   host: CellHost,
   event: MouseEvent,
@@ -1330,7 +1428,74 @@ function openTableMenu(
   menu.className = "cm-md-table-menu";
   menu.setAttribute("role", "menu");
   menu.addEventListener("contextmenu", (e) => e.preventDefault());
+  const cell = host.model.rows[row]?.[col];
+  const input = host.input;
+  const editingClickedCell =
+    !!cell &&
+    !!input &&
+    host.edit?.row === row &&
+    host.edit.col === col;
+  const selectionStart = editingClickedCell ? input.selectionStart : 0;
+  const selectionEnd = editingClickedCell ? input.selectionEnd : 0;
+  const selectedText = cell?.text.slice(selectionStart, selectionEnd) ?? "";
+  const hasSelection = selectionEnd > selectionStart;
   menu.append(
+    tableMenuButton(host, {
+      label: "剪切",
+      hint: `${tableMenuMod}X`,
+      disabled: !hasSelection,
+      run: () => {
+        void copyText(selectedText);
+        replaceCellRange(
+          host,
+          row,
+          col,
+          selectionStart,
+          selectionEnd,
+          "",
+          "delete.cut",
+        );
+      },
+    }),
+    tableMenuButton(host, {
+      label: "复制",
+      hint: `${tableMenuMod}C`,
+      disabled: !hasSelection,
+      run: () => void copyText(selectedText),
+    }),
+    tableMenuButton(host, {
+      label: "粘贴",
+      hint: `${tableMenuMod}V`,
+      run: () => {
+        void readClipboardText().then((text) => {
+          if (!text) return;
+          replaceCellRange(
+            host,
+            row,
+            col,
+            selectionStart,
+            selectionEnd,
+            text,
+            "input.paste",
+          );
+        });
+      },
+    }),
+    tableMenuSeparator(),
+    tableSubmenu(host, "对齐方式", [
+      {
+        label: "左对齐",
+        run: () => alignColumnAt(host, row, col, "left"),
+      },
+      {
+        label: "居中",
+        run: () => alignColumnAt(host, row, col, "center"),
+      },
+      {
+        label: "右对齐",
+        run: () => alignColumnAt(host, row, col, "right"),
+      },
+    ]),
     tableSubmenu(host, "新增行", [
       {
         label: "上一行增加行",
@@ -1417,7 +1582,118 @@ function onTableContextMenu(host: CellHost, event: MouseEvent): void {
   event.stopPropagation();
   host.press = null;
   cellHostByView.set(host.view, host);
+  // The structural menu is also the cell's clipboard menu. Right-clicking a
+  // rendered cell first opens it at the clicked point; right-clicking its
+  // textarea keeps the existing selection, matching native text fields.
+  if (!input || host.edit?.row !== row || host.edit.col !== col) {
+    const clicked = cell instanceof HTMLTableCellElement ? cell : null;
+    const text = host.model.rows[row]?.[col]?.text ?? "";
+    startEdit(host, row, col, clicked ? caretFromPoint(clicked, text, event) : null);
+  }
   openTableMenu(host, event, row, col);
+}
+
+/**
+ * Drag-select inside the cell a press just opened.
+ *
+ * That press never reached the textarea — we prevented the default that would
+ * otherwise have focused the editor surface — so the textarea has no native
+ * drag of its own. Follow the pointer and mirror it into the textarea's
+ * selection instead. It is made click-through for the duration, so the caret
+ * can still be mapped against the (transparent) raw text painted in the cell
+ * underneath it.
+ */
+function trackCellDrag(
+  host: CellHost,
+  row: number,
+  col: number,
+  anchor: number,
+): void {
+  const pressed = host.input;
+  if (!pressed) return;
+  const restore = pressed.style.pointerEvents;
+  pressed.style.pointerEvents = "none";
+  const move = (event: MouseEvent) => {
+    const input = host.input;
+    const cell = cellElement(host.table, row, col);
+    const text = host.model.rows[row]?.[col]?.text;
+    if (!input || !cell || text === undefined) return stop();
+    const head = caretFromPoint(cell, text, event);
+    if (head === null) return;
+    input.setSelectionRange(
+      Math.min(anchor, head),
+      Math.max(anchor, head),
+      head < anchor ? "backward" : "forward",
+    );
+    syncCellSelection(host);
+  };
+  const stop = () => {
+    window.removeEventListener("mousemove", move);
+    window.removeEventListener("mouseup", stop);
+    if (host.input) host.input.style.pointerEvents = restore;
+  };
+  window.addEventListener("mousemove", move);
+  window.addEventListener("mouseup", stop);
+}
+
+/**
+ * Move the caret inside the table before the press focuses the editor.
+ *
+ * mousedown's default action focuses CodeMirror's editable surface, and
+ * livePreview only reveals a line's markdown source while the editor has focus.
+ * So the moment the button goes down, whatever line the caret was left on — a
+ * line outside the table — unfolds into its source and stays that way until the
+ * release, when the click handler finally moves the caret into the cell. That
+ * reads as the caret jumping out of the table and back.
+ *
+ * Parking it inside the table's own range first keeps every line rendered: the
+ * range is the one this widget replaces, so there is no source to reveal. The
+ * click handler still refines the caret to the exact cell afterwards.
+ */
+function parkCaretInTable(host: CellHost): void {
+  const lines = host.model.lines;
+  const first = lines[0];
+  const last = lines[lines.length - 1];
+  if (!first || !last) return;
+  const range = host.view.state.selection.main;
+  // Already inside this table: leave it — and any cell edit in progress — be.
+  if (range.from >= first.from && range.to <= last.to) return;
+  host.view.dispatch({ selection: { anchor: first.from } });
+}
+
+/**
+ * Presses in flight per view. A release that arrives late — the pointer left
+ * the window, or a second table took over — must not unhide the caret that a
+ * newer press is still hiding.
+ */
+const edgePresses = new WeakMap<EditorView, number>();
+
+/**
+ * Hide the editor's own caret for the length of a press inside a table.
+ *
+ * The widget sits inside CodeMirror's contenteditable surface but is not
+ * editable itself, so the browser's mousedown default focuses that surface and
+ * parks a caret at the replaced block's edge — on a line outside the table. It
+ * stays there for as long as the button is held, and only jumps to the clicked
+ * cell on release, when the click handler hands focus to the cell editor. The
+ * cell editor paints its own caret, so nothing is lost by keeping this one
+ * invisible until then.
+ */
+function hideEdgeCaret(view: EditorView): void {
+  const press = (edgePresses.get(view) ?? 0) + 1;
+  edgePresses.set(view, press);
+  view.dom.classList.add("cm-md-table-pointer");
+  const release = () => {
+    window.removeEventListener("mouseup", release);
+    // A frame rather than a timer: the click that starts the cell edit is
+    // always delivered before the next frame, while a 0ms timeout can be run
+    // first and flash the caret at the block's edge.
+    requestAnimationFrame(() => {
+      if (edgePresses.get(view) !== press) return;
+      view.dom.classList.remove("cm-md-table-pointer");
+    });
+  };
+  window.addEventListener("mouseup", release);
 }
 
 function createHost(view: EditorView, readOnly: boolean): CellHost {
@@ -1440,6 +1716,7 @@ function createHost(view: EditorView, readOnly: boolean): CellHost {
     input: null,
     composing: false,
     press: null,
+    pressOpened: false,
     resize: null,
     menu: null,
   };
@@ -1461,26 +1738,46 @@ function createHost(view: EditorView, readOnly: boolean): CellHost {
   if (!readOnly) {
     table.addEventListener("mousedown", (e) => {
       host.press = { x: e.clientX, y: e.clientY };
-      // The table widget sits inside CodeMirror's contenteditable surface. Its
-      // native mousedown default places a temporary caret after the replaced
-      // block; hide that caret until the click handler focuses the cell input.
-      // We deliberately keep the default action so dragging can still select
-      // rendered cell text for toolbar formatting.
+      host.pressOpened = false;
       if (
-        e.button === 0 &&
-        !e.metaKey &&
-        !e.ctrlKey &&
-        !e.altKey &&
-        !e.shiftKey
-      ) {
-        host.view.dom.classList.add("cm-md-table-pointer");
-        const clear = () =>
-          setTimeout(
-            () => host.view.dom.classList.remove("cm-md-table-pointer"),
-            0,
-          );
-        window.addEventListener("mouseup", clear, { once: true });
+        e.button !== 0 ||
+        e.metaKey ||
+        e.ctrlKey ||
+        e.altKey ||
+        e.shiftKey
+      )
+        return;
+      // Open the pressed cell here rather than on the click, and take the
+      // press away from the browser while doing it.
+      //
+      // Left to its default, mousedown focuses CodeMirror's editable surface
+      // and parks a caret at the replaced block's edge — a caret on a line
+      // outside the table — because the widget itself is not editable. It sits
+      // there for the whole time the button is held, and only the click that
+      // follows moves it into the cell. Opening the cell editor now puts the
+      // caret exactly where it was pressed, and the editable surface never
+      // takes focus at all: nothing outside the table can show a caret, or
+      // unfold into its markdown source (livePreview only reveals the cursor
+      // line while the editor is focused).
+      const cell = (e.target as HTMLElement).closest?.("th,td");
+      const inCell =
+        cell instanceof HTMLTableCellElement && host.table.contains(cell);
+      const row = inCell ? Number(cell.dataset.row) : NaN;
+      const col = inCell ? Number(cell.dataset.col) : NaN;
+      if (inCell && Number.isInteger(row) && Number.isInteger(col)) {
+        e.preventDefault();
+        host.pressOpened = true;
+        const text = host.model.rows[row]?.[col]?.text ?? "";
+        startEdit(host, row, col, caretFromPoint(cell, text, e));
+        const opened = host.edit;
+        if (opened && opened.row === row && opened.col === col)
+          trackCellDrag(host, row, col, opened.anchor);
+        return;
       }
+      // A press that lands on the table's own borders or gaps has no cell to
+      // open, so it stays with the browser — and needs the older mitigations.
+      parkCaretInTable(host);
+      hideEdgeCaret(host.view);
     });
     table.addEventListener("click", (e) => onCellClick(host, e));
     wrap.addEventListener("contextmenu", (e) => onTableContextMenu(host, e));
@@ -1490,6 +1787,12 @@ function createHost(view: EditorView, readOnly: boolean): CellHost {
     host.resize = new ResizeObserver(() => layoutInput(host));
     host.resize.observe(table);
   }
+  // This DOM outlives the widgets that render into it, so the key is read back
+  // from the current model rather than captured here.
+  trackBlockHeight(block, () => {
+    const from = host.model.lines[0]?.from;
+    return from === undefined ? null : blockHeightKey("table", from);
+  });
   return host;
 }
 
@@ -1585,6 +1888,11 @@ class TableWidget extends WidgetType {
   ) {
     super();
   }
+  // Stand-in height until CodeMirror measures the real DOM; see blockHeight.ts
+  // for why the default (-1, one line) moves the viewport.
+  get estimatedHeight() {
+    return estimatedBlockHeight(blockHeightKey("table", this.from));
+  }
   eq(o: TableWidget) {
     return (
       o.source === this.source &&
@@ -1612,6 +1920,7 @@ class TableWidget extends WidgetType {
     const host = hosts.get(dom);
     if (host) closeTableMenu(host);
     host?.resize?.disconnect();
+    untrackBlockHeight(dom);
     if (host && cellHostByView.get(host.view) === host)
       cellHostByView.delete(host.view);
   }

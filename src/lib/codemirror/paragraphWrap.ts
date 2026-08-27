@@ -27,6 +27,7 @@ import {
 import { Decoration, DecorationSet, EditorView, WidgetType } from "@codemirror/view";
 
 import { parseAdvanced } from "./livePreview";
+import { highlightColorFromLine } from "../highlightBlock";
 
 // --- Focus mirror -----------------------------------------------------------
 
@@ -81,6 +82,7 @@ function buildSoftWraps(state: EditorState): DecorationSet {
   tree.iterate({
     enter: (node) => {
       if (node.name !== "Paragraph") return;
+
       const startLine = doc.lineAt(node.from).number;
       const endLine = doc.lineAt(node.to).number;
       if (endLine <= startLine) return; // single line: no interior break
@@ -97,6 +99,10 @@ function buildSoftWraps(state: EditorState): DecorationSet {
 
       for (let n = startLine; n < endLine; n++) {
         const line = doc.line(n);
+        // Keep the hidden highlight marker on its own visual line. Joining it
+        // to the first content line would hide that content with the marker;
+        // subsequent lines retain the same soft-break rules as blockquotes.
+        if (highlightColorFromLine(line.text)) continue;
         // A hard break keeps its line break.
         if (HARD_BREAK_RE.test(line.text)) continue;
         const next = doc.line(n + 1);

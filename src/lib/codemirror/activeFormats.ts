@@ -6,6 +6,10 @@ import { syntaxTree } from "@codemirror/language";
 
 import { findSpanAt } from "./spanStyle";
 import { imageAt } from "./imageAt";
+import {
+  highlightColorFromLine,
+  type HighlightColor,
+} from "../highlightBlock";
 
 export interface ActiveFormats {
   bold: boolean;
@@ -16,6 +20,8 @@ export interface ActiveFormats {
   /** Cursor sits on an image, so the toolbar's image button edits that one. */
   image: boolean;
   blockquote: boolean;
+  highlightBlock: boolean;
+  highlightColor: HighlightColor | null;
   bulletList: boolean;
   orderedList: boolean;
   codeBlock: boolean;
@@ -34,6 +40,8 @@ export const emptyFormats: ActiveFormats = {
   link: false,
   image: false,
   blockquote: false,
+  highlightBlock: false,
+  highlightColor: null,
   bulletList: false,
   orderedList: false,
   codeBlock: false,
@@ -81,6 +89,15 @@ export function computeActiveFormats(state: EditorState): ActiveFormats {
         break;
       case "Blockquote":
         result.blockquote = true;
+        {
+          const color = highlightColorFromLine(
+            state.doc.lineAt(node.from).text,
+          );
+          if (color) {
+            result.highlightBlock = true;
+            result.highlightColor = color;
+          }
+        }
         break;
       case "BulletList":
         result.bulletList = true;

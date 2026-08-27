@@ -199,6 +199,7 @@ export const MARKDOWN_ACTIONS: Record<string, Command> = {
   markdownOrderedList: editableAction(md.orderedList),
   markdownTaskList: editableAction(md.taskList),
   markdownQuote: editableAction(md.quote),
+  markdownHighlightBlock: editableAction(md.highlightBlock),
   markdownCodeBlock: editableAction(md.codeBlock),
   markdownHr: editableAction(md.hr),
   markdownLink: openLinkPrompt,

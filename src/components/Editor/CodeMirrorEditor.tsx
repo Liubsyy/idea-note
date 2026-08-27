@@ -23,7 +23,12 @@ import { markdownLinkClick } from "../../lib/codemirror/linkClick";
 import { htmlPreview } from "../../lib/codemirror/htmlPreview";
 import { inlineMath, mathBlock } from "../../lib/codemirror/math";
 import { mermaidBlock } from "../../lib/codemirror/diagram";
-import { cmTheme, cmHighlighting, cmPlainTextTheme } from "../../lib/codemirror/theme";
+import {
+  cmTheme,
+  cmHighlighting,
+  cmPlainTextTheme,
+  cmSourceGutterTheme,
+} from "../../lib/codemirror/theme";
 import { setActiveView, getActiveView } from "../../lib/codemirror/activeView";
 import { handleEditorPaste } from "../../lib/attachments";
 import { computeActiveFormats, emptyFormats } from "../../lib/codemirror/activeFormats";
@@ -48,8 +53,14 @@ const previewPlugins = [
 // Extensions for a markdown view mode, swapped in/out via the compartment:
 // "live" renders + editable, "source" drops rendering, "readonly" renders but
 // locks editing.
-function modeExtensions(mode: MdViewMode) {
-  if (mode === "source") return [];
+//
+// Source mode shows the document as plain text, so it honours the same
+// 显示行号 setting the non-markdown editor does. Live and read-only modes never
+// do: their lines are rendered blocks (a diagram, a table, a wrapped
+// paragraph), and numbering those counts source lines nobody can see.
+function modeExtensions(mode: MdViewMode, showLineNumbers: boolean) {
+  if (mode === "source")
+    return showLineNumbers ? [lineNumbers(), cmSourceGutterTheme] : [];
   if (mode === "readonly")
     return [
       ...previewPlugins,
@@ -171,7 +182,10 @@ export function CodeMirrorEditor() {
           // relative paths as editor tabs. Works in every view mode.
           markdownLinkClick,
           previewCompartment.current.of(
-            modeExtensions(useAppStore.getState().mdViewMode),
+            modeExtensions(
+              useAppStore.getState().mdViewMode,
+              editorLineNumbers,
+            ),
           ),
         ]
       : plainText;
@@ -247,7 +261,9 @@ export function CodeMirrorEditor() {
     const path = useAppStore.getState().activeFilePath;
     if (!path || (!isMarkdownFile(path) && !isDraftPath(path))) return;
     view.dispatch({
-      effects: previewCompartment.current.reconfigure(modeExtensions(mdViewMode)),
+      effects: previewCompartment.current.reconfigure(
+        modeExtensions(mdViewMode, editorLineNumbers),
+      ),
     });
     // Reconfiguring doesn't fire a selection/doc change, so sync the toolbar's
     // active-format highlight to the new mode: cleared in read-only, otherwise
@@ -257,7 +273,7 @@ export function CodeMirrorEditor() {
         ? emptyFormats
         : computeActiveFormats(view.state),
     );
-  }, [mdViewMode, setActiveFormats]);
+  }, [mdViewMode, editorLineNumbers, setActiveFormats]);
 
   // Right-click: keep the selection when clicking inside it, otherwise move
   // the caret to the click point (native text-field behavior), then show the

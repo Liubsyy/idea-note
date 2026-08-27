@@ -117,6 +117,12 @@ const uid = () =>
 
 function buildSystemPrompt(filePath: string | null, workspacePath: string | null): string {
   const lines = ["你是 Idea Note（一款 Markdown 笔记应用）的 AI 笔记助手，请用中文回答。"];
+  lines.push(
+    "Idea Note 支持高亮块这一 Markdown 引用扩展。新建或整体重写高亮块时，必须使用三行起始结构：\n> [!HIGHLIGHT color=blue]\n>\n> 高亮块正文",
+    "高亮标记必须是引用块第一行，标记与正文之间必须保留一条仅含 `>` 的空白引用行；块内每一行（包括段落之间的空行）都要保留引用前缀 `>`。正文可使用加粗、列表、链接等 Markdown 语法。",
+    "高亮块省略 color 时默认为蓝色，例如 `> [!HIGHLIGHT]`；预设颜色为 yellow、blue、green、red、purple，也可使用六位十六进制颜色，例如 `color=#8b5cf6`。修改现有高亮块时保留其标记和颜色，除非用户明确要求改变颜色或取消高亮。",
+    "读取时要兼容旧格式（标记行后直接跟正文）；但新增高亮块或整体重写相关内容时使用带空白引用行的新格式，避免普通 Markdown 编辑器把标记和正文合并成一行。",
+  );
   if (filePath) {
     lines.push(
       `用户当前打开的文件是：${filePath}`,

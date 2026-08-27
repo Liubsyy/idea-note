@@ -84,9 +84,9 @@ fn md_excerpt(path: &Path) -> Option<String> {
         return None;
     }
     // Decode the head like a full read would (GBK notes get readable
-    // excerpts); a multibyte char cut at the 4KB boundary just turns into a
-    // trailing replacement char, past the excerpt's 80-char window.
-    let text = crate::encoding::decode_text(buf[..n].to_vec())?;
+    // excerpts); `decode_head` drops a multibyte char cut at the 4KB boundary
+    // so it can't push a UTF-8 file into legacy detection.
+    let text = crate::encoding::decode_head(buf[..n].to_vec())?;
 
     let mut lines = text.lines().peekable();
     if lines.peek().map(|l| l.trim()) == Some("---") {
@@ -420,6 +420,81 @@ pub async fn search_notes(dir: String, query: String) -> Result<Vec<SearchHit>, 
     tauri::async_runtime::spawn_blocking(move || search_notes_inner(dir, query))
         .await
         .map_err(|e| format!("search task failed: {e}"))?
+}
+
+#[cfg(test)]
+mod excerpt_tests {
+    use super::*;
+
+    /// Body long enough that the 4KB excerpt read stops mid-file, so the
+    /// read boundary lands inside a multibyte character.
+    fn long_body(first_line: &str) -> String {
+        format!("{first_line}\n\n{}", "填充正文用来把文件撑过四千字节。".repeat(200))
+    }
+
+    fn write_temp(tag: &str, bytes: &[u8]) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "idea-note-excerpt-test-{}-{}",
+            std::process::id(),
+            tag
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("note.md");
+        fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    #[test]
+    fn gbk_note_gets_readable_excerpt() {
+        let text = long_body("本文介绍灵感笔记如何读取国标编码的笔记文件。");
+        let (bytes, _, had_errors) = encoding_rs::GBK.encode(&text);
+        assert!(!had_errors);
+        let path = write_temp("gbk", &bytes);
+        assert_eq!(
+            md_excerpt(&path).unwrap(),
+            "本文介绍灵感笔记如何读取国标编码的笔记文件。"
+        );
+        fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn utf16le_note_gets_readable_excerpt() {
+        let text = long_body("本文介绍灵感笔记如何读取 UTF-16 编码的笔记文件。");
+        let mut bytes = vec![0xFF, 0xFE];
+        for unit in text.encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        let path = write_temp("utf16le", &bytes);
+        assert_eq!(
+            md_excerpt(&path).unwrap(),
+            "本文介绍灵感笔记如何读取 UTF-16 编码的笔记文件。"
+        );
+        fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn utf8_bom_note_gets_readable_excerpt() {
+        let text = long_body("本文介绍灵感笔记如何读取带 BOM 的笔记文件。");
+        let mut bytes = vec![0xEF, 0xBB, 0xBF];
+        bytes.extend_from_slice(text.as_bytes());
+        let path = write_temp("utf8bom", &bytes);
+        assert_eq!(
+            md_excerpt(&path).unwrap(),
+            "本文介绍灵感笔记如何读取带 BOM 的笔记文件。"
+        );
+        fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn utf8_note_cut_mid_character_gets_readable_excerpt() {
+        let text = long_body("本文介绍灵感笔记的 AI 助手是如何工作的。");
+        let path = write_temp("utf8", text.as_bytes());
+        assert_eq!(
+            md_excerpt(&path).unwrap(),
+            "本文介绍灵感笔记的 AI 助手是如何工作的。"
+        );
+        fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
 }
 
 #[cfg(test)]

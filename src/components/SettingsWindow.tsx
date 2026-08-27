@@ -326,7 +326,7 @@ export function SettingsWindow() {
                     onChange={setEditorFontWeight}
                   />
                 </Row>
-                <Row title="显示行号" desc="仅在非 Markdown 文本文件中显示">
+                <Row title="显示行号" desc="在 Markdown 源码模式和其他文本文件中显示">
                   <Toggle checked={editorLineNumbers} onChange={setEditorLineNumbers} />
                 </Row>
                 <Row title="同时打开文件数" desc="编辑器标签栏最多保留的文件数，超出后自动关闭最早的">
