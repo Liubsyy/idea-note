@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle, AppWindow, X } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 
@@ -26,6 +27,10 @@ export function ConfirmModal() {
 
   if (!confirm) return null;
   const hasAltAction = Boolean(confirm.altLabel && confirm.onAlt);
+  const editorHost =
+    confirm.placement === "editor-center"
+      ? document.querySelector<HTMLElement>("[data-editor-pane]")
+      : null;
 
   const run = async (action: () => void | Promise<void>) => {
     if (busy) return;
@@ -40,15 +45,16 @@ export function ConfirmModal() {
     }
   };
 
-  return (
+  const modal = (
     <div
-      className="fixed inset-0 z-[60] flex items-start justify-center backdrop-blur-sm"
+      className={`${editorHost ? "absolute items-center" : "fixed items-start"} inset-0 z-[60] flex justify-center backdrop-blur-sm`}
       style={{ background: "rgba(0,0,0,0.32)" }}
       onMouseDown={closeConfirm}
     >
       <div
-        className="mt-32 w-[360px] max-w-[calc(100vw-32px)] rounded-xl p-4"
+        className={`${editorHost ? "" : "mt-32"} w-[360px] rounded-xl p-4`}
         style={{
+          maxWidth: "calc(100% - 32px)",
           background: "var(--bg-elev)",
           border: "1px solid var(--border)",
           boxShadow: "0 18px 54px var(--shadow)",
@@ -143,4 +149,6 @@ export function ConfirmModal() {
       </div>
     </div>
   );
+
+  return editorHost ? createPortal(modal, editorHost) : modal;
 }

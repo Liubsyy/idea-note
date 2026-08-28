@@ -6,8 +6,10 @@
 mod ai_models;
 mod app_data;
 mod clipboard;
+mod code_run;
 mod encoding;
 mod files;
+mod fix_path;
 mod git;
 mod open_with;
 mod print;
@@ -16,11 +18,16 @@ mod search;
 mod terminal;
 mod tree;
 
+use code_run::CodeRunState;
 use open_with::PendingOpenFiles;
 use terminal::TerminalState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Finder/desktop launches do not inherit the user's login-shell PATH on
+    // macOS/Linux. Restore it before any command runners or terminals spawn.
+    let _ = fix_path::fix();
+
     // Windows/Linux deliver an "Open With" launch as a file path in this
     // process's own argv. Seed the cold-start queue before the window loads;
     // macOS uses the "Opened" event instead (handled in the run loop below).
@@ -89,6 +96,7 @@ pub fn run() {
 
     builder
         .manage(TerminalState::default())
+        .manage(CodeRunState::default())
         .manage(encoding::EncodingState::default())
         .manage(pending)
         .invoke_handler(tauri::generate_handler![
@@ -127,6 +135,8 @@ pub fn run() {
             app_data::sync_config_save,
             app_data::git_proxy_load,
             app_data::git_proxy_save,
+            app_data::code_runners_load,
+            app_data::code_runners_save,
             git::git_run,
             git::git_run_with_credential,
             git::git_credential_approve,
@@ -135,7 +145,10 @@ pub fn run() {
             terminal::term_open,
             terminal::term_write,
             terminal::term_resize,
-            terminal::term_close
+            terminal::term_close,
+            code_run::code_run_start,
+            code_run::code_run_stop,
+            code_run::code_run_snippet_path
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

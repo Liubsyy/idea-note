@@ -30,6 +30,8 @@ export function TitleBar({ leftWidth }: { leftWidth: number }) {
   const bottomPanelOpen = useAppStore((s) => s.bottomPanelOpen);
   const rightPanelOpen = useAppStore((s) => s.rightPanelOpen);
   const rightPanelWidth = useAppStore((s) => s.rightPanelWidth);
+  const runPanelOpen = useAppStore((s) => s.runPanelOpen);
+  const runPanelWidth = useAppStore((s) => s.runPanelWidth);
   const toggleBottomPanel = useAppStore((s) => s.toggleBottomPanel);
   const toggleRightPanel = useAppStore((s) => s.toggleRightPanel);
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
@@ -44,9 +46,9 @@ export function TitleBar({ leftWidth }: { leftWidth: number }) {
 
   const words = activeFilePath ? countWords(content) : 0;
 
-  // Measure the right zone so the editor area's real width (zone minus the AI
-  // panel) decides what fits. As it narrows, the word count and sync time drop
-  // out first, then the centered title — the toggle buttons never overlap.
+  // Measure the right zone so the editor area's real width (after subtracting
+  // both right-side panels) decides what fits. As it narrows, the word count
+  // and sync time drop out first, then the centered title.
   const zoneRef = useRef<HTMLDivElement>(null);
   const [zoneWidth, setZoneWidth] = useState(0);
   useLayoutEffect(() => {
@@ -57,14 +59,17 @@ export function TitleBar({ leftWidth }: { leftWidth: number }) {
     return () => ro.disconnect();
   }, []);
 
-  const editorWidth = zoneWidth - (rightPanelOpen ? rightPanelWidth : 0);
+  const editorWidth =
+    zoneWidth -
+    (rightPanelOpen ? rightPanelWidth : 0) -
+    (runPanelOpen ? runPanelWidth : 0);
   // Thresholds leave breathing room rather than waiting for actual overflow:
-  // a full row (toggle + title + count + time + 4 buttons) wants ~550px, so
+  // a full row (toggle + title + count + time + panel buttons) wants ~550px, so
   // extras start dropping well before the row gets tight.
   const showWords = editorWidth >= 560;
   const showSyncTime = editorWidth >= 500;
   // As it narrows further the toggle cluster sheds buttons one by one, then
-  // the title; the sidebar toggle and the AI toggle are the last two standing.
+  // the title; the sidebar and AI toggles are the last ones standing.
   const showHistoryBtn = editorWidth >= 440;
   const showSyncBtn = editorWidth >= 390;
   const showTerminalBtn = editorWidth >= 340;
@@ -186,9 +191,20 @@ export function TitleBar({ leftWidth }: { leftWidth: number }) {
           </PanelToggle>
         </div>
 
-        {/* Strip above the AI panel: keeps the panel divider running unbroken
-            from the very top, stays a drag region, and hosts the chat actions
-            (new session / session history) while the panel is open. */}
+        {/* Each right-side panel owns a matching title-bar strip. Their order
+            mirrors App.tsx: run output beside the editor, AI at the far right. */}
+        {runPanelOpen && (
+          <div
+            data-tauri-drag-region
+            className={`flex shrink-0 items-center justify-end gap-0.5 self-stretch ${
+              isWindows || rightPanelOpen ? "" : "pr-2"
+            }`}
+            style={{ width: runPanelWidth, paddingLeft: 8, borderLeft: "1px solid var(--border)" }}
+          >
+            {isWindows && !rightPanelOpen && <WindowControls />}
+          </div>
+        )}
+
         {rightPanelOpen && (
           <div
             data-tauri-drag-region
@@ -202,11 +218,8 @@ export function TitleBar({ leftWidth }: { leftWidth: number }) {
           </div>
         )}
 
-        {/* Windows draws no native chrome (`decorations: false`), so the
-            window controls live here at the top-right corner. With the AI
-            panel open they move inside its strip above so the panel divider
-            still runs unbroken to the top. */}
-        {isWindows && !rightPanelOpen && <WindowControls />}
+        {/* Windows controls move into whichever open panel is rightmost. */}
+        {isWindows && !rightPanelOpen && !runPanelOpen && <WindowControls />}
       </div>
     </div>
   );

@@ -16,6 +16,7 @@ import { FolderView } from "./components/Editor/FolderView";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { BottomPanel } from "./components/Panels/BottomPanel";
 import { RightPanel } from "./components/Panels/RightPanel";
+import { RunPanel } from "./components/Panels/RunOutputPanel";
 import { TitleBar } from "./components/TitleBar";
 import { PromptModal } from "./components/PromptModal";
 import { ConfirmModal } from "./components/ConfirmModal";
@@ -35,7 +36,7 @@ import { openSearchWithReplace } from "./lib/codemirror/searchPanel";
 const MIN_W = 180;
 const MAX_W = 480;
 const RIGHT_PANEL_MIN_W = 220;
-const RIGHT_PANEL_MAX_RATIO = 0.9;
+const EDITOR_MIN_W = 180;
 
 /** Open a file handed over by the OS "Open With" menu as a new editor tab.
  *  Works whether or not a workspace is open (openFile doesn't need one); folders
@@ -55,6 +56,9 @@ function App() {
   const rightPanelOpen = useAppStore((s) => s.rightPanelOpen);
   const rightPanelWidth = useAppStore((s) => s.rightPanelWidth);
   const setRightPanelWidth = useAppStore((s) => s.setRightPanelWidth);
+  const runPanelOpen = useAppStore((s) => s.runPanelOpen);
+  const runPanelWidth = useAppStore((s) => s.runPanelWidth);
+  const setRunPanelWidth = useAppStore((s) => s.setRunPanelWidth);
   const docKey = useAppStore((s) => s.docKey);
 
   // The terminal panel stays mounted once opened so toggling it just hides the
@@ -133,7 +137,8 @@ function App() {
   }, [workspacePath, gitSyncReady, syncConfig.autoSync, syncConfig.intervalMin]);
 
   const [width, setWidth] = useState(260);
-  const [narrow, setNarrow] = useState(window.innerWidth < 768);
+  const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
+  const narrow = viewportWidth < 768;
   const [isDragging, setIsDragging] = useState(false);
   const dragging = useRef(false);
 
@@ -238,7 +243,7 @@ function App() {
 
   // Track narrow viewport for responsive (mobile) drawer behavior.
   useEffect(() => {
-    const onResize = () => setNarrow(window.innerWidth < 768);
+    const onResize = () => setViewportWidth(window.innerWidth);
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
@@ -272,14 +277,49 @@ function App() {
 
   const leftWidth = !narrow && sidebarOpen ? width : 0;
 
+  // When both independent right-side panels are open, preserve a usable editor
+  // instead of letting their saved widths squeeze it to zero. At the minimum
+  // window size the sidebar is an overlay, leaving room for both 220px panels.
+  useEffect(() => {
+    if (!runPanelOpen || !rightPanelOpen) return;
+    const available = Math.max(
+      RIGHT_PANEL_MIN_W * 2,
+      viewportWidth - leftWidth - EDITOR_MIN_W,
+    );
+    const total = runPanelWidth + rightPanelWidth;
+    if (total <= available) return;
+    let nextRun = Math.max(
+      RIGHT_PANEL_MIN_W,
+      Math.round((available * runPanelWidth) / total),
+    );
+    let nextRight = available - nextRun;
+    if (nextRight < RIGHT_PANEL_MIN_W) {
+      nextRight = RIGHT_PANEL_MIN_W;
+      nextRun = available - nextRight;
+    }
+    setRunPanelWidth(nextRun);
+    setRightPanelWidth(nextRight);
+  }, [
+    leftWidth,
+    rightPanelOpen,
+    rightPanelWidth,
+    runPanelOpen,
+    runPanelWidth,
+    setRightPanelWidth,
+    setRunPanelWidth,
+    viewportWidth,
+  ]);
+
   const startRightPanelResize = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
       const startX = e.clientX;
-      const startW = useAppStore.getState().rightPanelWidth;
+      const state = useAppStore.getState();
+      const startW = state.rightPanelWidth;
+      const reservedRunWidth = state.runPanelOpen ? state.runPanelWidth : 0;
       const maxW = Math.max(
         RIGHT_PANEL_MIN_W,
-        (window.innerWidth - leftWidth) * RIGHT_PANEL_MAX_RATIO,
+        window.innerWidth - leftWidth - reservedRunWidth - EDITOR_MIN_W,
       );
       const onMove = (ev: MouseEvent) => {
         setRightPanelWidth(
@@ -298,6 +338,36 @@ function App() {
       document.body.style.userSelect = "none";
     },
     [leftWidth, setRightPanelWidth],
+  );
+
+  const startRunPanelResize = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const state = useAppStore.getState();
+      const startW = state.runPanelWidth;
+      const reservedAiWidth = state.rightPanelOpen ? state.rightPanelWidth : 0;
+      const maxW = Math.max(
+        RIGHT_PANEL_MIN_W,
+        window.innerWidth - leftWidth - reservedAiWidth - EDITOR_MIN_W,
+      );
+      const onMove = (ev: MouseEvent) => {
+        setRunPanelWidth(
+          Math.min(maxW, Math.max(RIGHT_PANEL_MIN_W, startW - (ev.clientX - startX))),
+        );
+      };
+      const onUp = () => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [leftWidth, setRunPanelWidth],
   );
 
   return (
@@ -366,7 +436,7 @@ function App() {
             </span>
           </div>
         )}
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div data-editor-pane className="relative flex min-h-0 flex-1 flex-col">
         <EditorTabs />
         {folderViewPath ? (
           <>
@@ -436,12 +506,22 @@ function App() {
           />
         )}
       </div>
+      {runPanelOpen && (
+        <div className="relative h-full shrink-0" style={{ width: runPanelWidth }}>
+          <div
+            onMouseDown={startRunPanelResize}
+            className="absolute bottom-0 left-0 top-0 z-30 w-[7px] -translate-x-1/2 cursor-col-resize"
+            title="拖动调整运行输出宽度"
+          />
+          <RunPanel />
+        </div>
+      )}
       {rightPanelOpen && (
         <div className="relative h-full shrink-0" style={{ width: rightPanelWidth }}>
           <div
             onMouseDown={startRightPanelResize}
             className="absolute bottom-0 left-0 top-0 z-30 w-[7px] -translate-x-1/2 cursor-col-resize"
-            title="拖动调整宽度"
+            title="拖动调整笔记助手宽度"
           />
           <RightPanel />
         </div>

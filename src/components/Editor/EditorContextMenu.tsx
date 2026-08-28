@@ -9,6 +9,8 @@ import type { EditorView } from "@codemirror/view";
 import { getActiveView } from "../../lib/codemirror/activeView";
 import { openSearchWithReplace } from "../../lib/codemirror/searchPanel";
 import { copyText, readClipboardText } from "../../lib/clipboard";
+import { codeBlockAt } from "../../lib/codeRun/document";
+import { runInTerminal } from "../../lib/codeRun/run";
 
 export interface EditorMenuState {
   x: number;
@@ -36,6 +38,10 @@ export function EditorContextMenu({
   onClose: () => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  // The right-click already moved the caret (see CodeMirrorEditor), so the
+  // selection head tells us whether the click landed in a code block.
+  const view = getActiveView();
+  const block = view ? codeBlockAt(view, view.state.selection.main.head) : null;
 
   // Dismiss on any click outside the menu, Escape, or window blur.
   useEffect(() => {
@@ -83,7 +89,7 @@ export function EditorContextMenu({
       className="fixed z-50 w-44 rounded-lg py-1 text-sm shadow-lg"
       style={{
         left: Math.min(menu.x, window.innerWidth - 184),
-        top: Math.min(menu.y, window.innerHeight - 218),
+        top: Math.min(menu.y, window.innerHeight - (block ? 254 : 218)),
         background: "var(--bg-elev)",
         border: "1px solid var(--border)",
         boxShadow: "0 8px 24px var(--shadow)",
@@ -109,6 +115,16 @@ export function EditorContextMenu({
       <Item hint={`${alt}${mod}F`} onClick={() => run((v) => openSearchWithReplace(v))}>
         替换
       </Item>
+      {block && (
+        <>
+          <div className="my-1" style={{ borderTop: "1px solid var(--border)" }} />
+          {/* The escape hatch for code the run pipeline can't host: anything
+              needing stdin, a TTY, or a process that outlives the timeout. */}
+          <Item onClick={() => run(() => void runInTerminal(block.info, block.code))}>
+            在终端运行
+          </Item>
+        </>
+      )}
     </div>
   );
 }

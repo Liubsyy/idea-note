@@ -40,6 +40,23 @@
   --search-mark: #f6dd8f;
   --shadow: rgba(20, 24, 34, 0.08);
   --toolbar-bg: rgba(255, 255, 255, 0.85);
+  /* Readable ANSI terminal palette for code-block output. */
+  --ansi-black: #24292f;
+  --ansi-red: #cf222e;
+  --ansi-green: #1a7f37;
+  --ansi-yellow: #9a6700;
+  --ansi-blue: #0969da;
+  --ansi-magenta: #8250df;
+  --ansi-cyan: #087f8c;
+  --ansi-white: #6e7781;
+  --ansi-bright-black: #57606a;
+  --ansi-bright-red: #a40e26;
+  --ansi-bright-green: #116329;
+  --ansi-bright-yellow: #7d4e00;
+  --ansi-bright-blue: #0550ae;
+  --ansi-bright-magenta: #6639ba;
+  --ansi-bright-cyan: #096b73;
+  --ansi-bright-white: #24292f;
   --editor-font-size: 15px;
   --editor-line-height: 1.75;
   /* Body weight, plus the derived weight for headings and bold. Both are
@@ -60,6 +77,24 @@
    active theme's palette inline on <html>. The class itself is still toggled by
    the theme's base mode and is used as a selector for mode-specific tweaks that
    aren't plain tokens (e.g. the history-diff tints in codemirror/editor.css). */
+.dark {
+  --ansi-black: #6e7681;
+  --ansi-red: #ff7b72;
+  --ansi-green: #3fb950;
+  --ansi-yellow: #d29922;
+  --ansi-blue: #58a6ff;
+  --ansi-magenta: #bc8cff;
+  --ansi-cyan: #39c5cf;
+  --ansi-white: #b1bac4;
+  --ansi-bright-black: #8c959f;
+  --ansi-bright-red: #ffa198;
+  --ansi-bright-green: #56d364;
+  --ansi-bright-yellow: #e3b341;
+  --ansi-bright-blue: #79c0ff;
+  --ansi-bright-magenta: #d2a8ff;
+  --ansi-bright-cyan: #56d4dd;
+  --ansi-bright-white: #f0f6fc;
+}
 
 html,
 body,
@@ -146,6 +181,36 @@ body {
 .scroll-auto-hide.is-scrolling::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
   background-clip: content-box;
+}
+
+/* ---------- Overlay scrollbar for the zoomed sidebar list ----------
+   The list drops native scrolling under macOS page zoom (see Sidebar), which
+   also drops its scrollbar; `ZoomScrollbar` draws this one instead. Metrics and
+   colours mirror the `::-webkit-scrollbar` rules above so both modes match.
+   Only the thumb takes pointer events, so it intercepts a click exactly where a
+   native thumb would have — in its own gutter with classic scrollbars, over the
+   rows where the platform floats overlay ones. */
+.zoom-scrollbar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+.zoom-scrollbar-thumb {
+  width: 5px; /* track width minus the 2px transparent border used above */
+  margin: 0 2px;
+  border-radius: 6px;
+  background: transparent;
+  pointer-events: auto;
+  transition: background 0.25s ease;
+}
+.zoom-scrollbar.is-scrolling .zoom-scrollbar-thumb {
+  background: var(--border);
+}
+/* Hovering the thumb reveals it, so it stays findable once idle. */
+.zoom-scrollbar .zoom-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }
 
 /* ---------- Editor tab strip ----------

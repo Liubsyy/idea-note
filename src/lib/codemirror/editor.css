@@ -349,19 +349,28 @@
   padding-bottom: 0.7em;
 }
 
-/* Copy button floated in the code block's top-right corner. It's a widget on the
+/* Action buttons floated in the code block's top-right corner. The row is a widget on the
    first code line (already position:relative for the line-number gutter), so it
    sits in the block's top padding. Always visible and styled as a solid,
-   obviously-clickable button — a faint/ghosted chip reads as disabled. */
-.cm-md-copy-btn {
+   obviously-clickable control — a faint/ghosted chip reads as disabled. */
+/* Action row (run / output / copy) pinned to a code block's first line. One flex
+   container so the buttons don't need hard-coded offsets from each other. */
+.cm-md-code-actions {
   position: absolute;
-  top: 0.3em;
-  right: 0.5em;
+  top: 4px;
+  right: 6px;
   z-index: 2;
-  padding: 2px 9px;
-  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
-  font-size: 11px;
-  line-height: 1.6;
+  display: flex;
+  gap: 6px;
+}
+
+.cm-md-code-action-btn {
+  display: flex;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
   color: var(--text-soft);
   background: var(--bg-elev);
   border: 1px solid var(--border);
@@ -369,19 +378,33 @@
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
-.cm-md-copy-btn:hover {
+.cm-md-code-action-btn svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.cm-md-code-action-btn:hover {
   color: var(--text);
   background: var(--hover);
   border-color: var(--text-muted);
 }
-.cm-md-copy-btn:active {
+.cm-md-code-action-btn:active {
   background: var(--active);
   border-color: var(--accent);
 }
-.cm-md-copy-btn-done {
+.cm-md-code-action-done {
   opacity: 1;
   color: var(--accent);
   border-color: var(--accent);
+}
+
+/* Run reads as the primary action of the pair. */
+.cm-md-run-btn {
+  color: var(--accent);
 }
 
 /* List items — indent is set inline per line (padding-left, derived from the

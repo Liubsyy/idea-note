@@ -242,3 +242,15 @@ pub fn git_proxy_load(app: AppHandle) -> Result<String, String> {
 pub fn git_proxy_save(app: AppHandle, proxy: String) -> Result<(), String> {
     save_blob(&app, "git-proxy.txt", proxy)
 }
+
+/// Code-block runner config ({ runners: [...], enabled, ... }). Missing file
+/// yields an empty object, which the frontend fills with the built-in table.
+#[tauri::command]
+pub fn code_runners_load(app: AppHandle) -> Result<String, String> {
+    load_blob(&app, "code-runners.json", "{}")
+}
+
+#[tauri::command]
+pub fn code_runners_save(app: AppHandle, json: String) -> Result<(), String> {
+    save_blob(&app, "code-runners.json", json)
+}

@@ -46,6 +46,7 @@ import { FileTree } from "./FileTree";
 import { NotesTree } from "./NotesTree";
 import { OutlinePanel } from "./OutlinePanel";
 import { SearchPanel } from "./SearchPanel";
+import { ZoomScrollbar, scrollbarReservesGutter } from "./ZoomScrollbar";
 import { isMac } from "../../lib/platform";
 
 type BrowseSidebarMode = Exclude<SidebarMode, "search">;
@@ -192,22 +193,15 @@ export function Sidebar() {
   // zoom, so the file list turns blurry at any zoom != 100% (the editor and AI
   // panel don't scroll through such a layer, so they stay crisp). While zoomed
   // we switch the list to `overflow:hidden` — which keeps it out of a composited
-  // layer, so subpixel text re-rasterises crisply — and drive scrolling by hand.
-  // Native `onWheel` is registered passive by React, so attach manually to be
-  // able to preventDefault.
+  // layer, so subpixel text re-rasterises crisply. That box scrolls only when
+  // `scrollTop` is assigned and shows no scrollbar of its own, so `ZoomScrollbar`
+  // takes over both jobs. It needs the same gutter the native scrollbar took —
+  // none at all where scrollbars are overlays — so that zooming doesn't reflow
+  // the rows.
   const needsManualZoomScroll = isMac && Math.abs(uiZoom - 1) > 0.001;
-  useEffect(() => {
-    const el = listRef.current;
-    if (!el || !needsManualZoomScroll) return;
-    const onWheel = (e: WheelEvent) => {
-      if (el.scrollHeight <= el.clientHeight) return;
-      e.preventDefault();
-      el.scrollTop += e.deltaY;
-      el.scrollLeft += e.deltaX;
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, [needsManualZoomScroll]);
+  const zoomScrollClasses = needsManualZoomScroll
+    ? `overflow-hidden${scrollbarReservesGutter() ? " pr-[9px]" : ""}`
+    : "overflow-y-auto";
 
   useEffect(() => {
     const close = (event: Event) => {
@@ -458,56 +452,59 @@ export function Sidebar() {
       </div>
 
       {/* Tree */}
-      <div
-        ref={listRef}
-        tabIndex={0}
-        onScroll={onListScroll}
-        onContextMenu={openRootContextMenu}
-        onKeyDown={onListKeyDown}
-        // Clicking empty space (not a row) drops the multi-selection.
-        onClick={(e) => {
-          if (!(e.target as HTMLElement).closest("[data-tree-path]")) clearSelection();
-        }}
-        className={`scroll-auto-hide flex-1 outline-none ${
-          needsManualZoomScroll ? "overflow-hidden" : "overflow-y-auto"
-        } ${compactSidebar ? "py-0.5" : "py-1"}`}
-        style={{
-          fontSize:
-            sidebarMode === "files" || sidebarMode === "search"
-              ? "var(--sidebar-files-font-size)"
-              : sidebarMode === "notes"
-                ? "var(--sidebar-notes-font-size)"
-                : "var(--sidebar-outline-font-size)",
-          // Rows that don't set a weight of their own inherit this one.
-          fontWeight: "var(--sidebar-font-weight)",
-        }}
-      >
-        {workspacePath ? (
-          sidebarMode === "search" ? (
-            <SearchPanel />
-          ) : sidebarMode === "outline" ? (
-            <OutlinePanel />
-          ) : sidebarMode === "notes" ? (
-            <NotesTree nodes={tree} onContextMenu={openContextMenu} />
-          ) : tree.length ? (
-            <FileTree nodes={tree} onContextMenu={openContextMenu} />
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div
+          ref={listRef}
+          tabIndex={0}
+          onScroll={onListScroll}
+          onContextMenu={openRootContextMenu}
+          onKeyDown={onListKeyDown}
+          // Clicking empty space (not a row) drops the multi-selection.
+          onClick={(e) => {
+            if (!(e.target as HTMLElement).closest("[data-tree-path]")) clearSelection();
+          }}
+          className={`scroll-auto-hide flex-1 outline-none ${zoomScrollClasses} ${
+            compactSidebar ? "py-0.5" : "py-1"
+          }`}
+          style={{
+            fontSize:
+              sidebarMode === "files" || sidebarMode === "search"
+                ? "var(--sidebar-files-font-size)"
+                : sidebarMode === "notes"
+                  ? "var(--sidebar-notes-font-size)"
+                  : "var(--sidebar-outline-font-size)",
+            // Rows that don't set a weight of their own inherit this one.
+            fontWeight: "var(--sidebar-font-weight)",
+          }}
+        >
+          {workspacePath ? (
+            sidebarMode === "search" ? (
+              <SearchPanel />
+            ) : sidebarMode === "outline" ? (
+              <OutlinePanel />
+            ) : sidebarMode === "notes" ? (
+              <NotesTree nodes={tree} onContextMenu={openContextMenu} />
+            ) : tree.length ? (
+              <FileTree nodes={tree} onContextMenu={openContextMenu} />
+            ) : (
+              <p
+                className="px-4 py-6 text-center text-xs"
+                style={{ color: "var(--text-muted)" }}
+              >
+                这个文件夹是空的。
+              </p>
+            )
           ) : (
-            <p
-              className="px-4 py-6 text-center text-xs"
-              style={{ color: "var(--text-muted)" }}
+            <button
+              onClick={openWorkspace}
+              className="mx-3 mt-4 flex w-[calc(100%-1.5rem)] items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+              style={{ background: "var(--accent)" }}
             >
-              这个文件夹是空的。
-            </p>
-          )
-        ) : (
-          <button
-            onClick={openWorkspace}
-            className="mx-3 mt-4 flex w-[calc(100%-1.5rem)] items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
-            style={{ background: "var(--accent)" }}
-          >
-            <FolderOpen size={16} /> 打开文件夹
-          </button>
-        )}
+              <FolderOpen size={16} /> 打开文件夹
+            </button>
+          )}
+        </div>
+        <ZoomScrollbar targetRef={listRef} enabled={needsManualZoomScroll} />
       </div>
 
       {/* Footer: app identity + utility buttons */}

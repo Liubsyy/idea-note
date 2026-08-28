@@ -11,7 +11,11 @@ import { LanguageDescription } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import { GFM } from "@lezer/markdown";
 
-import { livePreview, syntaxParseDriver } from "../../lib/codemirror/livePreview";
+import {
+  codeRunnersChanged,
+  livePreview,
+  syntaxParseDriver,
+} from "../../lib/codemirror/livePreview";
 import { markdownAutoCloseFences } from "../../lib/codemirror/autoClose";
 import { markdownParagraphEnter } from "../../lib/codemirror/paragraphEnter";
 import { paragraphSoftWrap } from "../../lib/codemirror/paragraphWrap";
@@ -92,6 +96,7 @@ export function CodeMirrorEditor() {
   const editorLineNumbers = useAppStore((s) => s.editorLineNumbers);
   const editorKeybindings = useAppStore((s) => s.editorKeybindings);
   const mdViewMode = useAppStore((s) => s.mdViewMode);
+  const codeRunConfig = useAppStore((s) => s.codeRunConfig);
   // Compartment holding the view-mode extensions for markdown files, so switching
   // mode reconfigures them in place (no remount, cursor/scroll/edits kept).
   const previewCompartment = useRef(new Compartment());
@@ -274,6 +279,13 @@ export function CodeMirrorEditor() {
         : computeActiveFormats(view.state),
     );
   }, [mdViewMode, editorLineNumbers, setActiveFormats]);
+
+  // Enabling a language in settings (a different window) must make its run
+  // buttons appear without reopening the file. Decorations only rebuild on
+  // doc/selection changes, so nudge them.
+  useEffect(() => {
+    getActiveView()?.dispatch({ effects: codeRunnersChanged.of(null) });
+  }, [codeRunConfig]);
 
   // Right-click: keep the selection when clicking inside it, otherwise move
   // the caret to the click point (native text-field behavior), then show the

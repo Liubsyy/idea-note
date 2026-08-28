@@ -31,6 +31,8 @@ import {
 } from "../imageSyntax";
 import { copyText } from "../clipboard";
 import { useAppStore } from "../../store/useAppStore";
+import { startRun } from "../codeRun/run";
+import { resolveRunner } from "../codeRun/runners";
 import { MathWidget } from "./math";
 import { MERMAID_FENCE } from "./diagram";
 import {
@@ -256,42 +258,130 @@ class BrWidget extends WidgetType {
   }
 }
 
-/** A "copy" button floated in a code block's top-right corner. Copies the block
- *  body and briefly confirms (plus a toast). Anchored to the first code line,
- *  which CSS makes `position: relative`. */
-class CopyButtonWidget extends WidgetType {
-  constructor(readonly code: string) {
+type CodeActionIcon = "play" | "panelOpen" | "panelClose" | "copy" | "check";
+
+const CODE_ACTION_ICON_PATHS: Record<CodeActionIcon, string[]> = {
+  play: ["M6 3l14 9-14 9V3z"],
+  panelOpen: ["M3 3h18v18H3z", "M15 3v18", "m7 9 3 3-3 3"],
+  panelClose: ["M3 3h18v18H3z", "M15 3v18", "m10 9-3 3 3 3"],
+  copy: [
+    "M10 8h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2z",
+    "M4 16a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2",
+  ],
+  check: ["m4 12 5 5L20 6"],
+};
+
+function setCodeActionIcon(button: HTMLButtonElement, icon: CodeActionIcon): void {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  for (const d of CODE_ACTION_ICON_PATHS[icon]) {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    svg.append(path);
+  }
+  button.replaceChildren(svg);
+}
+
+function setRunPanelButtonState(button: HTMLButtonElement, open: boolean): void {
+  const label = open ? "隐藏代码运行面板" : "打开代码运行面板";
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  setCodeActionIcon(button, open ? "panelClose" : "panelOpen");
+}
+
+const CODE_ACTION_CLEANUPS = new WeakMap<HTMLElement, () => void>();
+
+/** The action buttons floated in a code block's top-right corner: "运行" and
+ *  "输出" when the fence's language has an enabled runner, plus "复制". They
+ *  share one absolutely positioned row so none has to know the others' width.
+ *  Anchored to the first code line, which CSS makes `position: relative`. */
+class CodeActionsWidget extends WidgetType {
+  constructor(
+    readonly code: string,
+    /** Info string when the block is runnable, else null (no run button). */
+    readonly runInfo: string | null,
+  ) {
     super();
   }
-  eq(o: CopyButtonWidget) {
-    return o.code === this.code;
+  eq(o: CodeActionsWidget) {
+    return o.code === this.code && o.runInfo === this.runInfo;
   }
   toDOM() {
+    const wrap = document.createElement("div");
+    wrap.className = "cm-md-code-actions";
+    // Don't let a press move the editor cursor or steal focus.
+    wrap.addEventListener("mousedown", (e) => e.preventDefault());
+
+    if (this.runInfo !== null) {
+      const run = document.createElement("button");
+      run.type = "button";
+      run.className = "cm-md-code-action-btn cm-md-run-btn";
+      run.title = "运行代码块";
+      run.setAttribute("aria-label", "运行代码块");
+      setCodeActionIcon(run, "play");
+      run.addEventListener("click", (e) => {
+        e.preventDefault();
+        void startRun({
+          filePath: useAppStore.getState().activeFilePath,
+          info: this.runInfo ?? "",
+          code: this.code,
+        });
+      });
+      wrap.append(run);
+
+      const output = document.createElement("button");
+      output.type = "button";
+      output.className = "cm-md-code-action-btn";
+      setRunPanelButtonState(output, useAppStore.getState().runPanelOpen);
+      output.addEventListener("click", (e) => {
+        e.preventDefault();
+        useAppStore.getState().toggleRunPanel();
+      });
+      wrap.append(output);
+
+      const unsubscribe = useAppStore.subscribe((state, previous) => {
+        if (state.runPanelOpen !== previous.runPanelOpen) {
+          setRunPanelButtonState(output, state.runPanelOpen);
+        }
+      });
+      CODE_ACTION_CLEANUPS.set(wrap, unsubscribe);
+    }
+
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "cm-md-copy-btn";
-    btn.textContent = "复制";
+    btn.className = "cm-md-code-action-btn";
     btn.title = "复制代码";
-    // Don't let the press move the editor cursor or steal focus.
-    btn.addEventListener("mousedown", (e) => e.preventDefault());
+    btn.setAttribute("aria-label", "复制代码");
+    setCodeActionIcon(btn, "copy");
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       void copyText(this.code)
         .then(() => {
           useAppStore.getState().showToast("已复制到剪贴板", "success");
-          btn.textContent = "已复制";
-          btn.classList.add("cm-md-copy-btn-done");
+          btn.title = "已复制";
+          btn.setAttribute("aria-label", "已复制");
+          setCodeActionIcon(btn, "check");
+          btn.classList.add("cm-md-code-action-done");
           window.setTimeout(() => {
-            btn.textContent = "复制";
-            btn.classList.remove("cm-md-copy-btn-done");
+            btn.title = "复制代码";
+            btn.setAttribute("aria-label", "复制代码");
+            setCodeActionIcon(btn, "copy");
+            btn.classList.remove("cm-md-code-action-done");
           }, 1200);
         })
         .catch(() => useAppStore.getState().showToast("复制失败", "error"));
     });
-    return btn;
+    wrap.append(btn);
+    return wrap;
   }
   ignoreEvent() {
     return true;
+  }
+  destroy(dom: HTMLElement) {
+    CODE_ACTION_CLEANUPS.get(dom)?.();
+    CODE_ACTION_CLEANUPS.delete(dom);
   }
 }
 
@@ -510,9 +600,9 @@ function buildDecorations(view: EditorView): DecorationSet {
                 }).range(ln.from),
               );
             });
-            // A copy button in the block's top-right (anchored to the first code
-            // line). Indented CodeBlocks carry a 4-space/tab indent — strip it so
-            // the copied text is the bare code.
+            // Output/copy (and, for a runnable language, run) in the block's
+            // top-right, anchored to the first code line. Indented CodeBlocks
+            // carry a 4-space/tab indent — strip it so copied text is bare code.
             if (codeLines.length > 0) {
               const code = codeLines
                 .map((n) => {
@@ -520,9 +610,16 @@ function buildDecorations(view: EditorView): DecorationSet {
                   return fenced ? t : t.replace(/^( {1,4}|\t)/, "");
                 })
                 .join("\n");
+              // Read-only preview never offers to run: it's the mode for
+              // reading notes that came from elsewhere.
+              const info = infoMatch?.[1] ?? "";
+              const runnable =
+                !state.readOnly &&
+                info &&
+                resolveRunner(info, useAppStore.getState().codeRunConfig) !== null;
               ranges.push(
                 Decoration.widget({
-                  widget: new CopyButtonWidget(code),
+                  widget: new CodeActionsWidget(code, runnable ? info : null),
                   side: -1,
                 }).range(state.doc.line(codeLines[0]).from),
               );
@@ -882,7 +979,9 @@ export const livePreview = ViewPlugin.fromClass(
         // Switching in/out of read-only mode changes whether the cursor line is
         // revealed as source, so rebuild when the readOnly facet toggles.
         u.startState.readOnly !== u.state.readOnly ||
-        u.transactions.some((t) => t.effects.some((e) => e.is(parseAdvanced)))
+        u.transactions.some((t) =>
+          t.effects.some((e) => e.is(parseAdvanced) || e.is(codeRunnersChanged)),
+        )
       ) {
         this.decorations = buildDecorations(u.view);
       }
@@ -898,6 +997,12 @@ export const livePreview = ViewPlugin.fromClass(
  * decoration providers rebuild even though the doc/selection didn't change.
  */
 export const parseAdvanced = StateEffect.define<null>();
+
+/**
+ * Dispatched when the code-runner table changes (possibly from the settings
+ * window), so run buttons appear/disappear without reopening the file.
+ */
+export const codeRunnersChanged = StateEffect.define<null>();
 
 /**
  * Drives the incremental markdown parser to completion after a file opens.

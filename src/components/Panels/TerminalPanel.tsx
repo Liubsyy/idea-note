@@ -122,5 +122,16 @@ export function TerminalView({ id, active }: { id: number; active: boolean }) {
     if (termRef.current) termRef.current.options.theme = themeColors();
   }, [themeId]);
 
+  // "在终端运行" queues a command in the store; the visible terminal is the one
+  // that runs it. The pty buffers input, so this is safe even moments after the
+  // shell was spawned.
+  const pendingTerminalInput = useAppStore((s) => s.pendingTerminalInput);
+  useEffect(() => {
+    if (!active || !pendingTerminalInput) return;
+    void invoke("term_write", { id, data: pendingTerminalInput });
+    useAppStore.getState().clearTerminalInput();
+    termRef.current?.focus();
+  }, [active, pendingTerminalInput, id]);
+
   return <div ref={hostRef} className={`h-full w-full ${active ? "" : "hidden"}`} />;
 }

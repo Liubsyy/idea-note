@@ -18,6 +18,7 @@ import {
   Palette,
   PenLine,
   Pencil,
+  Play,
   Plus,
   RotateCcw,
   Sun,
@@ -62,6 +63,15 @@ import {
 } from "../store/useAppStore";
 import { fetchUpstreamModels } from "../lib/ai/modelCatalog";
 import {
+  DEFAULT_TIMEOUT_MS,
+  isBuiltinLang,
+  parseRunnerDraft,
+  splitArgs,
+  type CodeRunConfig,
+  type CodeRunner,
+  type RunnerDraft,
+} from "../lib/codeRun/runners";
+import {
   firstModelSelection,
   modelIdsOf,
   modelSelectionKey,
@@ -100,6 +110,7 @@ type TabId =
   | "shortcuts"
   | "sidebar"
   | "attachments"
+  | "coderun"
   | "models"
   | "sync";
 
@@ -116,6 +127,7 @@ const tabs: Tab[] = [
   { id: "editor", label: "编辑器", caption: "字体、字号与行高", icon: <PenLine size={16} /> },
   { id: "shortcuts", label: "快捷键", caption: "编辑器快捷键自定义", icon: <Keyboard size={16} /> },
   { id: "attachments", label: "图片/附件", caption: "粘贴文件的保存目录", icon: <ImageIcon size={16} /> },
+  { id: "coderun", label: "代码块执行", caption: "可运行的代码块语言", icon: <Play size={16} /> },
   { id: "models", label: "AI笔记助手", caption: "模型、字号与 API Key", icon: <Bot size={16} /> },
   { id: "sync", label: "远程同步", caption: "Git 仓库同步", icon: <ArrowDownUp size={16} /> },
 ];
@@ -480,6 +492,8 @@ export function SettingsWindow() {
           )}
 
           {activeTab === "attachments" && <AttachmentsTab />}
+
+          {activeTab === "coderun" && <CodeRunTab />}
 
           {activeTab === "models" && (
             <ModelsTab
@@ -1229,6 +1243,445 @@ function Notice({ tone, children }: { tone?: "danger"; children: React.ReactNode
       }}
     >
       {children}
+    </div>
+  );
+}
+
+/* ---------------------------- code-run tab ----------------------------- */
+
+/** Languages whose runner is a shell: enabling one means a note can run any
+ *  command the user can, so they get an extra warning. */
+const SHELL_LANGS = new Set(["bash", "powershell"]);
+
+const RUNNER_LABEL: Record<string, string> = {
+  python: "Python",
+  node: "JavaScript / Node",
+  ruby: "Ruby",
+  perl: "Perl",
+  bash: "Bash / Shell",
+  powershell: "PowerShell",
+};
+
+/** An empty form for a language the app doesn't ship. */
+const emptyRunnerDraft = (): RunnerDraft => ({
+  lang: "",
+  aliases: "",
+  command: "",
+  args: "",
+  ext: "",
+  enabled: true,
+  timeoutMs: DEFAULT_TIMEOUT_MS,
+});
+
+const draftOf = (runner: CodeRunner): RunnerDraft => ({
+  lang: runner.lang,
+  aliases: runner.aliases.join(" "),
+  command: runner.command,
+  args: runner.args.join(" "),
+  ext: runner.ext,
+  enabled: runner.enabled,
+  timeoutMs: runner.timeoutMs,
+});
+
+/** The command line a runner produces, mirroring the run record's footer. */
+const runnerCommandLine = (command: string, args: string[], ext: string) =>
+  [command, ...args, `snippet${ext}`].join(" ");
+
+/**
+ * The "代码块执行" tab: the master switch, one card per built-in language
+ * runner, and a list of the user's own.
+ *
+ * Built-in runners are on by default and can only be re-pointed at a different
+ * interpreter — their language ids are owned by the app. Anything else the user
+ * adds here, which is any language whose interpreter runs a single source file
+ * in one command; the rest belong in the integrated terminal. The first run in
+ * each workspace still requires confirmation before a note can execute local
+ * commands.
+ */
+function CodeRunTab() {
+  const config = useAppStore((s) => s.codeRunConfig);
+  const setConfig = useAppStore((s) => s.setCodeRunConfig);
+  // Saving goes through a Rust command; the settings window renders no toast,
+  // so a failure has to show up here or it looks like the toggle did nothing.
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  // null = form closed; "new" = adding; otherwise the lang being edited.
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState<RunnerDraft>(emptyRunnerDraft);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  const apply = (next: CodeRunConfig) => {
+    setSaveError(null);
+    void setConfig(next).catch((e) => setSaveError(String(e)));
+  };
+  const update = (patch: Partial<CodeRunConfig>) => apply({ ...config, ...patch });
+  const updateRunner = (lang: string, patch: Partial<CodeRunner>) => {
+    apply({
+      ...config,
+      // Switching a language on means "I want to run this", so it implies the
+      // master switch — otherwise the toggle appears to do nothing.
+      enabled: config.enabled || patch.enabled === true,
+      runners: config.runners.map((r) => (r.lang === lang ? { ...r, ...patch } : r)),
+    });
+  };
+
+  const builtins = config.runners.filter((r) => isBuiltinLang(r.lang));
+  const customs = config.runners.filter((r) => !isBuiltinLang(r.lang));
+
+  const openNew = () => {
+    setDraft(emptyRunnerDraft());
+    setDraftError(null);
+    setEditing("new");
+  };
+  const openEdit = (runner: CodeRunner) => {
+    setDraft(draftOf(runner));
+    setDraftError(null);
+    setEditing(runner.lang);
+  };
+  const closeDraft = () => {
+    setDraftError(null);
+    setEditing(null);
+  };
+
+  // Any edit clears the last rejection: leaving it under a field the user just
+  // fixed makes a valid form look like it's still broken.
+  const editDraft = (patch: Partial<RunnerDraft>) => {
+    setDraft((d) => ({ ...d, ...patch }));
+    setDraftError(null);
+  };
+
+  const saveDraft = () => {
+    const current =
+      editing === "new" ? null : (customs.find((r) => r.lang === editing) ?? null);
+    const parsed = parseRunnerDraft(draft, config, current);
+    if ("error" in parsed) {
+      setDraftError(parsed.error);
+      return;
+    }
+    const { runner } = parsed;
+    apply({
+      ...config,
+      enabled: config.enabled || runner.enabled,
+      runners: current
+        ? config.runners.map((r) => (r.lang === current.lang ? runner : r))
+        : [...config.runners, runner],
+    });
+    closeDraft();
+  };
+
+  const removeRunner = (lang: string) => {
+    setConfirmDelete(null);
+    if (editing === lang) closeDraft();
+    apply({ ...config, runners: config.runners.filter((r) => r.lang !== lang) });
+  };
+
+  // Shown live under the form so the effect of "参数" and "扩展名" is visible
+  // before saving — the snippet path always lands last, which is easy to miss.
+  const draftExt = draft.ext.trim().replace(/^\.?/, ".");
+  const draftPreview = draft.command.trim()
+    ? runnerCommandLine(
+        draft.command.trim(),
+        splitArgs(draft.args),
+        draftExt === "." ? ".txt" : draftExt,
+      )
+    : null;
+
+  return (
+    <div className="space-y-4">
+      <Notice>
+        运行代码块会在你的电脑上真实执行程序，结果显示在独立的运行输出面板。请只运行你信任的代码，
+        运行前会进行二次确认。
+      </Notice>
+
+      {saveError && <Notice tone="danger">保存失败：{saveError}</Notice>}
+
+      <Card>
+        <Row title="启用代码块运行" desc="关闭后所有代码块都不显示「运行」按钮">
+          <Toggle checked={config.enabled} onChange={(enabled) => update({ enabled })} />
+        </Row>
+        <Row title="运行前二次确认" desc="每次运行代码块前显示确认弹窗">
+          <Toggle
+            checked={config.confirmEveryRun}
+            onChange={(confirmEveryRun) => update({ confirmEveryRun })}
+          />
+        </Row>
+        <Row title="输出上限" desc="单次运行最多保留的输出，超出后截断（程序继续运行）">
+          <Stepper
+            value={config.maxOutputKb}
+            min={50}
+            max={2000}
+            step={50}
+            format={(v) => `${v} KB`}
+            onChange={(maxOutputKb) => update({ maxOutputKb })}
+          />
+        </Row>
+      </Card>
+
+      <div className="space-y-3">
+        {builtins.map((runner) => (
+          <RunnerCard
+            key={runner.lang}
+            runner={runner}
+            disabled={!config.enabled}
+            onChange={(patch) => updateRunner(runner.lang, patch)}
+          />
+        ))}
+      </div>
+
+      <div>
+        <div className="mb-2 px-0.5">
+          <div className="text-[12px] font-medium" style={{ color: "var(--text-soft)" }}>
+            自定义运行器
+          </div>
+          <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
+            凡是「一条命令跑一个源文件」的语言都可以加，例如 ruby、deno run、go run。
+            需要交互输入、或要先编译再运行的语言请改用「在终端运行」。
+          </div>
+        </div>
+
+        {customs.length > 0 && (
+          <Card>
+            {customs.map((runner) => (
+              <div
+                key={runner.lang}
+                className="flex items-center gap-3 px-4 py-3"
+                style={{ opacity: config.enabled ? 1 : 0.55 }}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="truncate text-[13px] font-medium"
+                      style={{ color: "var(--text)" }}
+                    >
+                      {runner.lang}
+                    </span>
+                    {runner.aliases.length > 0 && (
+                      <span
+                        className="shrink-0 rounded px-1.5 py-0.5 text-[10px]"
+                        style={{ background: "var(--active)", color: "var(--accent)" }}
+                      >
+                        {runner.aliases.join(" / ")}
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    className="mt-0.5 truncate text-[11px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {runnerCommandLine(runner.command, runner.args, runner.ext)}
+                  </div>
+                </div>
+                {confirmDelete === runner.lang ? (
+                  <div className="flex shrink-0 items-center gap-1">
+                    <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                      删除？
+                    </span>
+                    <IconButton title="确认删除" onClick={() => removeRunner(runner.lang)}>
+                      <Check size={15} />
+                    </IconButton>
+                    <IconButton title="取消" onClick={() => setConfirmDelete(null)}>
+                      <X size={15} />
+                    </IconButton>
+                  </div>
+                ) : (
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <Toggle
+                      checked={runner.enabled}
+                      onChange={(enabled) => updateRunner(runner.lang, { enabled })}
+                    />
+                    <IconButton title="编辑" onClick={() => openEdit(runner)}>
+                      <Pencil size={15} />
+                    </IconButton>
+                    <IconButton title="删除" onClick={() => setConfirmDelete(runner.lang)}>
+                      <Trash2 size={15} />
+                    </IconButton>
+                  </div>
+                )}
+              </div>
+            ))}
+          </Card>
+        )}
+
+        {editing !== null ? (
+          <div
+            className={`space-y-3 rounded-xl p-4 ${customs.length > 0 ? "mt-3" : ""}`}
+            style={{ background: "var(--bg-elev)", border: "1px solid var(--border)" }}
+          >
+            <Field label="语言标识">
+              <Input
+                value={draft.lang}
+                placeholder="ruby —— 对应 ```ruby 代码块"
+                onChange={(v) => editDraft({ lang: v })}
+              />
+            </Field>
+            <Field label="别名">
+              <Input
+                value={draft.aliases}
+                placeholder="rb —— 可留空，多个用空格分隔"
+                onChange={(v) => editDraft({ aliases: v })}
+              />
+            </Field>
+            <Field label="命令">
+              <Input
+                value={draft.command}
+                placeholder="ruby 或解释器的绝对路径"
+                onChange={(v) => editDraft({ command: v })}
+              />
+            </Field>
+            <Field label="参数">
+              <Input
+                value={draft.args}
+                placeholder="可留空；代码文件路径会追加在最后"
+                onChange={(v) => editDraft({ args: v })}
+              />
+            </Field>
+            <Field label="扩展名">
+              <Input
+                value={draft.ext}
+                placeholder=".rb"
+                onChange={(v) => editDraft({ ext: v })}
+              />
+            </Field>
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className="text-[12px] font-medium" style={{ color: "var(--text-soft)" }}>
+                  超时
+                </div>
+                <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
+                  超时后进程会被结束；设为 0 表示不限制
+                </div>
+              </div>
+              <Stepper
+                value={Math.round(draft.timeoutMs / 1000)}
+                min={0}
+                max={600}
+                step={5}
+                format={(v) => (v === 0 ? "不限制" : `${v} 秒`)}
+                onChange={(v) => editDraft({ timeoutMs: v * 1000 })}
+              />
+            </div>
+            {draftPreview && (
+              <div className="truncate text-[11px]" style={{ color: "var(--text-muted)" }}>
+                将执行：{draftPreview}
+              </div>
+            )}
+            {draftError && (
+              <div className="text-[11px]" style={{ color: "var(--danger, #ef4444)" }}>
+                {draftError}
+              </div>
+            )}
+            <div className="flex justify-end gap-2 pt-1">
+              <TextButton onClick={closeDraft}>取消</TextButton>
+              <TextButton primary onClick={saveDraft}>
+                保存
+              </TextButton>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={openNew}
+            className={`flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-[13px] font-medium transition-colors ${
+              customs.length > 0 ? "mt-3" : ""
+            }`}
+            style={{ border: "1px dashed var(--border)", color: "var(--text-soft)" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+          >
+            <Plus size={15} />
+            添加运行器
+          </button>
+        )}
+      </div>
+
+      <Notice>
+        应用启动时会读取登录 Shell 的 PATH。若解释器仍无法找到，请在「命令」里填写绝对路径。
+      </Notice>
+    </div>
+  );
+}
+
+function RunnerCard({
+  runner,
+  disabled,
+  onChange,
+}: {
+  runner: CodeRunner;
+  disabled: boolean;
+  onChange: (patch: Partial<CodeRunner>) => void;
+}) {
+  const label = RUNNER_LABEL[runner.lang] ?? runner.lang;
+  const langs = [runner.lang, ...runner.aliases].join(" / ");
+
+  return (
+    <div
+      className="overflow-hidden rounded-xl"
+      style={{
+        background: "var(--bg-elev)",
+        border: "1px solid var(--border)",
+        opacity: disabled ? 0.55 : 1,
+      }}
+    >
+      <div className="flex items-center justify-between gap-4 px-4 py-3">
+        <div className="min-w-0">
+          <div className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
+            {label}
+          </div>
+          <div
+            className="mt-0.5 truncate text-[11px]"
+            style={{ color: "var(--text-muted)" }}
+          >
+            匹配 ```{langs}
+          </div>
+        </div>
+        <Toggle checked={runner.enabled} onChange={(enabled) => onChange({ enabled })} />
+      </div>
+
+      {runner.enabled && (
+        <div className="space-y-3 px-4 pb-4" style={{ borderTop: "1px solid var(--border)" }}>
+          {SHELL_LANGS.has(runner.lang) && (
+            <div className="pt-3">
+              <Notice tone="danger">
+                Shell 代码块可以执行任何命令（包括删除文件）。只在你完全信任笔记来源时开启。
+              </Notice>
+            </div>
+          )}
+          <div className={SHELL_LANGS.has(runner.lang) ? "" : "pt-3"}>
+            <Field label="命令">
+              <Input
+                value={runner.command}
+                onChange={(command) => onChange({ command })}
+                placeholder="python3 或解释器的绝对路径"
+              />
+            </Field>
+          </div>
+          <Field label="参数">
+            <Input
+              value={runner.args.join(" ")}
+              onChange={(v) => onChange({ args: splitArgs(v) })}
+              placeholder="传给解释器的参数，代码文件路径会追加在最后"
+            />
+          </Field>
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-[12px] font-medium" style={{ color: "var(--text-soft)" }}>
+                超时
+              </div>
+              <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
+                超时后进程会被结束；设为 0 表示不限制
+              </div>
+            </div>
+            <Stepper
+              value={Math.round(runner.timeoutMs / 1000)}
+              min={0}
+              max={600}
+              step={5}
+              format={(v) => (v === 0 ? "不限制" : `${v} 秒`)}
+              onChange={(v) => onChange({ timeoutMs: v * 1000 })}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

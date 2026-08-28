@@ -38,6 +38,13 @@ import {
   type SearchOptions,
 } from "../lib/search";
 import { loadModels, saveModels } from "../lib/ai/config";
+import { useRunStore } from "./useRunStore";
+import {
+  defaultCodeRunConfig,
+  loadCodeRunConfig,
+  saveCodeRunConfig,
+  type CodeRunConfig,
+} from "../lib/codeRun/runners";
 import type { AiModel } from "../lib/ai/types";
 import { generateCommitMessage } from "../lib/ai/commitMessage";
 import { firstModelSelection, resolveModelSelection } from "../lib/ai/modelSelection";
@@ -266,6 +273,8 @@ export interface GitCredentialPromptRequest {
 export interface ConfirmRequest {
   title: string;
   message: string;
+  /** Place this confirmation over the central editor instead of the window. */
+  placement?: "editor-center";
   /** Label of the primary action button, e.g. "删除". */
   confirmLabel: string;
   onConfirm: () => void | Promise<void>;
@@ -404,12 +413,20 @@ interface AppState {
   bottomPanelOpen: boolean;
   /** Bottom panel height in px (drag the top border to resize). */
   bottomPanelHeight: number;
-  /** Right-hand utility panel (hosts the AI chat). */
+  /** Right-hand AI assistant panel. */
   rightPanelOpen: boolean;
+  /** Dedicated code-block run-output panel. */
+  runPanelOpen: boolean;
+  /** Runner table for executable code blocks, synced via "code-runners:changed". */
+  codeRunConfig: CodeRunConfig;
+  /** Text queued for the active integrated terminal ("在终端运行"). */
+  pendingTerminalInput: string | null;
   /** Configured AI models, synced across windows via "ai-models:changed". */
   aiModels: AiModel[];
-  /** Right utility panel width in px. */
+  /** AI assistant panel width in px. */
   rightPanelWidth: number;
+  /** Code-block run-output panel width in px. */
+  runPanelWidth: number;
   /** Formatting active at the editor's current selection (toolbar highlight). */
   activeFormats: ActiveFormats;
   /** Pending in-app naming prompt, or null when none is open. */
@@ -572,7 +589,15 @@ interface AppState {
   toggleBottomPanel: () => void;
   setBottomPanelHeight: (height: number) => void;
   toggleRightPanel: () => void;
+  toggleRunPanel: () => void;
+  /** Persist the runner table and broadcast it to the other window. */
+  setCodeRunConfig: (config: CodeRunConfig) => Promise<void>;
+  /** Queue code for the integrated terminal, opening the panel if needed. */
+  sendToTerminal: (text: string) => void;
+  /** Called by the terminal that consumed {@link pendingTerminalInput}. */
+  clearTerminalInput: () => void;
   setRightPanelWidth: (width: number) => void;
+  setRunPanelWidth: (width: number) => void;
   addAiModel: (model: AiModel) => Promise<void>;
   updateAiModel: (id: string, patch: Partial<Omit<AiModel, "id">>) => Promise<void>;
   removeAiModel: (id: string) => Promise<void>;
@@ -743,6 +768,8 @@ function trimTabs(tabs: string[], max: number, activePath: string | null): strin
 const SETTINGS_EVENT = "settings:changed";
 /** Broadcast when the AI model list changes; both windows reload from disk. */
 const AI_MODELS_EVENT = "ai-models:changed";
+/** Broadcast when the code-runner table changes; both windows reload it. */
+const CODE_RUNNERS_EVENT = "code-runners:changed";
 const SETTINGS_WINDOW = "settings";
 
 /* Remote-sync events. Sync always *runs* in a main window (it owns the tree
@@ -1477,7 +1504,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   bottomPanelOpen: false,
   bottomPanelHeight: 260,
   rightPanelOpen: false,
+  runPanelOpen: false,
+  codeRunConfig: defaultCodeRunConfig(),
+  pendingTerminalInput: null,
   rightPanelWidth: 300,
+  runPanelWidth: 320,
   aiModels: [],
   activeFormats: emptyFormats,
   prompt: null,
@@ -1923,6 +1954,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const idx = openTabs.indexOf(path);
     const remaining = openTabs.filter((p) => p !== path);
+
+    // Run output is scoped to the note it came from; the tab is gone, so are
+    // its results (they were never persisted anyway).
+    useRunStore.getState().clearFile(path);
 
     // Closing a draft discards its in-memory buffer (no disk file to keep).
     if (isDraftPath(path)) {
@@ -2772,12 +2807,36 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   toggleRightPanel: () => set((s) => ({ rightPanelOpen: !s.rightPanelOpen })),
 
+  toggleRunPanel: () => set((s) => ({ runPanelOpen: !s.runPanelOpen })),
+
+  // Runner config lives in a Rust-owned file, like the AI models above.
+  setCodeRunConfig: async (config) => {
+    set({ codeRunConfig: config });
+    await saveCodeRunConfig(config);
+    emit(CODE_RUNNERS_EVENT).catch(() => {});
+  },
+
+  // The bottom panel mounts itself once `bottomPanelOpen` flips (see App.tsx);
+  // the active terminal picks the text up from here and writes it to its pty.
+  sendToTerminal: (text) =>
+    set({ pendingTerminalInput: text, bottomPanelOpen: true }),
+
+  clearTerminalInput: () => set({ pendingTerminalInput: null }),
+
   setRightPanelWidth: (width) => {
     const maxWidth = Math.max(
       RIGHT_PANEL_MIN_WIDTH,
       window.innerWidth * RIGHT_PANEL_MAX_RATIO,
     );
     set({ rightPanelWidth: Math.min(maxWidth, Math.max(RIGHT_PANEL_MIN_WIDTH, width)) });
+  },
+
+  setRunPanelWidth: (width) => {
+    const maxWidth = Math.max(
+      RIGHT_PANEL_MIN_WIDTH,
+      window.innerWidth * RIGHT_PANEL_MAX_RATIO,
+    );
+    set({ runPanelWidth: Math.min(maxWidth, Math.max(RIGHT_PANEL_MIN_WIDTH, width)) });
   },
 
   // AI model config lives in a Rust-owned file (not localStorage). After every
@@ -3126,6 +3185,16 @@ listen(GIT_PROXY_EVENT, () => {
 void loadModels().then((aiModels) => useAppStore.setState({ aiModels }));
 listen(AI_MODELS_EVENT, () => {
   void loadModels().then((aiModels) => useAppStore.setState({ aiModels }));
+}).catch(() => {});
+
+// Same arrangement for the code-block runner table.
+void loadCodeRunConfig().then((codeRunConfig) =>
+  useAppStore.setState({ codeRunConfig }),
+);
+listen(CODE_RUNNERS_EVENT, () => {
+  void loadCodeRunConfig().then((codeRunConfig) =>
+    useAppStore.setState({ codeRunConfig }),
+  );
 }).catch(() => {});
 
 // Remote-sync requests from the settings window. Each event names its target

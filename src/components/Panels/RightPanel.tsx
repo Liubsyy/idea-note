@@ -37,9 +37,9 @@ import { modelIdsOf, modelSelectionKey, modelSelectionLabel } from "../../lib/ai
 import { ModelPicker } from "../ModelPicker";
 
 /**
- * Right-hand AI chat panel. Hosts multiple sessions (tabs + "+"), each with its
- * own model and tool-confirmation mode, and drives the read/edit-file tool loop
- * through useChatStore. Fills its parent (width is controlled by App.tsx).
+ * Right-hand AI assistant panel: multiple sessions, tabs + "+", driving the
+ * read/edit-file tool loop through useChatStore. Code-block output has its own
+ * independent panel in RunOutputPanel.tsx.
  */
 export function RightPanel() {
   const sessions = useChatStore((s) => s.sessions);
@@ -56,7 +56,6 @@ export function RightPanel() {
   }, [hydrated, ensureSession, openCount]);
 
   const active = sessions.find((s) => s.id === activeSessionId) ?? null;
-
   return (
     <div
       className="flex h-full w-full flex-col overflow-hidden"
@@ -66,8 +65,14 @@ export function RightPanel() {
         fontSize: "var(--ai-assistant-font-size)",
       }}
     >
-      <SessionTabs />
-      {active ? <SessionView key={active.id} session={active} /> : <div className="flex-1" />}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <SessionTabs />
+        {active ? (
+          <SessionView key={active.id} session={active} />
+        ) : (
+          <div className="flex-1" />
+        )}
+      </div>
     </div>
   );
 }
@@ -98,7 +103,6 @@ function SessionTabs() {
       className="flex h-11 shrink-0 items-center gap-1 px-2"
       style={{ borderBottom: "1px solid var(--border)", background: "var(--sidebar-bg)" }}
     >
-      <Bot size={15} style={{ color: "var(--accent)" }} className="ml-0.5 shrink-0" />
       <div
         data-tauri-drag-region
         className="scroll-auto-hide flex flex-1 items-center gap-1 overflow-x-auto py-1"
