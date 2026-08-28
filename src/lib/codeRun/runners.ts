@@ -32,12 +32,17 @@ export interface CodeRunConfig {
   enabled: boolean;
   /** Ask for confirmation before every code-block run. */
   confirmEveryRun: boolean;
+  /** Base font size of the run-output panel, in pixels. */
+  fontSize: number;
   maxOutputKb: number;
   runners: CodeRunner[];
 }
 
 export const DEFAULT_TIMEOUT_MS = 30_000;
 export const DEFAULT_MAX_OUTPUT_KB = 200;
+export const CODE_RUN_FONT_SIZE_MIN = 11;
+export const CODE_RUN_FONT_SIZE_MAX = 18;
+export const DEFAULT_CODE_RUN_FONT_SIZE = 13;
 
 /**
  * Info strings that never get a run button, whatever the config says:
@@ -124,6 +129,7 @@ export function builtinRunners(): CodeRunner[] {
 export const defaultCodeRunConfig = (): CodeRunConfig => ({
   enabled: true,
   confirmEveryRun: true,
+  fontSize: DEFAULT_CODE_RUN_FONT_SIZE,
   maxOutputKb: DEFAULT_MAX_OUTPUT_KB,
   runners: builtinRunners(),
 });
@@ -207,6 +213,10 @@ function normalize(parsed: unknown): CodeRunConfig {
       typeof p.confirmEveryRun === "boolean"
         ? p.confirmEveryRun
         : fallback.confirmEveryRun,
+    fontSize:
+      typeof p.fontSize === "number"
+        ? Math.min(CODE_RUN_FONT_SIZE_MAX, Math.max(CODE_RUN_FONT_SIZE_MIN, p.fontSize))
+        : fallback.fontSize,
     maxOutputKb:
       typeof p.maxOutputKb === "number" && p.maxOutputKb > 0
         ? Math.min(10_000, p.maxOutputKb)

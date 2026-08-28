@@ -273,6 +273,13 @@ export interface GitCredentialPromptRequest {
 export interface ConfirmRequest {
   title: string;
   message: string;
+  /** Optional secondary copy with an inline action, shown below the message. */
+  hint?: {
+    before: string;
+    actionLabel: string;
+    after?: string;
+    onAction: () => void | Promise<void>;
+  };
   /** Place this confirmation over the central editor instead of the window. */
   placement?: "editor-center";
   /** Label of the primary action button, e.g. "删除". */

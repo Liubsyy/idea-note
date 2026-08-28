@@ -101,6 +101,12 @@ export async function startRun(args: StartRunArgs): Promise<void> {
     confirm: {
       title: "运行代码块",
       message: "是否确定运行此代码块？",
+      hint: {
+        before: "可在",
+        actionLabel: "设置",
+        after: "中关闭当前二次确认",
+        onAction: () => app.openSettings("coderun"),
+      },
       placement: "editor-center",
       confirmLabel: "确定",
       tone: "primary",

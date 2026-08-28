@@ -63,6 +63,8 @@ import {
 } from "../store/useAppStore";
 import { fetchUpstreamModels } from "../lib/ai/modelCatalog";
 import {
+  CODE_RUN_FONT_SIZE_MAX,
+  CODE_RUN_FONT_SIZE_MIN,
   DEFAULT_TIMEOUT_MS,
   isBuiltinLang,
   parseRunnerDraft,
@@ -1390,8 +1392,7 @@ function CodeRunTab() {
   return (
     <div className="space-y-4">
       <Notice>
-        运行代码块会在你的电脑上真实执行程序，结果显示在独立的运行输出面板。请只运行你信任的代码，
-        运行前会进行二次确认。
+        运行代码块会在你的电脑上真实执行程序，结果显示在独立的运行输出面板。
       </Notice>
 
       {saveError && <Notice tone="danger">保存失败：{saveError}</Notice>}
@@ -1404,6 +1405,16 @@ function CodeRunTab() {
           <Toggle
             checked={config.confirmEveryRun}
             onChange={(confirmEveryRun) => update({ confirmEveryRun })}
+          />
+        </Row>
+        <Row title="运行输出字号" desc="调整运行输出面板中的文字大小">
+          <Stepper
+            value={config.fontSize}
+            min={CODE_RUN_FONT_SIZE_MIN}
+            max={CODE_RUN_FONT_SIZE_MAX}
+            step={1}
+            format={(v) => `${v}px`}
+            onChange={(fontSize) => update({ fontSize })}
           />
         </Row>
         <Row title="输出上限" desc="单次运行最多保留的输出，超出后截断（程序继续运行）">

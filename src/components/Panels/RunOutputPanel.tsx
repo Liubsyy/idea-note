@@ -146,13 +146,15 @@ export function RunOutputPanel() {
 /** Standalone right-side panel; its open state and width are independent from
  *  the AI assistant panel. */
 export function RunPanel() {
+  const fontSize = useAppStore((s) => s.codeRunConfig.fontSize);
+
   return (
     <div
       className="flex h-full w-full flex-col overflow-hidden"
       style={{
         borderLeft: "1px solid var(--border)",
         background: "var(--bg)",
-        fontSize: "var(--ai-assistant-font-size)",
+        fontSize: `${fontSize}px`,
       }}
     >
       <RunOutputPanel />

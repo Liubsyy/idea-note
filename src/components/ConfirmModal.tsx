@@ -84,6 +84,24 @@ export function ConfirmModal() {
             <p className="m-0 mt-1 text-sm leading-relaxed" style={{ color: "var(--text-soft)" }}>
               {confirm.message}
             </p>
+            {confirm.hint && (
+              <p
+                className="m-0 mt-1 text-[11px] leading-relaxed"
+                style={{ color: "var(--text-muted)" }}
+              >
+                {confirm.hint.before}
+                <button
+                  type="button"
+                  className="px-0.5 underline underline-offset-2 transition-opacity hover:opacity-75"
+                  style={{ color: "var(--accent)" }}
+                  disabled={busy}
+                  onClick={() => run(confirm.hint!.onAction)}
+                >
+                  {confirm.hint.actionLabel}
+                </button>
+                {confirm.hint.after}
+              </p>
+            )}
           </div>
           <button
             onClick={closeConfirm}
