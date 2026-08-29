@@ -1325,9 +1325,67 @@
   height: auto;
 }
 
+/* Rendered prose from a component result (`out=markdown` / `out=html`).
+   Two things have to be undone here, both invisible until you look:
+
+   1. The card lives inside `.cm-content`, which lineWrapping sets to
+      `white-space: break-spaces`. The newlines a markdown renderer leaves
+      between block tags would each become a hard break, so a paragraph plus a
+      two-item list opens up four blank lines. Same fix as `.cm-md-html`.
+   2. Tailwind's preflight strips margins, list markers and heading sizes from
+      every element, so once those stray breaks are gone the block spacing that
+      appeared to exist disappears with them. Spacing is restored here instead,
+      matching `.ai-prose` so a script's output reads like the rest of the app. */
+.cm-run-render-markdown,
+.cm-run-render-html {
+  white-space: normal;
+}
+.cm-run-render-markdown > * + *,
+.cm-run-render-html > * + * {
+  margin-top: 8px;
+}
 .cm-run-render-markdown > :first-child,
 .cm-run-render-html > :first-child {
   margin-top: 0;
+}
+.cm-run-render-markdown :is(h1, h2, h3, h4, h5, h6),
+.cm-run-render-html :is(h1, h2, h3, h4, h5, h6) {
+  font-weight: 600;
+  line-height: 1.3;
+}
+.cm-run-render-markdown h1,
+.cm-run-render-html h1 {
+  font-size: 1.3em;
+}
+.cm-run-render-markdown h2,
+.cm-run-render-html h2 {
+  font-size: 1.18em;
+}
+.cm-run-render-markdown h3,
+.cm-run-render-html h3 {
+  font-size: 1.06em;
+}
+.cm-run-render-markdown :is(ul, ol),
+.cm-run-render-html :is(ul, ol) {
+  padding-left: 1.3em;
+}
+.cm-run-render-markdown ul,
+.cm-run-render-html ul {
+  list-style: disc;
+}
+.cm-run-render-markdown ol,
+.cm-run-render-html ol {
+  list-style: decimal;
+}
+.cm-run-render-markdown li + li,
+.cm-run-render-html li + li {
+  margin-top: 2px;
+}
+.cm-run-render-markdown blockquote,
+.cm-run-render-html blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 10px;
+  color: var(--text-soft);
 }
 .cm-run-render-markdown table,
 .cm-run-render-html table {
