@@ -23,24 +23,24 @@
 
 
 
-## 功能特性
-
-- **Markdown 编辑器**：所见即所得实时预览，支持公式、Mermaid流程图、HTML/SVG渲染、大纲、工具栏。
+## ✨ 功能特性
+- **Markdown 编辑器**：所见即所得实时编辑，支持公式、Mermaid流程图、HTML/SVG渲染、大纲、工具栏。
+- 可直接在markdown内**执行代码块**
 - **文件管理**：除markdown外还可编辑其他文本文件，可作为轻量级项目文件管理器。
 - **AI 笔记助手**：用自然语言对当前笔记进行问答、总结、润色，并通过工具直接读取、搜索、新建、编辑或删除笔记。
-- **内置工具**：内置git远程同步、终端、代码块运行。
+- **内置工具**：内置git远程同步、终端。
 - **导出**：支持导出PDF和打印。
 
-## 使用说明
+## 📖 使用说明
 
-### 安装
+### 📦 安装
 
 根据平台下载桌面安装包或发行文件
 
 | 系统 | 文件 | 说明 |
 | :--- | :--- | :--- |
 | **Windows** | **x64**：[安装包](https://github.com/Liubsyy/idea-note/releases/latest/download/Idea.Note_1.1.0_windows_x64_setup.exe) \| [免安装包](https://github.com/Liubsyy/idea-note/releases/latest/download/Idea.Note_1.1.0_windows_x64.zip)<br>**x86**：[安装包](https://github.com/Liubsyy/idea-note/releases/latest/download/Idea.Note_1.1.0_windows_x86_setup.exe) \| [免安装包](https://github.com/Liubsyy/idea-note/releases/latest/download/Idea.Note_1.1.0_windows_x86.zip) | 大多数电脑选 x64<br>32 位系统选 x86 |
-| **MacOS** | **Apple Silicon**：[安装包](https://github.com/Liubsyy/idea-note/releases/latest/download/Idea.Note_1.1.0_macos_aarch64.dmg) \| [应用包压缩](https://github.com/Liubsyy/idea-note/releases/latest/download/Idea.Note_1.1.0_macos_aarch64.app.tar.gz)<br>**Intel**：[安装包](https://github.com/Liubsyy/idea-note/releases/latest/download/Idea.Note_1.1.0_macos_x64.dmg) \| [应用包压缩](https://github.com/Liubsyy/idea-note/releases/latest/download/Idea.Note_1.1.0_macos_x64.app.tar.gz) | M芯片选 Apple Silicon<br>Intel 芯片选 Intel |
+| **MacOS** | **Apple Silicon**：[安装包](https://github.com/Liubsyy/idea-note/releases/latest/download/Idea.Note_1.1.0_macos_aarch64.dmg) \| [应用包压缩](https://github.com/Liubsyy/idea-note/releases/latest/download/Idea.Note_1.1.0_macos_aarch64.app.tar.gz)<br>**Intel**：[安装包](https://github.com/Liubsyy/idea-note/releases/latest/download/Idea.Note_1.1.0_macos_x64.dmg) \| [应用包压缩](https://github.com/Liubsyy/idea-note/releases/latest/download/Idea.Note_1.1.0_macos_x64.app.tar.gz) | M芯片选 Apple Silicon<br>Intel 芯片选 Intel  |
 | **Linux** | **安装包**：[deb](https://github.com/Liubsyy/idea-note/releases/latest/download/Idea.Note_1.1.0_linux_amd64.deb) \| [rpm](https://github.com/Liubsyy/idea-note/releases/latest/download/Idea.Note_1.1.0_linux_x86_64.rpm)<br>**免安装**：[AppImage](https://github.com/Liubsyy/idea-note/releases/latest/download/Idea.Note_1.1.0_linux_amd64.AppImage) | Ubuntu/Debian/Linux Mint选deb<br>Fedora/RHEL/CentOS Stream/openSUSE选rpm |
 
 MacOS 首次安装时如果遇到"无法打开"或"应用已损坏"之类的权限提示，可按下面方式处理：
@@ -51,28 +51,31 @@ MacOS 首次安装时如果遇到"无法打开"或"应用已损坏"之类的权�
 xattr -rd com.apple.quarantine /Applications/Idea\ Note.app
 ```
 
-### 笔记管理
+### 📝 笔记管理
 
 左侧列表提供三种视图：
-
 - **文件模式**：完整文件树，可新建、重命名、拖拽整理文件与文件夹，也能编辑普通文本、查看图片，当作轻量的项目文件管理器使用
 - **笔记模式**：只显示 Markdown 笔记，支持卡片和树形两种展示方式，专注于笔记本身
 - **预览大纲**：当前笔记的标题大纲，点击标题即可跳转
 
 
-### 编辑笔记
+正文采用所见即所得的实时预览：光标点进公式、表格、Mermaid 图表等块时显示源码方便编辑，移开光标即渲染成型。每个markdown右上角可在三种模式（**编辑/只读/源码**）间切换。
 
-正文采用所见即所得的实时预览：光标点进公式、表格、Mermaid 图表等块时显示源码方便编辑，移开光标即渲染成型。每个标签页右上角可在三种模式间切换：
+顶部工具栏可一键插入标题、加粗 / 斜体 / 删除线、列表与任务列表等，以及流程图、时序图、甘特图等各类 Mermaid 图表。粘贴的图片和文件会自动保存为附件（保存目录可在设置中配置）。
 
-- **编辑**：实时预览编辑（默认）
-- **只读**：纯阅读，防止误改
-- **源码**：完整 Markdown 源码，适合大段整理
 
-顶部工具栏可一键插入标题、加粗 / 斜体 / 删除线、列表与任务列表、引用、代码块、链接、图片、表格、KaTeX 数学公式，以及流程图、时序图、甘特图等各类 Mermaid 图表。支持多标签页同时打开多篇笔记；粘贴的图片和文件会自动保存为附件，保存目录可在设置中配置。
+### ▶️ 运行代码块
 
-Markdown 语法的完整支持范围可参考 [doc/markdown-语法大全.md](./doc/markdown-语法大全.md)。
+在代码块右上角点击运行图标，程序在本机执行，输出实时显示在独立的"运行输出"面板里。面板按当前文件显示运行记录，可停止、重跑、跳回代码块，或把结果作为 ```output 块插入笔记。
 
-### AI 笔记助手
+> 支持 Python、JavaScript/Node、Ruby、Perl、Bash、PowerShell以及自定义执行器
+
+<img src="doc/assets/run_code.png" width="90%">
+
+
+
+
+### 🤖 AI 笔记助手
 
 点击标题栏机器人图标打开 AI 笔记助手面板。在设置中添加模型服务即可使用：支持 Anthropic、OpenAI 以及任何兼容两者接口的服务（自定义 Base URL、API Key 和模型 ID），对话中可随时切换模型与思考级别。
 
@@ -86,7 +89,7 @@ Markdown 语法的完整支持范围可参考 [doc/markdown-语法大全.md](./d
 
 实现原理见 [doc/AI笔记助手原理.md](./doc/AI笔记助手原理.md)。
 
-### Git 同步与历史记录
+### 🔄 Git 同步与历史记录
 
 在"设置 → 远程同步"中配置，基于命令行 git 实现（需已安装 git），支持两种方式：
 
@@ -97,23 +100,16 @@ Markdown 语法的完整支持范围可参考 [doc/markdown-语法大全.md](./d
 
 点击标题栏历史图标，可查看当前笔记的每一次变更并左右对比差异，也可切换到全局历史浏览整个工作区的提交记录。
 
-### 内置终端
+### 🖥️ 内置终端
 
 点击标题栏终端图标可打开底部终端面板，直接在工作区目录下执行命令，运行脚本、使用 git 等都无需离开应用。
 
-### 运行代码块
 
-在代码块右上角点击运行图标，程序在本机执行，输出实时显示在独立的"运行输出"面板里；旁边的面板图标可以打开或隐藏代码运行面板。运行与面板图标会同时显示或隐藏，复制图标独立显示。面板按当前文件显示运行记录，可停止、重跑、跳回代码块，或把结果作为 ```output 块插入笔记。
-
-内置支持 Python、Node、Bash、PowerShell，可在“设置 → 代码执行”中按语言开关或修改解释器。每次运行前都会弹窗确认，也可在代码执行设置中关闭二次确认。只读模式与源码模式不显示运行按钮，`mermaid` 与结果块 `output` 永远不会出现运行按钮。
-
-运行是一次性的：没有 stdin、没有终端 TTY、有超时和输出上限。需要交互输入、长期运行或彩色进度条的脚本，请在代码块右键菜单里选择"在终端运行"，它会把代码送进底部终端面板。
-
-### 导出 PDF
+### 📄 导出 PDF
 
 在侧栏文件右键菜单中选择"导出 PDF"，通过系统 WebView 静默打印直接生成 PDF 文件，自动附带书签大纲，公式、图表、代码高亮与应用内显示一致，无需安装任何额外组件。
 
-### 设置
+### ⚙️ 设置
 
 
 <img src="doc/assets/setting.png" width="60%">
@@ -131,20 +127,20 @@ Markdown 语法的完整支持范围可参考 [doc/markdown-语法大全.md](./d
 - **远程同步**：Git 仓库与同步代理
 
 
-## 开发与构建
+## 🛠️ 开发与构建
 
-### 技术栈
+### 📚 技术栈
 
 - 前端：`React 19`、`TypeScript`、`Vite 8`、`CodeMirror 6`、`Zustand`、`Tailwind CSS`
 - 桌面端：`Tauri 2`
 - 后端逻辑：`Rust`
 
-### 环境要求
+### 🖥️ 环境要求
 
 - Node.js：建议使用较新的 LTS 版本
 - Rust：较新的稳定版
 
-### 目录结构
+### 📂 目录结构
 
 - `src/`：React 前端界面与页面逻辑
   - `components/`：侧栏、编辑器、面板、设置等 UI 组件
@@ -156,7 +152,7 @@ Markdown 语法的完整支持范围可参考 [doc/markdown-语法大全.md](./d
 
 
 
-### 本地开发
+### 💻 本地开发
 
 #### 1. 安装依赖
 
@@ -184,7 +180,7 @@ npm run tauri build
 
 无需 API Key 的固定问答服务可用 `npm run mock:ai` 启动，然后在 AI 模型设置中填写 Base URL `http://127.0.0.1:11435/v1`、模型 ID `idea-note-test`。详细说明见 [AI 测试服务](./mock-ai/README.md)。
 
-### 常用命令
+### ⌨️ 常用命令
 
 | 命令 | 说明 |
 | --- | --- |
@@ -200,7 +196,7 @@ npm run tauri build
 | `cargo test --manifest-path src-tauri/Cargo.toml` | 运行 Rust 单元测试 |
 
 
-### 打包与资源说明
+### 📦 打包与资源说明
 
 - 应用名称：`Idea Note`
 - 应用标识：`com.liubs.idea-note`
