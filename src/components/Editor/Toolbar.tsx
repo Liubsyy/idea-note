@@ -850,7 +850,7 @@ export function Toolbar() {
               }}
             />
             <MenuItem
-              label="可交互组件…"
+              label="可交互组件"
               title="带参数控件和输出渲染的可交互代码块"
               onClick={() => {
                 close();
