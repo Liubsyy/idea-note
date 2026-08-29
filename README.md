@@ -33,7 +33,7 @@
 
 ## 📖 使用说明
 
-### 📦 安装
+### ⬇️ 安装
 
 根据平台下载桌面安装包或发行文件
 
@@ -75,7 +75,7 @@ xattr -rd com.apple.quarantine /Applications/Idea\ Note.app
 
 
 
-### 🤖 AI 笔记助手
+### ![AI 助手](./doc/assets/ai-assistant.svg) AI 笔记助手
 
 点击标题栏机器人图标打开 AI 笔记助手面板。在设置中添加模型服务即可使用：支持 Anthropic、OpenAI 以及任何兼容两者接口的服务（自定义 Base URL、API Key 和模型 ID），对话中可随时切换模型与思考级别。
 
