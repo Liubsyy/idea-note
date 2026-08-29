@@ -167,6 +167,16 @@
   padding: 0.15em 0.35em;
   border-radius: 4px;
 }
+/* Match the live editor: code identifiers in titles are typography, not
+   badge-like UI. The monospace face remains enough to distinguish them. */
+#print-root .print-doc :is(h1, h2, h3, h4, h5, h6) code {
+  font-size: 0.86em;
+  font-weight: inherit;
+  color: inherit;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
 #print-root .print-doc pre {
   background: #f6f8fa;
   border: 1px solid #eaecef;

@@ -10,7 +10,7 @@ import type { EditorView } from "@codemirror/view";
 
 import { useAppStore } from "../../store/useAppStore";
 import { collectInputs } from "../inputs/collect";
-import { parseFenceInfo, rendersInline } from "./fenceAttrs";
+import { parseFenceInfo } from "./fenceAttrs";
 import { startRun, startAutoRun } from "./run";
 
 export interface RunBlockOptions {
@@ -65,9 +65,9 @@ export async function runBlock(
     env,
     inputs,
     inputSummary: summary,
-    outKind: attrs.out,
+    declaredOut: attrs.outExplicit ? attrs.out : null,
     // A block that renders its result in the note already shows it; don't cover
     // the note with the output panel as well.
-    reveal: !rendersInline(attrs),
+    reveal: !attrs.outExplicit,
   });
 }

@@ -25,8 +25,8 @@ import { runKey } from "../../store/useRunStore";
 import { runBlock } from "../codeRun/runBlock";
 import { resolveRunner } from "../codeRun/runners";
 import {
-  fenceInfoOf,
-  isCloseFenceLine,
+  isCloseFenceFor,
+  openingFenceOf,
   parseFenceInfo,
   type RunTrigger,
 } from "../codeRun/fenceAttrs";
@@ -67,14 +67,14 @@ function targets(
   let i = 1;
   while (i <= doc.lines) {
     const line = doc.line(i);
-    const info = fenceInfoOf(line.text);
-    if (info === null) {
+    const opening = openingFenceOf(line.text);
+    if (!opening) {
       i++;
       continue;
     }
     let j = i + 1;
-    while (j <= doc.lines && !isCloseFenceLine(doc.line(j).text)) j++;
-    const { lang, attrs } = parseFenceInfo(info);
+    while (j <= doc.lines && !isCloseFenceFor(doc.line(j).text, opening)) j++;
+    const { lang, attrs } = parseFenceInfo(opening.info);
     const bound =
       blockId === undefined ||
       (attrs.input?.kind === "block" && attrs.input.name === blockId);
@@ -85,7 +85,7 @@ function targets(
       resolveRunner(lang, config)
     )
       found.push({
-        info,
+        info: opening.info,
         code: doc.sliceString(doc.line(i + 1).from, doc.line(j - 1).to),
       });
     i = Math.min(j, doc.lines) + 1;

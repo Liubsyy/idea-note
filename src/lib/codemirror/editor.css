@@ -220,6 +220,26 @@
   padding: 0.15em 0.4em;
   border-radius: 4px;
 }
+/* In a heading, inline code names an API/field; the ordinary pill treatment
+   makes it look like a small tag or button and fixes its size to body text.
+   Keep the monospace distinction, but inherit the heading's visual weight and
+   scale so the phrase reads as one title. Body inline code stays unchanged. */
+.cm-content :is(
+    .cm-md-h1,
+    .cm-md-h2,
+    .cm-md-h3,
+    .cm-md-h4,
+    .cm-md-h5,
+    .cm-md-h6
+  ) .cm-md-code {
+  font-size: 0.86em;
+  font-weight: inherit;
+  line-height: inherit;
+  color: inherit;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
 .cm-md-link {
   color: var(--accent);
 }
@@ -1206,6 +1226,12 @@
   margin: 0;
   padding: 0.35em 0;
   font-size: 0.92em;
+}
+
+/* Bare runnable blocks get a dormant widget so a self-describing stdout result
+   can appear without rebuilding the editor decorations. */
+.cm-md-result-dormant {
+  display: none;
 }
 
 .cm-md-result-card {

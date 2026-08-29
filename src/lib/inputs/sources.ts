@@ -8,9 +8,8 @@
 import type { Text } from "@codemirror/state";
 
 import {
-  INPUT_FENCE,
-  fenceInfoOf,
-  isCloseFenceLine,
+  isCloseFenceFor,
+  openingFenceOf,
   parseFenceInfo,
 } from "../codeRun/fenceAttrs";
 import { parseInputBlock, type InputSchema } from "./schema";
@@ -36,17 +35,22 @@ export function scanInputBlocks(doc: Text): InputBlockInfo[] {
   let i = 1;
   while (i <= doc.lines) {
     const line = doc.line(i);
-    if (!INPUT_FENCE.test(line.text)) {
+    const opening = openingFenceOf(line.text);
+    if (!opening) {
       i++;
       continue;
     }
-    ordinal++;
     let j = i + 1;
-    while (j <= doc.lines && !isCloseFenceLine(doc.line(j).text)) j++;
+    while (j <= doc.lines && !isCloseFenceFor(doc.line(j).text, opening)) j++;
     const closeLine = Math.min(j, doc.lines);
+    if (!/^\s*input\s*(?:\{|$)/i.test(opening.info)) {
+      i = closeLine + 1;
+      continue;
+    }
+    ordinal++;
     const body =
       j > i + 1 ? doc.sliceString(doc.line(i + 1).from, doc.line(j - 1).to) : "";
-    const attrs = parseFenceInfo(fenceInfoOf(line.text) ?? "").attrs;
+    const attrs = parseFenceInfo(opening.info).attrs;
     blocks.push({
       id: attrs.id ?? String(ordinal),
       named: attrs.id !== null,

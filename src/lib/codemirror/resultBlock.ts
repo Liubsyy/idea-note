@@ -2,8 +2,9 @@
 //
 // A block that draws a table or a chart has to show it where the code is: a
 // side panel is fine for a stack trace, useless for a slider you are dragging.
-// So a fence carrying `out=<something>` (or a bare `inline`) grows a widget
-// holding the latest run for that block.
+// An explicit `out=<something>` grows a visible placeholder. Every other
+// runnable fence gets a zero-height dormant widget which only appears after a
+// successful run returns an `idea_note_result` envelope.
 //
 // It sits *above* the code by default. In a finished note the result is the
 // content — the number, the table, the diagram — and the script that produced
@@ -32,15 +33,12 @@ import {
   untrackBlockHeight,
 } from "./blockHeight";
 import {
-  fenceInfoOf,
-  isCloseFenceLine,
+  isCloseFenceFor,
+  openingFenceOf,
   parseFenceInfo,
-  parseOutDirective,
-  rendersInline,
-  type OutKind,
 } from "../codeRun/fenceAttrs";
 import { outputText } from "../codeRun/document";
-import { renderOutput } from "../codeRun/renderOutput";
+import { renderOutput, renderOutputError } from "../codeRun/renderOutput";
 import { runKey, useRunStore, type RunRecord } from "../../store/useRunStore";
 import { useAppStore } from "../../store/useAppStore";
 import { resolveRunner } from "../codeRun/runners";
@@ -70,15 +68,25 @@ const statusLabel = (record: RunRecord): string => {
 class ResultWidget extends WidgetType {
   constructor(
     readonly key: string,
-    readonly kind: OutKind,
+    readonly expected: boolean,
     readonly from: number,
   ) {
     super();
   }
   eq(o: ResultWidget) {
-    return o.key === this.key && o.kind === this.kind && o.from === this.from;
+    return (
+      o.key === this.key &&
+      o.expected === this.expected &&
+      o.from === this.from
+    );
   }
   get estimatedHeight() {
+    if (!this.expected) {
+      const record = useRunStore
+        .getState()
+        .records.find((item) => item.key === this.key);
+      if (!record?.componentResult && !record?.protocolError) return 0;
+    }
     return estimatedBlockHeight(blockHeightKey("result", this.from));
   }
 
@@ -97,42 +105,95 @@ class ResultWidget extends WidgetType {
     card.append(head, body);
     wrap.append(card);
 
-    /** The run whose output is currently drawn, so we don't redraw per chunk
-     *  of the same unchanged text. */
+    /** The completed run currently drawn; streaming logs never enter here. */
     let shownRunId = -1;
-    let shownText = "";
+    let shownResult: RunRecord["componentResult"] = null;
+    let shownError: string | null = null;
+
+    const show = () => wrap.classList.remove("cm-md-result-dormant");
+    const hide = () => wrap.classList.add("cm-md-result-dormant");
+    const clearAndHide = () => {
+      hide();
+      body.replaceChildren();
+      shownRunId = -1;
+      shownResult = null;
+      shownError = null;
+    };
 
     const paint = (record: RunRecord | undefined) => {
       if (!record) {
-        wrap.classList.add("cm-md-result-empty");
-        status.textContent = "尚未运行";
-        params.textContent = "";
-        body.replaceChildren();
+        if (this.expected) {
+          show();
+          wrap.classList.add("cm-md-result-empty");
+          status.textContent = "尚未运行";
+          params.textContent = "";
+          body.replaceChildren();
+        } else hide();
         return;
       }
-      wrap.classList.remove("cm-md-result-empty");
-      wrap.classList.toggle("cm-md-result-running", record.status === "running");
-      status.textContent = statusLabel(record);
-      params.textContent = record.inputSummary;
-
-      const text = record.error ?? outputText(record);
-      // Double buffering: a run that has produced nothing yet keeps the
-      // previous result visible rather than blanking the block.
-      if (record.status === "running" && !text && shownText) return;
-      if (record.runId === shownRunId && text === shownText) return;
-      shownRunId = record.runId;
-      shownText = text;
-
-      // A failed run prints a traceback, not a table: rendering that through
-      // the declared renderer would replace the error with "这不是表格".
       const failed =
         record.error !== null ||
         record.status === "error" ||
+        record.status === "timeout" ||
+        record.status === "killed" ||
         (record.exitCode !== null && record.exitCode !== 0);
-      const { kind, body: payload } = parseOutDirective(text, this.kind);
-      renderOutput(body, failed ? "text" : kind, payload, () =>
-        view.requestMeasure(),
-      );
+
+      // A watch rerun keeps the previous completed component painted until the
+      // replacement has finished and passed protocol validation.
+      if (record.status === "running") {
+        if (shownResult || shownError) show();
+        else if (this.expected) {
+          show();
+          wrap.classList.add("cm-md-result-empty");
+        } else hide();
+        wrap.classList.toggle(
+          "cm-md-result-running",
+          !wrap.classList.contains("cm-md-result-dormant"),
+        );
+        status.textContent = "运行中";
+        params.textContent = record.inputSummary;
+        return;
+      }
+
+      if (failed) {
+        if (!this.expected) {
+          clearAndHide();
+          return;
+        }
+        show();
+        wrap.classList.remove("cm-md-result-empty", "cm-md-result-running");
+        status.textContent = statusLabel(record);
+        params.textContent = record.inputSummary;
+        const message = record.error ?? (outputText(record) || "代码块运行失败");
+        if (record.runId !== shownRunId || message !== shownError)
+          renderOutputError(body, message);
+        shownRunId = record.runId;
+        shownResult = null;
+        shownError = message;
+        return;
+      }
+
+      if (!record.componentResult && !record.protocolError) {
+        clearAndHide();
+        return;
+      }
+
+      show();
+      wrap.classList.remove("cm-md-result-empty", "cm-md-result-running");
+      status.textContent = statusLabel(record);
+      params.textContent = record.inputSummary;
+      if (
+        record.runId === shownRunId &&
+        record.componentResult === shownResult &&
+        record.protocolError === shownError
+      )
+        return;
+      shownRunId = record.runId;
+      shownResult = record.componentResult;
+      shownError = record.protocolError;
+      if (record.componentResult)
+        renderOutput(body, record.componentResult, () => view.requestMeasure());
+      else renderOutputError(body, record.protocolError!);
     };
 
     paint(useRunStore.getState().records.find((r) => r.key === this.key));
@@ -168,16 +229,16 @@ function buildResults(state: EditorState): DecorationSet {
   let i = 1;
   while (i <= doc.lines) {
     const line = doc.line(i);
-    const info = fenceInfoOf(line.text);
-    if (info === null) {
+    const opening = openingFenceOf(line.text);
+    if (!opening) {
       i++;
       continue;
     }
     let j = i + 1;
-    while (j <= doc.lines && !isCloseFenceLine(doc.line(j).text)) j++;
+    while (j <= doc.lines && !isCloseFenceFor(doc.line(j).text, opening)) j++;
     const closeLine = Math.min(j, doc.lines);
-    const { lang, attrs } = parseFenceInfo(info);
-    if (rendersInline(attrs) && resolveRunner(lang, config) && j > i + 1) {
+    const { lang, attrs } = parseFenceInfo(opening.info);
+    if (resolveRunner(lang, config) && j > i + 1) {
       const code = doc.sliceString(doc.line(i + 1).from, doc.line(j - 1).to);
       const below = attrs.placement === "below";
       // Above: the opening fence's start, side -1 so the widget precedes the
@@ -185,7 +246,7 @@ function buildResults(state: EditorState): DecorationSet {
       const at = below ? doc.line(closeLine).to : line.from;
       ranges.push(
         Decoration.widget({
-          widget: new ResultWidget(runKey(filePath, code), attrs.out, at),
+          widget: new ResultWidget(runKey(filePath, code), attrs.outExplicit, at),
           block: true,
           side: below ? 1 : -1,
         }).range(at),

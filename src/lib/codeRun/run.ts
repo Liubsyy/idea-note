@@ -94,8 +94,8 @@ export interface StartRunArgs {
   inputs?: Record<string, unknown> | null;
   /** One-line rendering of those values for the card header. */
   inputSummary?: string;
-  /** How to render the output (`out=` on the fence). */
-  outKind?: OutKind;
+  /** Explicit `out=` type, or null for a self-describing result envelope. */
+  declaredOut?: OutKind | null;
   /** Whether to pop the run-output panel open. A block whose result renders in
    *  the note has somewhere to show already; opening a panel on top of it (on
    *  every slider move, for a `watch` block) would be noise. */
@@ -243,7 +243,9 @@ async function launch(runner: CodeRunner, args: StartRunArgs): Promise<void> {
     collapsed: false,
     inputs: args.inputs ?? null,
     inputSummary: args.inputSummary ?? "",
-    outKind: args.outKind ?? "text",
+    declaredOut: args.declaredOut ?? null,
+    componentResult: null,
+    protocolError: null,
   });
 
   const state: LiveRun = { pending: [], timer: null, unlisten: [] };

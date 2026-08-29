@@ -15,9 +15,11 @@ import { useAppStore } from "../../store/useAppStore";
 import { useRunStore, type RunRecord } from "../../store/useRunStore";
 import { runInTerminal, startRun, stopRun } from "../../lib/codeRun/run";
 import { parseAnsiSegments } from "../../lib/codeRun/ansi";
-import { insertOutput, outputText, revealBlock } from "../../lib/codeRun/document";
-import { parseOutDirective } from "../../lib/codeRun/fenceAttrs";
-import { renderOutput } from "../../lib/codeRun/renderOutput";
+import { insertOutput, revealBlock } from "../../lib/codeRun/document";
+import {
+  renderOutput,
+  renderOutputError,
+} from "../../lib/codeRun/renderOutput";
 import { runBlock } from "../../lib/codeRun/runBlock";
 import { getActiveView } from "../../lib/codemirror/activeView";
 import { basename } from "../../lib/fs";
@@ -197,22 +199,20 @@ function IconButton({
 }
 
 /**
- * A run whose fence asked for a rendered output (`out=table`, `out=mermaid`, …).
+ * A successfully parsed stdout JSON component result.
  *
  * The same renderer draws it here and under the block, so a result looks the
  * same wherever the user happens to be reading it.
  */
 function RichOutput({ record }: { record: RunRecord }) {
   const host = useRef<HTMLDivElement>(null);
-  const text = useMemo(() => outputText(record), [record.segs]);
-  // A non-zero exit means the output is a traceback; show it as text, or the
-  // declared renderer would hide the error behind its own complaint.
-  const failed = record.exitCode !== null && record.exitCode !== 0;
   useEffect(() => {
     if (!host.current) return;
-    const { kind, body } = parseOutDirective(text, record.outKind);
-    renderOutput(host.current, failed ? "text" : kind, body);
-  }, [text, record.outKind, failed]);
+    if (record.componentResult) renderOutput(host.current, record.componentResult);
+    else if (record.protocolError)
+      renderOutputError(host.current, record.protocolError);
+    else host.current.replaceChildren();
+  }, [record.componentResult, record.protocolError]);
   return <div ref={host} className="text-[0.85em] leading-relaxed" />;
 }
 
@@ -229,6 +229,7 @@ function rerun(record: RunRecord): void {
     filePath: record.filePath || null,
     info: record.info,
     code: record.code,
+    declaredOut: record.declaredOut,
   });
 }
 
@@ -238,6 +239,11 @@ function RunCard({ record }: { record: RunRecord }) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const collapsed = record.collapsed;
   const outputRuns = useMemo(() => parseAnsiSegments(record.segs), [record.segs]);
+  const failed =
+    record.status === "error" ||
+    record.status === "timeout" ||
+    record.status === "killed" ||
+    (record.exitCode !== null && record.exitCode !== 0);
 
   // Follow the output while it streams, the way a terminal does.
   useEffect(() => {
@@ -324,11 +330,14 @@ function RunCard({ record }: { record: RunRecord }) {
               >
                 {record.error}
               </pre>
+            ) : !failed &&
+              (record.componentResult !== null || record.protocolError !== null) ? (
+              <RichOutput record={record} />
             ) : record.segs.length === 0 ? (
               <div className="text-[0.85em]" style={{ color: "var(--text-muted)" }}>
                 {record.status === "running" ? "等待输出…" : "没有输出"}
               </div>
-            ) : record.outKind !== "text" ? (
+            ) : !failed && record.declaredOut !== null ? (
               <RichOutput record={record} />
             ) : (
               <pre className="whitespace-pre-wrap break-words font-mono text-[0.85em] leading-relaxed">

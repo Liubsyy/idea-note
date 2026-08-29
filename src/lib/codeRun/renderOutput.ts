@@ -1,10 +1,8 @@
-// Turning a run's stdout into something other than a wall of text.
+// Turning a validated component result into rich, safe DOM.
 //
-// A block declares what it prints (`out=table`, `out=mermaid`, …) and this
-// module renders it. The point of doing it here — rather than teaching scripts
-// to emit HTML — is that the note stays plain markdown: the script prints CSV
-// or mermaid source, which is exactly what it would print in a terminal, and
-// the renderer is the app's business.
+// stdout framing and JSON validation live in resultProtocol.ts. Keeping those
+// concerns out of this module means every renderer receives the exact data
+// shape it expects, whether it is used in the editor or the output panel.
 //
 // Everything is built into a caller-owned host element so the same code serves
 // the inline result widget and the output panel.
@@ -14,14 +12,11 @@ import MarkdownIt from "markdown-it";
 import { renderMermaidSvg } from "../codemirror/diagram";
 import { sanitizeHtml } from "../codemirror/inlineHtml";
 import { toDisplaySrc } from "../imagePath";
-import { parseCsv } from "../inputs/sources";
-import type { OutKind } from "./fenceAttrs";
-
-/** Drop CSI escapes: a colourised table would otherwise render its codes as
- *  cell text. Both the two-byte `ESC [` and the single-byte C1 form, as in
- *  ansi.ts. */
-const ANSI = /\x1b\[[0-9;:?]*[A-Za-z]|\x9b[0-9;:?]*[A-Za-z]/g;
-const stripAnsi = (text: string) => text.replace(ANSI, "");
+import type {
+  ComponentResult,
+  JsonValue,
+  TableResultData,
+} from "./resultProtocol";
 
 const el = <K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -46,46 +41,15 @@ function textNode(text: string): HTMLElement {
 
 /* -------------------------------- table --------------------------------- */
 
-/** Rows from either a JSON array (of objects or arrays) or CSV text. */
-function tableRows(text: string): { columns: string[]; rows: string[][] } | null {
-  const trimmed = text.trim();
-  if (!trimmed) return null;
-  if (trimmed.startsWith("[")) {
-    let data: unknown;
-    try {
-      data = JSON.parse(trimmed);
-    } catch {
-      data = null;
-    }
-    if (Array.isArray(data) && data.length > 0) {
-      if (Array.isArray(data[0])) {
-        const rows = (data as unknown[][]).map((r) => r.map((c) => String(c ?? "")));
-        return { columns: rows[0], rows: rows.slice(1) };
-      }
-      if (typeof data[0] === "object" && data[0] !== null) {
-        const objects = data as Record<string, unknown>[];
-        const columns = Array.from(
-          new Set(objects.flatMap((o) => Object.keys(o))),
-        );
-        return {
-          columns,
-          rows: objects.map((o) => columns.map((c) => String(o[c] ?? ""))),
-        };
-      }
-    }
-    return null;
-  }
-  const rows = parseCsv(trimmed);
-  if (rows.length === 0) return null;
-  return { columns: rows[0], rows: rows.slice(1) };
-}
+const cellText = (value: JsonValue): string => {
+  if (value === null) return "";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+};
 
 /** Sortable table. Sorting is numeric when a whole column parses as numbers —
  *  the common case for a block that prints a computed report. */
-function tableNode(text: string): HTMLElement {
-  const parsed = tableRows(text);
-  if (!parsed) return errorNode("输出不是可识别的表格（需要 CSV 或 JSON 数组）");
-
+function tableNode(data: TableResultData): HTMLElement {
   const wrap = el("div", "cm-run-render-table");
   const table = el("table");
   const thead = el("thead");
@@ -96,7 +60,7 @@ function tableNode(text: string): HTMLElement {
 
   const fill = () => {
     tbody.replaceChildren();
-    const rows = [...parsed.rows];
+    const rows = data.rows.map((row) => row.map(cellText));
     if (sortCol >= 0) {
       const numeric = rows.every((r) => {
         const v = (r[sortCol] ?? "").trim();
@@ -111,7 +75,7 @@ function tableNode(text: string): HTMLElement {
     }
     for (const row of rows) {
       const tr = el("tr");
-      for (let i = 0; i < parsed.columns.length; i++) {
+      for (let i = 0; i < data.columns.length; i++) {
         const td = el("td");
         td.textContent = row[i] ?? "";
         tr.append(td);
@@ -120,7 +84,7 @@ function tableNode(text: string): HTMLElement {
     }
   };
 
-  parsed.columns.forEach((name, i) => {
+  data.columns.forEach((name, i) => {
     const th = el("th");
     th.textContent = name;
     th.title = "点击排序";
@@ -142,25 +106,15 @@ function tableNode(text: string): HTMLElement {
 
 /* --------------------------- json / image / html ------------------------ */
 
-function jsonNode(text: string): HTMLElement {
-  try {
-    const pretty = JSON.stringify(JSON.parse(text.trim()), null, 2);
-    const pre = el("pre", "cm-run-render-text");
-    pre.textContent = pretty;
-    return pre;
-  } catch (e) {
-    return errorNode(`JSON 解析失败：${e instanceof Error ? e.message : String(e)}`);
-  }
+function jsonNode(data: JsonValue): HTMLElement {
+  const pre = el("pre", "cm-run-render-text");
+  pre.textContent = JSON.stringify(data, null, 2);
+  return pre;
 }
 
-/** `::image ./chart.png` lines (a bare path on its own line also works). */
-function imageNode(text: string, onSettle?: () => void): HTMLElement {
+function imageNode(data: string | string[], onSettle?: () => void): HTMLElement {
   const wrap = el("div", "cm-run-render-image");
-  const paths = text
-    .split("\n")
-    .map((l) => l.trim().replace(/^::image[ \t]+/i, "").trim())
-    .filter(Boolean);
-  if (paths.length === 0) return errorNode("没有可显示的图片路径");
+  const paths = Array.isArray(data) ? data : [data];
   for (const path of paths) {
     const img = document.createElement("img");
     img.src = toDisplaySrc(path);
@@ -230,40 +184,41 @@ function markdownNode(text: string): HTMLElement {
 }
 
 /**
- * Render `text` as `kind` into `host`, replacing whatever was there.
+ * Render a validated result into `host`, replacing whatever was there.
  *
  * `onSettle` fires when an async renderer (mermaid, markdown, an image) has
  * changed the height, so a widget can ask CodeMirror to measure again.
  */
 export function renderOutput(
   host: HTMLElement,
-  kind: OutKind,
-  text: string,
+  result: ComponentResult,
   onSettle?: () => void,
 ): void {
-  if (kind === "text") {
-    host.replaceChildren(textNode(text));
-    return;
-  }
-  const body = stripAnsi(text);
-  switch (kind) {
+  switch (result.type) {
+    case "text":
+      host.replaceChildren(textNode(result.data));
+      break;
     case "table":
-      host.replaceChildren(tableNode(body));
+      host.replaceChildren(tableNode(result.data));
       break;
     case "json":
-      host.replaceChildren(jsonNode(body));
+      host.replaceChildren(jsonNode(result.data));
       break;
     case "mermaid":
-      host.replaceChildren(mermaidNode(body, onSettle));
+      host.replaceChildren(mermaidNode(result.data, onSettle));
       break;
     case "html":
-      host.replaceChildren(htmlNode(body, onSettle));
+      host.replaceChildren(htmlNode(result.data, onSettle));
       break;
     case "image":
-      host.replaceChildren(imageNode(body, onSettle));
+      host.replaceChildren(imageNode(result.data, onSettle));
       break;
     case "markdown":
-      host.replaceChildren(markdownNode(body));
+      host.replaceChildren(markdownNode(result.data));
       break;
   }
+}
+
+export function renderOutputError(host: HTMLElement, message: string): void {
+  host.replaceChildren(errorNode(message));
 }

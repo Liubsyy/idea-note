@@ -10,6 +10,10 @@
 import { create } from "zustand";
 
 import type { OutKind } from "../lib/codeRun/fenceAttrs";
+import {
+  parseComponentOutput,
+  type ComponentResult,
+} from "../lib/codeRun/resultProtocol";
 
 export type RunStatus = "running" | "done" | "killed" | "timeout" | "error";
 
@@ -49,8 +53,11 @@ export interface RunRecord {
   inputs: Record<string, unknown> | null;
   /** `principal=500000 · rate=3.85`, shown in the card header. */
   inputSummary: string;
-  /** How the output is rendered (`out=` on the fence). */
-  outKind: OutKind;
+  /** The fence's declared `out=`, or null when the result is self-describing. */
+  declaredOut: OutKind | null;
+  /** Parsed only after a successful run; renderers never consume raw stdout. */
+  componentResult: ComponentResult | null;
+  protocolError: string | null;
 }
 
 /** Cap on retained records across all files; oldest drop out first. */
@@ -131,13 +138,32 @@ export const useRunStore = create<RunState>((set) => ({
 
   finish: (runId, result) =>
     set((s) => ({
-      records: patch(s.records, runId, (r) => ({
-        ...r,
-        status: result.status,
-        exitCode: result.exitCode,
-        truncated: result.truncated,
-        ms: result.ms,
-      })),
+      records: patch(s.records, runId, (r) => {
+        const succeeded = result.status === "done" && result.exitCode === 0;
+        const stdout = r.segs
+          .filter((segment) => segment.stream === "stdout")
+          .map((segment) => segment.text)
+          .join("");
+        const parsed = succeeded
+          ? parseComponentOutput(stdout, r.declaredOut)
+          : { result: null, error: null };
+        const truncatedProtocol =
+          result.truncated &&
+          (r.declaredOut !== null ||
+            parsed.result !== null ||
+            parsed.error !== null);
+        return {
+          ...r,
+          status: result.status,
+          exitCode: result.exitCode,
+          truncated: result.truncated,
+          ms: result.ms,
+          componentResult: truncatedProtocol ? null : parsed.result,
+          protocolError: truncatedProtocol
+            ? "输出已截断，无法读取完整组件结果"
+            : parsed.error,
+        };
+      }),
     })),
 
   fail: (runId, message) =>

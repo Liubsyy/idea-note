@@ -12,18 +12,19 @@
 
 ````markdown
 ```python {out=mermaid}
-print("graph TD; A[订单]-->B[支付]-->C[发货]")
+import json
+print(json.dumps("graph TD; A[订单]-->B[支付]-->C[发货]", ensure_ascii=False))
 ```
 ````
 
-输出协议约定（草案）：
+输出协议约定：指定 `out=` 时，stdout 最后一个非空行是严格 JSON data；未指定时输出 `{"idea_note_result":{"type":"...","data":...}}`。
 
-| 输出内容 | 渲染结果 |
+| type | data |
 | :--- | :--- |
-| mermaid 源码 | 直接渲染成流程图 |
-| CSV / JSON 数组 | 直接渲染成表格 |
-| `::image ./chart.png` | 内嵌图片 |
-| SVG 文本 | 直接渲染矢量图 |
+| `mermaid` | JSON 字符串 |
+| `table` | `{"columns":[...],"rows":[...]}` |
+| `image` | JSON 路径字符串或路径数组 |
+| `html` | JSON 字符串，消毒后静态渲染 |
 
 **独特性**：Typora / Obsidian 的代码块只能高亮；Jupyter 能富输出但产物不是 Markdown 文件。这里能做到**源文件仍是纯 md**——别的编辑器打开就是一个普通代码块加一个普通 mermaid 块。
 

@@ -1,5 +1,10 @@
 // Markdown heading extraction for the sidebar outline panel.
 
+import {
+  isCloseFenceFor,
+  type FenceMarker,
+} from "./codeRun/fenceAttrs.ts";
+
 export interface OutlineItem {
   /** Heading depth, 1-6. */
   level: number;
@@ -25,18 +30,27 @@ function plainText(raw: string): string {
 /** Scan markdown for ATX headings, ignoring those inside fenced code blocks. */
 export function extractOutline(markdown: string): OutlineItem[] {
   const items: OutlineItem[] = [];
-  let fence: string | null = null; // the fence marker we are inside, if any
+  // Keep the complete opening marker. A shorter fence of the same character
+  // is ordinary content inside a documentation fence, e.g. ```python nested
+  // inside ````markdown. Remembering only "`" / "~" makes that inner example
+  // look like a close and leaks code comments into the outline as headings.
+  let fence: FenceMarker | null = null;
 
   const lines = markdown.split("\n");
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    const fenceMatch = line.match(/^\s{0,3}(`{3,}|~{3,})/);
+    const fenceMatch = line.match(/^\s{0,3}(`{3,}|~{3,})(.*)$/);
     if (fenceMatch) {
       if (!fence) {
-        fence = fenceMatch[1][0]; // opening fence: remember ` or ~
-      } else if (fenceMatch[1][0] === fence) {
-        fence = null; // matching closing fence
+        const marker = fenceMatch[1];
+        fence = {
+          char: marker[0] as FenceMarker["char"],
+          length: marker.length,
+          info: fenceMatch[2],
+        };
+      } else if (isCloseFenceFor(line, fence)) {
+        fence = null;
       }
       continue;
     }

@@ -33,7 +33,13 @@ import { copyText } from "../clipboard";
 import { useAppStore } from "../../store/useAppStore";
 import { runBlock } from "../codeRun/runBlock";
 import { resolveRunner } from "../codeRun/runners";
-import { INPUT_FENCE, fenceInfoOf, parseFenceInfo } from "../codeRun/fenceAttrs";
+import {
+  INPUT_FENCE,
+  fenceInfoOf,
+  isCloseFenceFor,
+  openingFenceOf,
+  parseFenceInfo,
+} from "../codeRun/fenceAttrs";
 import { MathWidget } from "./math";
 import { MERMAID_FENCE } from "./diagram";
 import {
@@ -570,11 +576,19 @@ function buildDecorations(view: EditorView): DecorationSet {
             const fenceInfo = parseFenceInfo(rawInfo);
             const plain = !fenced || fenceInfo.lang.length === 0;
             const codeLines: number[] = [];
+            const opening = fenced
+              ? openingFenceOf(state.doc.line(a).text)
+              : null;
             for (let n = a; n <= b; n++) {
               const ln = state.doc.line(n);
-              // Fence (``` / ~~~) lines: collapsed while the cursor is outside
-              // the block, revealed once it's inside.
-              if (fenced && /^\s*(`{3,}|~{3,})/.test(ln.text)) {
+              // Collapse only this block's opening and closing fences. A
+              // shorter fence inside a four-backtick documentation block is
+              // literal example content and must remain visible.
+              const boundary =
+                fenced &&
+                (n === a ||
+                  (n === b && opening !== null && isCloseFenceFor(ln.text, opening)));
+              if (boundary) {
                 ranges.push(
                   Decoration.line({
                     class: blockActive

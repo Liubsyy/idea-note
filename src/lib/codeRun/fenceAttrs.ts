@@ -8,7 +8,7 @@
 // recognises, or a `{` that never closes, leaves a plain code block behind
 // rather than breaking the note.
 
-/** How a run's output is rendered. `text` is the classic output-panel path. */
+/** Component types supported by the stdout JSON protocol. */
 export type OutKind =
   | "text"
   | "table"
@@ -58,15 +58,13 @@ export interface FenceAttrs {
   /** `in=…` */
   input: InputBinding | null;
   out: OutKind;
-  /** Whether `out=` was written down; a bare block stays on the text path. */
+  /** Whether `out=` was written down; otherwise stdout must self-describe. */
   outExplicit: boolean;
   /** `run=watch|open`, or the bare `watch` flag. */
   trigger: RunTrigger;
   /** All automatic triggers written on the fence. Kept separately from
    *  `trigger` so older callers that expect one value remain compatible. */
   triggers: RunTrigger[];
-  /** `inline` — render the result in the document. Implied by a rich `out=`. */
-  inline: boolean;
   /** `result=above|below`. Above by default: the result is what you are reading
    *  the note for, and the code that produced it is the footnote. */
   placement: ResultPlacement;
@@ -85,7 +83,6 @@ const emptyAttrs = (): FenceAttrs => ({
   outExplicit: false,
   trigger: "manual",
   triggers: [],
-  inline: false,
   placement: "above",
 });
 
@@ -141,7 +138,6 @@ export function parseFenceInfo(info: string): FenceInfo {
     if (eq < 0) {
       const flag = entry.toLowerCase();
       if (flag === "watch") addTrigger("watch");
-      else if (flag === "inline") attrs.inline = true;
       continue;
     }
     const key = entry.slice(0, eq).trim().toLowerCase();
@@ -173,12 +169,6 @@ export function parseFenceInfo(info: string): FenceInfo {
         }
         break;
       }
-      case "inline":
-        // `inline=below` is the shorthand people reach for; it means the same
-        // as writing `inline, result=below`.
-        attrs.inline = value !== "false";
-        if (value === "below" || value === "above") attrs.placement = value;
-        break;
       case "result":
         if (value === "below" || value === "above") attrs.placement = value;
         break;
@@ -187,16 +177,34 @@ export function parseFenceInfo(info: string): FenceInfo {
   return { lang, attrs };
 }
 
-/** Whether the result should render in the document instead of only in the
- *  output panel. A rich `out=` implies it: nobody asks for a chart and wants
- *  it in a side panel. */
-export const rendersInline = (attrs: FenceAttrs): boolean =>
-  attrs.inline || (attrs.outExplicit && attrs.out !== "text");
+export interface FenceMarker {
+  char: "`" | "~";
+  length: number;
+  info: string;
+}
+
+/** A Markdown opening fence, including the delimiter needed to find its close. */
+export function openingFenceOf(text: string): FenceMarker | null {
+  const m = text.match(/^\s*(`{3,}|~{3,})(.*)$/);
+  if (!m) return null;
+  return {
+    char: m[1][0] as FenceMarker["char"],
+    length: m[1].length,
+    info: m[2],
+  };
+}
+
+/** Whether a line closes this specific fence (same character, no shorter). */
+export function isCloseFenceFor(text: string, opening: FenceMarker): boolean {
+  const marker = text.trim();
+  if (marker.length < opening.length) return false;
+  for (const char of marker) if (char !== opening.char) return false;
+  return true;
+}
 
 /** An opening fence line's info string, or null when the line isn't one. */
 export function fenceInfoOf(text: string): string | null {
-  const m = text.match(/^\s*(?:`{3,}|~{3,})(.*)$/);
-  return m ? m[1] : null;
+  return openingFenceOf(text)?.info ?? null;
 }
 
 /** A closing fence line (only fence characters, nothing after). */
@@ -205,18 +213,3 @@ export const isCloseFenceLine = (text: string): boolean =>
 
 /** ```input opening fence, with or without attributes. */
 export const INPUT_FENCE = /^\s*(?:`{3,}|~{3,})\s*input\s*(?:\{|$)/i;
-
-/**
- * A run's output may pick its own renderer with a `::out <kind>` first line.
- * Returns the kind found (falling back to `fallback`) and the body without it.
- */
-export function parseOutDirective(
-  text: string,
-  fallback: OutKind,
-): { kind: OutKind; body: string } {
-  const m = text.match(/^[ \t]*::out[ \t]+([a-z]+)[ \t]*\r?\n?/i);
-  if (!m) return { kind: fallback, body: text };
-  const kind = m[1].toLowerCase();
-  if (!isOutKind(kind)) return { kind: fallback, body: text };
-  return { kind, body: text.slice(m[0].length) };
-}
