@@ -31,6 +31,7 @@ import {
 import type { EditorView } from "@codemirror/view";
 import { md } from "../../lib/codemirror/markdownCommands";
 import { getActiveView } from "../../lib/codemirror/activeView";
+import { CodeComponentModal } from "./CodeComponentModal";
 import {
   hasActiveTableCell,
   prepareActiveTableCellSelection,
@@ -624,6 +625,7 @@ export function Toolbar() {
   const active = useAppStore((s) => s.activeFormats);
   const editorKeybindings = useAppStore((s) => s.editorKeybindings);
   const [lastColors, setLastColors] = useState(loadLastMarkdownColors);
+  const [componentOpen, setComponentOpen] = useState(false);
 
   const iconSize = 15;
   // Apply a colour and make it the button's one-click default from now on.
@@ -827,13 +829,37 @@ export function Toolbar() {
         onPrimary={() => runCommand("markdownHighlightBlock")}
         onPick={applyHighlightColor}
       />
-      <Btn
-        title={shortcut("代码块", "markdownCodeBlock")}
+      {/* Code block: the icon inserts a plain fence (unchanged), the chevron
+          offers the parameterised component, whose fence attributes nobody
+          should have to remember. */}
+      <Dropdown
+        title="代码块"
+        primaryTitle={shortcut("代码块", "markdownCodeBlock")}
         active={active.codeBlock}
-        onClick={() => runCommand("markdownCodeBlock")}
-      >
-        <Braces size={iconSize} />
-      </Btn>
+        menuWidth={168}
+        trigger={<Braces size={iconSize} />}
+        onPrimary={() => runCommand("markdownCodeBlock")}
+        render={(close) => (
+          <>
+            <MenuItem
+              label="普通代码块"
+              title={shortcut("代码块", "markdownCodeBlock")}
+              onClick={() => {
+                runCommand("markdownCodeBlock");
+                close();
+              }}
+            />
+            <MenuItem
+              label="可交互组件…"
+              title="带参数控件和输出渲染的可交互代码块"
+              onClick={() => {
+                close();
+                setComponentOpen(true);
+              }}
+            />
+          </>
+        )}
+      />
       <Btn
         title={shortcut("分割线", "markdownHr")}
         onClick={() => runCommand("markdownHr")}
@@ -909,6 +935,16 @@ export function Toolbar() {
       <Btn title={shortcut("重做", "redo")} onClick={() => runCommand("redo")}>
         <Redo2 size={iconSize} />
       </Btn>
+
+      {componentOpen && (
+        <CodeComponentModal
+          onClose={() => setComponentOpen(false)}
+          onInsert={(snippet) => {
+            setComponentOpen(false);
+            run((v) => md.codeComponent(v, snippet));
+          }}
+        />
+      )}
     </div>
   );
 }

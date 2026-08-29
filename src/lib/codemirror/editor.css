@@ -1081,3 +1081,238 @@
   background: rgba(125, 150, 201, 0.22);
   border-radius: 2px;
 }
+
+/* ---------------------------------------------------------------------------
+   Parameterised code blocks: the ```input控件 block, and the result rendered
+   under a block carrying `out=…`. Both are block widgets, so they own their
+   vertical rhythm the same way the mermaid/table widgets do.
+   --------------------------------------------------------------------------- */
+
+/* Block widgets are measured by their border box, so the gap around one has to
+   be padding on the outer element — a margin is invisible to CodeMirror's
+   height map, and each unseen margin shifts every click below it onto the wrong
+   line. Same rule the math and mermaid widgets follow. */
+.cm-md-input {
+  display: block;
+  margin: 0;
+  padding: 0.35em 0;
+  font-size: 0.92em;
+}
+
+.cm-md-input-card {
+  padding: 0.7em 0.9em;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--code-bg);
+}
+
+.cm-md-input-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  margin-bottom: 0.6em;
+}
+
+.cm-md-input-title {
+  flex: 1;
+  color: var(--text-muted);
+  font-size: 0.85em;
+  letter-spacing: 0.04em;
+}
+
+.cm-md-input-btn {
+  padding: 0.15em 0.6em;
+  color: var(--text-soft);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 0.8em;
+  cursor: pointer;
+}
+.cm-md-input-btn:hover {
+  color: var(--text);
+  background: var(--hover);
+  border-color: var(--text-muted);
+}
+
+/* Label column sized to its content so short and long names stay aligned. */
+.cm-md-input-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  align-items: center;
+  gap: 0.45em 0.8em;
+}
+
+.cm-md-input-label {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.cm-md-input-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  min-width: 0;
+}
+
+/* The slider takes the slack; its number box stays a fixed, readable width. */
+.cm-md-input-control input[type="range"] {
+  flex: 1;
+  min-width: 6em;
+  accent-color: var(--accent);
+}
+.cm-md-input-control input[type="number"] {
+  width: 7.5em;
+}
+.cm-md-input-control input[type="text"] {
+  flex: 1;
+  min-width: 6em;
+}
+.cm-md-input-control input[type="number"],
+.cm-md-input-control input[type="text"],
+.cm-md-input-control select {
+  padding: 0.2em 0.45em;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font: inherit;
+}
+.cm-md-input-control input:focus,
+.cm-md-input-control select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.cm-md-input-control input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+.cm-md-input-unit {
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+.cm-md-input-error {
+  margin-top: 0.5em;
+  color: #d9534f;
+  font-size: 0.82em;
+}
+
+/* Result block ------------------------------------------------------------ */
+
+/* Outer element: spacing only, as padding — see the note above .cm-md-input. */
+.cm-md-result {
+  display: block;
+  margin: 0;
+  padding: 0.35em 0;
+  font-size: 0.92em;
+}
+
+.cm-md-result-card {
+  padding: 0.55em 0.9em 0.7em;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elev);
+}
+
+/* A block that has never run states so quietly; it is a placeholder telling
+   you where the result will land, not a result. */
+.cm-md-result-empty {
+  opacity: 0.55;
+}
+
+.cm-md-result-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7em;
+  margin-bottom: 0.4em;
+  color: var(--text-muted);
+  font-size: 0.8em;
+}
+
+.cm-md-result-running .cm-md-result-status {
+  color: var(--accent);
+}
+
+.cm-md-result-params {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cm-md-result-body {
+  overflow-x: auto;
+}
+
+/* Rendered outputs (shared with the run-output panel) --------------------- */
+
+.cm-run-render-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--editor-font-family, monospace);
+}
+
+.cm-run-render-error {
+  color: #d9534f;
+}
+
+.cm-run-render-table {
+  overflow-x: auto;
+}
+.cm-run-render-table table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.cm-run-render-table th,
+.cm-run-render-table td {
+  padding: 0.25em 0.6em;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+.cm-run-render-table th {
+  background: var(--code-bg);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.cm-run-render-table th[data-sort="asc"]::after {
+  content: " ↑";
+}
+.cm-run-render-table th[data-sort="desc"]::after {
+  content: " ↓";
+}
+
+.cm-run-render-image img,
+.cm-run-render-html img,
+.cm-run-render-markdown img {
+  max-width: 100%;
+  height: auto;
+}
+
+.cm-run-render-mermaid {
+  text-align: center;
+}
+/* inline-block so the parent's text-align actually centres it: a plain block
+   svg would stretch and leave the drawing hugging the left edge. */
+.cm-run-render-mermaid > svg {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+}
+
+.cm-run-render-markdown > :first-child,
+.cm-run-render-html > :first-child {
+  margin-top: 0;
+}
+.cm-run-render-markdown table,
+.cm-run-render-html table {
+  border-collapse: collapse;
+}
+.cm-run-render-markdown th,
+.cm-run-render-markdown td,
+.cm-run-render-html th,
+.cm-run-render-html td {
+  padding: 0.25em 0.6em;
+  border: 1px solid var(--border);
+}

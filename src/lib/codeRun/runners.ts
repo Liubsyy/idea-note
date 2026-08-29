@@ -46,10 +46,11 @@ export const DEFAULT_CODE_RUN_FONT_SIZE = 13;
 
 /**
  * Info strings that never get a run button, whatever the config says:
- * `mermaid` is already claimed by the diagram widget, and `output` is the block
- * we write results into — giving it a button would let results run results.
+ * `mermaid` is already claimed by the diagram widget, `input` declares a
+ * block's parameters (it is data, not code), and `output` is the block we write
+ * results into — giving it a button would let results run results.
  */
-const HARD_EXCLUDED = new Set(["mermaid", "output"]);
+const HARD_EXCLUDED = new Set(["mermaid", "input", "output"]);
 
 /** Built-in runners. All are available by default and can be disabled separately. */
 export function builtinRunners(): CodeRunner[] {
@@ -239,9 +240,14 @@ export async function saveCodeRunConfig(config: CodeRunConfig): Promise<void> {
   await invoke("code_runners_save", { json: JSON.stringify(config, null, 2) });
 }
 
-/** The fence's language id, or "" when it has no info string. */
-export const fenceLang = (info: string) =>
-  info.trim().toLowerCase().split(/\s+/)[0] ?? "";
+/** The fence's language id, or "" when it has no info string. Attributes are
+ *  cut off first, so ```python {out=table} still matches the python runner —
+ *  with or without a space before the brace. */
+export const fenceLang = (info: string) => {
+  const brace = info.indexOf("{");
+  const head = brace < 0 ? info : info.slice(0, brace);
+  return head.trim().toLowerCase().split(/\s+/)[0] ?? "";
+};
 
 /** The runner whose language matches, *ignoring* whether it is enabled. Used by
  *  "在终端运行", which only builds a command line for the user's own shell. */

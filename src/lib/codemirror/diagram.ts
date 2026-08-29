@@ -59,13 +59,19 @@ function loadMermaid(): Promise<MermaidApi> {
   return mermaidApi;
 }
 
-async function renderDiagram(
-  view: EditorView,
+/**
+ * Render mermaid source to SVG, cached by (theme + source).
+ *
+ * Shared with the run-output renderer: a ```python {out=mermaid} block prints
+ * a diagram, and it should look exactly like a hand-written ```mermaid one —
+ * same lazy loader, same cache, same error text.
+ */
+export async function renderMermaidSvg(
   code: string,
-  theme: string,
-  svgHost: HTMLElement,
-  wrap: HTMLElement,
-) {
+  theme: "dark" | "default" = currentTheme(),
+): Promise<{ svg: string } | { error: string }> {
+  const cached = svgCache.get(cacheKey(theme, code));
+  if (cached) return { svg: cached };
   const renderId = `mermaid-${idCounter++}`;
   try {
     const mermaid = await loadMermaid();
@@ -77,16 +83,30 @@ async function renderDiagram(
     });
     const { svg } = await mermaid.render(renderId, code);
     svgCache.set(cacheKey(theme, code), svg);
-    if (!wrap.isConnected) return;
-    svgHost.innerHTML = svg;
+    return { svg };
   } catch (e) {
     // On a parse error mermaid 10 draws its "Syntax error in text" bomb into
     // a temp <div id="d{id}"> appended to document.body and throws BEFORE its
     // own cleanup, leaking the node (it would even show up in printed PDFs).
     document.getElementById(`d${renderId}`)?.remove();
     document.getElementById(renderId)?.remove();
+    return { error: `图表渲染失败：${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+async function renderDiagram(
+  view: EditorView,
+  code: string,
+  theme: "dark" | "default",
+  svgHost: HTMLElement,
+  wrap: HTMLElement,
+) {
+  const result = await renderMermaidSvg(code, theme);
+  if (!wrap.isConnected) return;
+  if ("svg" in result) svgHost.innerHTML = result.svg;
+  else {
     wrap.classList.add("cm-md-mermaid-error");
-    wrap.textContent = `图表渲染失败：${e instanceof Error ? e.message : String(e)}`;
+    wrap.textContent = result.error;
   }
   // The async fill changes the widget height; ask CodeMirror to re-measure.
   view.requestMeasure();
@@ -178,7 +198,7 @@ function createMermaidControls(svgHost: HTMLElement) {
 }
 
 class MermaidWidget extends WidgetType {
-  readonly theme: string;
+  readonly theme: "dark" | "default";
   constructor(
     readonly code: string,
     readonly from: number,

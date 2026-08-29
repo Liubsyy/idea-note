@@ -39,6 +39,7 @@ import {
 } from "../lib/search";
 import { loadModels, saveModels } from "../lib/ai/config";
 import { useRunStore } from "./useRunStore";
+import { useInputStore } from "./useInputStore";
 import {
   defaultCodeRunConfig,
   loadCodeRunConfig,
@@ -1963,8 +1964,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     const remaining = openTabs.filter((p) => p !== path);
 
     // Run output is scoped to the note it came from; the tab is gone, so are
-    // its results (they were never persisted anyway).
+    // its results (they were never persisted anyway). Parameter values live the
+    // same life: the note keeps the defaults, the session kept the rest.
     useRunStore.getState().clearFile(path);
+    useInputStore.getState().clearFile(path);
 
     // Closing a draft discards its in-memory buffer (no disk file to keep).
     if (isDraftPath(path)) {

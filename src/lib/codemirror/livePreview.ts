@@ -31,8 +31,9 @@ import {
 } from "../imageSyntax";
 import { copyText } from "../clipboard";
 import { useAppStore } from "../../store/useAppStore";
-import { startRun } from "../codeRun/run";
+import { runBlock } from "../codeRun/runBlock";
 import { resolveRunner } from "../codeRun/runners";
+import { INPUT_FENCE, fenceInfoOf, parseFenceInfo } from "../codeRun/fenceAttrs";
 import { MathWidget } from "./math";
 import { MERMAID_FENCE } from "./diagram";
 import {
@@ -308,7 +309,7 @@ class CodeActionsWidget extends WidgetType {
   eq(o: CodeActionsWidget) {
     return o.code === this.code && o.runInfo === this.runInfo;
   }
-  toDOM() {
+  toDOM(view: EditorView) {
     const wrap = document.createElement("div");
     wrap.className = "cm-md-code-actions";
     // Don't let a press move the editor cursor or steal focus.
@@ -323,11 +324,9 @@ class CodeActionsWidget extends WidgetType {
       setCodeActionIcon(run, "play");
       run.addEventListener("click", (e) => {
         e.preventDefault();
-        void startRun({
-          filePath: useAppStore.getState().activeFilePath,
-          info: this.runInfo ?? "",
-          code: this.code,
-        });
+        // runBlock resolves the fence's `in=…` against the document first, so
+        // the click carries the block's parameters with it.
+        void runBlock(view, this.runInfo ?? "", this.code);
       });
       wrap.append(run);
 
@@ -557,17 +556,19 @@ function buildDecorations(view: EditorView): DecorationSet {
             if (
               fenced &&
               !blockActive &&
-              MERMAID_FENCE.test(state.doc.line(a).text)
+              (MERMAID_FENCE.test(state.doc.line(a).text) ||
+                INPUT_FENCE.test(state.doc.line(a).text))
             )
               return;
             // A block with no info-string (or an indented CodeBlock) has no
             // language: its whole body is tagged `monospace` and would render
             // in the orange accent. Mark those lines so CSS can fall back to
             // the neutral --code-text, matching language-highlighted blocks.
-            const infoMatch = fenced
-              ? state.doc.line(a).text.match(/^\s*(?:`{3,}|~{3,})\s*([^\s`]*)/)
-              : null;
-            const plain = !fenced || !infoMatch || infoMatch[1].length === 0;
+            const rawInfo = fenced ? (fenceInfoOf(state.doc.line(a).text) ?? "") : "";
+            // `python {in=loan, out=table}`: the language still comes first, so
+            // highlighting and runner matching are unchanged by the attributes.
+            const fenceInfo = parseFenceInfo(rawInfo);
+            const plain = !fenced || fenceInfo.lang.length === 0;
             const codeLines: number[] = [];
             for (let n = a; n <= b; n++) {
               const ln = state.doc.line(n);
@@ -612,14 +613,16 @@ function buildDecorations(view: EditorView): DecorationSet {
                 .join("\n");
               // Read-only preview never offers to run: it's the mode for
               // reading notes that came from elsewhere.
-              const info = infoMatch?.[1] ?? "";
               const runnable =
                 !state.readOnly &&
-                info &&
-                resolveRunner(info, useAppStore.getState().codeRunConfig) !== null;
+                fenceInfo.lang &&
+                resolveRunner(
+                  fenceInfo.lang,
+                  useAppStore.getState().codeRunConfig,
+                ) !== null;
               ranges.push(
                 Decoration.widget({
-                  widget: new CodeActionsWidget(code, runnable ? info : null),
+                  widget: new CodeActionsWidget(code, runnable ? rawInfo : null),
                   side: -1,
                 }).range(state.doc.line(codeLines[0]).from),
               );

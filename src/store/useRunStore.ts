@@ -9,6 +9,8 @@
 
 import { create } from "zustand";
 
+import type { OutKind } from "../lib/codeRun/fenceAttrs";
+
 export type RunStatus = "running" | "done" | "killed" | "timeout" | "error";
 
 export interface RunSegment {
@@ -22,6 +24,9 @@ export interface RunRecord {
   runId: number;
   filePath: string;
   lang: string;
+  /** The fence's whole info string, attributes included — 重跑 has to run the
+   *  block the way it was written, not just its language. */
+  info: string;
   /** First non-empty source line, shown in the card header for attribution. */
   firstLine: string;
   /** Rendered command, for the card footer and the first-run confirmation. */
@@ -38,6 +43,14 @@ export interface RunRecord {
   /** Spawn failure (interpreter not found, …) instead of program output. */
   error: string | null;
   collapsed: boolean;
+  /** Snapshot of the ```input values this run was given, or null when the
+   *  block has no `in=` binding. A result is only meaningful together with the
+   *  parameters that produced it. */
+  inputs: Record<string, unknown> | null;
+  /** `principal=500000 · rate=3.85`, shown in the card header. */
+  inputSummary: string;
+  /** How the output is rendered (`out=` on the fence). */
+  outKind: OutKind;
 }
 
 /** Cap on retained records across all files; oldest drop out first. */

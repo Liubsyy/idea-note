@@ -519,6 +519,8 @@ export const md = {
   mathBlock: (v: EditorView) => insertBlock(v, "$$\nE = mc^2\n$$", "E = mc^2"),
   mermaid: (v: EditorView, body: string) =>
     insertBlock(v, "```mermaid\n" + body + "\n```"),
+  /** A ready-made 可交互组件 (input block + fence), built by the toolbar dialog. */
+  codeComponent: (v: EditorView, snippet: string) => insertBlock(v, snippet),
 
   hr: (v: EditorView) => {
     const range = v.state.selection.main;

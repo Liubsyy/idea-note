@@ -27,6 +27,9 @@ import { markdownLinkClick } from "../../lib/codemirror/linkClick";
 import { htmlPreview } from "../../lib/codemirror/htmlPreview";
 import { inlineMath, mathBlock } from "../../lib/codemirror/math";
 import { mermaidBlock } from "../../lib/codemirror/diagram";
+import { inputBlock } from "../../lib/codemirror/inputBlock";
+import { resultBlock } from "../../lib/codemirror/resultBlock";
+import { autoRuns } from "../../lib/codemirror/autoRuns";
 import {
   cmTheme,
   cmHighlighting,
@@ -52,6 +55,12 @@ const previewPlugins = [
   htmlPreview,
   mathBlock,
   mermaidBlock,
+  // Parameterised blocks: the ```input controls, the result rendered next to a
+  // block with `out=…`, and the triggers (`run=watch` / `run=open`) that run a
+  // block without its button being clicked.
+  inputBlock,
+  resultBlock,
+  autoRuns,
 ];
 
 // Extensions for a markdown view mode, swapped in/out via the compartment:

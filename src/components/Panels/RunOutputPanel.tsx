@@ -15,7 +15,11 @@ import { useAppStore } from "../../store/useAppStore";
 import { useRunStore, type RunRecord } from "../../store/useRunStore";
 import { runInTerminal, startRun, stopRun } from "../../lib/codeRun/run";
 import { parseAnsiSegments } from "../../lib/codeRun/ansi";
-import { insertOutput, revealBlock } from "../../lib/codeRun/document";
+import { insertOutput, outputText, revealBlock } from "../../lib/codeRun/document";
+import { parseOutDirective } from "../../lib/codeRun/fenceAttrs";
+import { renderOutput } from "../../lib/codeRun/renderOutput";
+import { runBlock } from "../../lib/codeRun/runBlock";
+import { getActiveView } from "../../lib/codemirror/activeView";
 import { basename } from "../../lib/fs";
 
 /**
@@ -192,6 +196,42 @@ function IconButton({
   );
 }
 
+/**
+ * A run whose fence asked for a rendered output (`out=table`, `out=mermaid`, …).
+ *
+ * The same renderer draws it here and under the block, so a result looks the
+ * same wherever the user happens to be reading it.
+ */
+function RichOutput({ record }: { record: RunRecord }) {
+  const host = useRef<HTMLDivElement>(null);
+  const text = useMemo(() => outputText(record), [record.segs]);
+  // A non-zero exit means the output is a traceback; show it as text, or the
+  // declared renderer would hide the error behind its own complaint.
+  const failed = record.exitCode !== null && record.exitCode !== 0;
+  useEffect(() => {
+    if (!host.current) return;
+    const { kind, body } = parseOutDirective(text, record.outKind);
+    renderOutput(host.current, failed ? "text" : kind, body);
+  }, [text, record.outKind, failed]);
+  return <div ref={host} className="text-[0.85em] leading-relaxed" />;
+}
+
+/** Re-run a record's block. Going through runBlock keeps its `in=…` binding:
+ *  a rerun without the parameters would quietly answer a different question. */
+function rerun(record: RunRecord): void {
+  const view = getActiveView();
+  const activePath = useAppStore.getState().activeFilePath ?? "";
+  if (view && record.filePath === activePath) {
+    void runBlock(view, record.info, record.code);
+    return;
+  }
+  void startRun({
+    filePath: record.filePath || null,
+    info: record.info,
+    code: record.code,
+  });
+}
+
 function RunCard({ record }: { record: RunRecord }) {
   const setCollapsed = useRunStore((s) => s.setCollapsed);
   const showToast = useAppStore((s) => s.showToast);
@@ -249,16 +289,7 @@ function RunCard({ record }: { record: RunRecord }) {
             <Square size={11} />
           </IconButton>
         ) : (
-          <IconButton
-            title="重跑"
-            onClick={() =>
-              void startRun({
-                filePath: record.filePath || null,
-                info: record.lang,
-                code: record.code,
-              })
-            }
-          >
+          <IconButton title="重跑" onClick={() => rerun(record)}>
             <Play size={12} />
           </IconButton>
         )}
@@ -297,6 +328,8 @@ function RunCard({ record }: { record: RunRecord }) {
               <div className="text-[0.85em]" style={{ color: "var(--text-muted)" }}>
                 {record.status === "running" ? "等待输出…" : "没有输出"}
               </div>
+            ) : record.outKind !== "text" ? (
+              <RichOutput record={record} />
             ) : (
               <pre className="whitespace-pre-wrap break-words font-mono text-[0.85em] leading-relaxed">
                 {outputRuns.map((run, i) => (
@@ -313,6 +346,11 @@ function RunCard({ record }: { record: RunRecord }) {
             style={{ color: "var(--text-muted)" }}
           >
             <span className="truncate font-mono">{record.command}</span>
+            {record.inputSummary && (
+              <span className="truncate" title={record.inputSummary}>
+                参数：{record.inputSummary}
+              </span>
+            )}
             {record.status !== "running" && <span>{formatMs(record.ms)}</span>}
             {record.truncated && <span>输出已截断</span>}
           </div>

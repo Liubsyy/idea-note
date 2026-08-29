@@ -17,11 +17,13 @@ import {
 } from "../../store/useRunStore";
 import { dirname } from "../fs";
 import {
+  fenceLang,
   isShellRunner,
   matchRunner,
   resolveRunner,
   type CodeRunner,
 } from "./runners";
+import type { OutKind } from "./fenceAttrs";
 
 /** How often buffered output is handed to the store. */
 const FLUSH_MS = 50;
@@ -85,6 +87,19 @@ export interface StartRunArgs {
   /** The fence's info string (`python`, `js`, …). */
   info: string;
   code: string;
+  /** Extra environment for this run, layered over the runner's own — this is
+   *  how an ```input block's values reach the script. */
+  env?: Record<string, string>;
+  /** The same values as data, snapshotted into the record. */
+  inputs?: Record<string, unknown> | null;
+  /** One-line rendering of those values for the card header. */
+  inputSummary?: string;
+  /** How to render the output (`out=` on the fence). */
+  outKind?: OutKind;
+  /** Whether to pop the run-output panel open. A block whose result renders in
+   *  the note has somewhere to show already; opening a panel on top of it (on
+   *  every slider move, for a `watch` block) would be noise. */
+  reveal?: boolean;
 }
 
 /** Run a code block, asking every time unless the user disables confirmation. */
@@ -117,6 +132,82 @@ export async function startRun(args: StartRunArgs): Promise<void> {
   });
 }
 
+/**
+ * Whether the user has allowed blocks to run on their own — after a control
+ * moved, or when a note is opened.
+ *
+ * In memory, for this session only, and never written to disk: reopening the
+ * app asks again, and a note with automatic triggers that arrives through a git
+ * sync is inert until its reader says otherwise.
+ */
+let autoGranted = false;
+
+/**
+ * Run a block that a trigger asked for rather than a click on 运行.
+ *
+ * A trigger fires repeatedly — every drag of a slider, every time a dashboard
+ * note is opened — so the 二次确认 setting is honoured differently here: it asks
+ * the first time this session and then stays out of the way. Clicking 运行 keeps
+ * asking every time, exactly as before.
+ */
+/**
+ * Auto-runs held back while the permission dialog is up.
+ *
+ * A note can open with several `run=open` blocks at once. Each would raise its
+ * own dialog, and since the store holds one confirmation at a time, the last
+ * would replace the rest — the reader answers once and only one block runs.
+ * Queueing them behind the single question is what makes "允许" mean "run this
+ * note's blocks", which is what it appears to say.
+ */
+const pendingAuto: { runner: CodeRunner; args: StartRunArgs }[] = [];
+let askingAuto = false;
+
+/** Forget the queue if the dialog goes away unanswered: those runs belong to
+ *  that moment, not to whenever the reader next allows something. */
+function watchDismissal(): void {
+  const stop = useAppStore.subscribe((state, previous) => {
+    if (previous.confirm === null || state.confirm !== null) return;
+    stop();
+    askingAuto = false;
+    if (!autoGranted) pendingAuto.length = 0;
+  });
+}
+
+export async function startAutoRun(args: StartRunArgs): Promise<void> {
+  const app = useAppStore.getState();
+  const runner = resolveRunner(args.info, app.codeRunConfig);
+  if (!runner) return;
+  if (autoGranted || !app.codeRunConfig.confirmEveryRun) {
+    await launch(runner, args);
+    return;
+  }
+  pendingAuto.push({ runner, args });
+  if (askingAuto) return; // one question covers the whole batch
+  askingAuto = true;
+  watchDismissal();
+  useAppStore.setState({
+    confirm: {
+      title: "自动运行",
+      message: "允许代码块按笔记里写的触发条件自动运行？本次会话内不再询问。",
+      hint: {
+        before: "可在",
+        actionLabel: "设置",
+        after: "中关闭运行前二次确认",
+        onAction: () => app.openSettings("coderun"),
+      },
+      placement: "editor-center",
+      confirmLabel: "允许",
+      tone: "primary",
+      onConfirm: () => {
+        autoGranted = true;
+        askingAuto = false;
+        const queued = pendingAuto.splice(0, pendingAuto.length);
+        for (const item of queued) void launch(item.runner, item.args);
+      },
+    },
+  });
+}
+
 async function launch(runner: CodeRunner, args: StartRunArgs): Promise<void> {
   const app = useAppStore.getState();
   const filePath = args.filePath ?? "";
@@ -131,12 +222,13 @@ async function launch(runner: CodeRunner, args: StartRunArgs): Promise<void> {
     .records.find((r) => r.key === key && r.status === "running");
   if (previous) stopRun(previous.runId);
 
-  revealRunPanel();
+  if (args.reveal !== false) revealRunPanel();
   useRunStore.getState().start({
     key,
     runId,
     filePath,
-    lang: args.info.trim().split(/\s+/)[0] ?? runner.lang,
+    lang: fenceLang(args.info) || runner.lang,
+    info: args.info,
     firstLine: firstLineOf(args.code),
     command: commandLabel(runner),
     code: args.code,
@@ -149,6 +241,9 @@ async function launch(runner: CodeRunner, args: StartRunArgs): Promise<void> {
     startedAt: Date.now(),
     error: null,
     collapsed: false,
+    inputs: args.inputs ?? null,
+    inputSummary: args.inputSummary ?? "",
+    outKind: args.outKind ?? "text",
   });
 
   const state: LiveRun = { pending: [], timer: null, unlisten: [] };
@@ -190,7 +285,7 @@ async function launch(runner: CodeRunner, args: StartRunArgs): Promise<void> {
       ext: runner.ext,
       code: args.code,
       cwd,
-      env: runner.env,
+      env: { ...runner.env, ...(args.env ?? {}) },
       timeoutMs: runner.timeoutMs,
       maxBytes: app.codeRunConfig.maxOutputKb * 1024,
     });

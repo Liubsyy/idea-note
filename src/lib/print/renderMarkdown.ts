@@ -19,6 +19,8 @@ import {
   isCustomHighlightColor,
   highlightTagAtStart,
 } from "../highlightBlock";
+import { fenceLang } from "../codeRun/runners";
+import { parseInputBlock } from "../inputs/schema";
 
 // --- mermaid (replicates diagram.ts's lazy, WebKit-safe loader) -------------
 
@@ -91,15 +93,42 @@ const spacedImage: RuleInline = (state, silent) => {
 };
 md.inline.ruler.after("image", "spaced_image", spacedImage);
 
+/**
+ * ```input blocks print as a table of parameters and their values.
+ *
+ * The exported document is a snapshot, so it shows the defaults the note
+ * carries — a PDF has no sliders, and nothing here ever runs the block that
+ * reads them (export must never execute code).
+ */
+function renderInputTable(source: string): string {
+  const schema = parseInputBlock(source);
+  if (schema.fields.length === 0) return "";
+  const rows = schema.fields
+    .map((f) => {
+      const value = `${String(f.value)}${f.unit ? ` ${f.unit}` : ""}`;
+      return `<tr><td>${md.utils.escapeHtml(f.label)}</td><td>${md.utils.escapeHtml(
+        value,
+      )}</td></tr>`;
+    })
+    .join("");
+  return `<table class="print-input"><thead><tr><th>参数</th><th>值</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
 // ```mermaid fences become placeholders; renderMarkdownToHtml fills in the SVG
-// asynchronously. Every other fence keeps the default <pre><code> rendering.
+// asynchronously. ```input renders as a parameter table. Every other fence
+// keeps the default <pre><code> rendering.
 const defaultFenceRule = md.renderer.rules.fence;
 md.renderer.rules.fence = (tokens, idx, options, env, self) => {
   const token = tokens[idx];
-  if (token.info.trim().toLowerCase() === "mermaid")
+  const lang = fenceLang(token.info);
+  if (lang === "mermaid")
     return `<div class="print-mermaid" data-mermaid="${md.utils.escapeHtml(
       token.content,
     )}"></div>`;
+  if (lang === "input") {
+    const table = renderInputTable(token.content);
+    if (table) return table;
+  }
   return defaultFenceRule
     ? defaultFenceRule(tokens, idx, options, env, self)
     : self.renderToken(tokens, idx, options);
