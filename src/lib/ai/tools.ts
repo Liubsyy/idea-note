@@ -8,6 +8,7 @@ import type { ToolDef } from "./types";
 import { getActiveView } from "../codemirror/activeView";
 import { useAppStore } from "../../store/useAppStore";
 import { componentGuide, GUIDE_TOPICS, isGuideTopic } from "./componentGuide";
+import { resolvePathWithinWorkspace, type WorkspacePathResult } from "../workspacePath";
 import {
   basename,
   isImageFile,
@@ -255,33 +256,15 @@ export function applyContent(content: string): boolean {
 
 /* --------------------------- workspace file tools ------------------------- */
 
-type PathResult = { ok: true; path: string } | { ok: false; error: string };
-
 /**
  * Resolve a model-provided path (workspace-relative or absolute) to a
  * normalized absolute path, rejecting anything outside the workspace so the
  * model can never touch files beyond it.
  */
-function resolveWorkspacePath(p: string): PathResult {
+function resolveWorkspacePath(p: string): WorkspacePathResult {
   const ws = useAppStore.getState().workspacePath;
   if (!ws) return { ok: false, error: "当前没有打开工作区。" };
-  const raw = p.trim();
-  if (!raw) return { ok: false, error: "路径不能为空。" };
-  const joined = raw.startsWith("/") ? raw : `${ws}/${raw}`;
-  const parts: string[] = [];
-  for (const seg of joined.split("/")) {
-    if (!seg || seg === ".") continue;
-    if (seg === "..") {
-      if (parts.length === 0) return { ok: false, error: "路径不在当前工作区内。" };
-      parts.pop();
-      continue;
-    }
-    parts.push(seg);
-  }
-  const norm = "/" + parts.join("/");
-  if (norm !== ws && !norm.startsWith(ws + "/"))
-    return { ok: false, error: "路径不在当前工作区内。" };
-  return { ok: true, path: norm };
+  return resolvePathWithinWorkspace(ws, p);
 }
 
 export type CreateNoteResult =

@@ -11,6 +11,7 @@
     "test:mock-ai": "node --test mock-ai/server.test.mjs",
     "test:fence-attrs": "node --test tests/fenceAttrs.test.mjs",
     "test:result-protocol": "node --test tests/resultProtocol.test.mjs",
+    "test:workspace-path": "node --test --experimental-strip-types tests/workspacePath.test.mjs",
     "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
     "tauri": "tauri"
   },
