@@ -7,6 +7,7 @@ import { diffLines } from "diff";
 import type { ToolDef } from "./types";
 import { getActiveView } from "../codemirror/activeView";
 import { useAppStore } from "../../store/useAppStore";
+import { componentGuide, GUIDE_TOPICS, isGuideTopic } from "./componentGuide";
 import {
   basename,
   isImageFile,
@@ -102,6 +103,23 @@ export const TOOL_DEFS: ToolDef[] = [
         query: { type: "string", description: "搜索关键词。" },
       },
       required: ["query"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "component_guide",
+    description:
+      "查阅 Idea Note 可交互组件（```input 参数块 + 可运行代码块）的写法规范，并获知本机启用了哪些运行器。用户要在笔记里做计算器、图表、看板、数据表格、能调参数自动重算的小工具时，先调用它再动手写；不确定语法细节（参数控件、表格/文件绑定、输出格式、自动运行）时也调用它。不要凭记忆猜语法。",
+    parameters: {
+      type: "object",
+      properties: {
+        topic: {
+          type: "string",
+          enum: GUIDE_TOPICS,
+          description:
+            "要查的主题：overview=总览与两条铁律（默认，写任何组件都先看它）；input=参数块字段语法；data=表格/文件绑定与环境变量；output=七种输出格式；run=运行时机与执行环境；examples=完整示例。",
+        },
+      },
       additionalProperties: false,
     },
   },
@@ -331,4 +349,23 @@ export async function runSearch(args: Record<string, unknown>): Promise<SearchRe
   } catch (e) {
     return { ok: false, error: typeof e === "string" ? e : (e as Error)?.message ?? "搜索失败" };
   }
+}
+
+/* ----------------------------- component guide ---------------------------- */
+
+export interface GuideResult {
+  /** Topic actually served — an unknown one falls back to the overview. */
+  topic: string;
+  text: string;
+}
+
+/**
+ * Hand the model the interactive-component spec. Read-only and local: it just
+ * returns bundled documentation plus this machine's runner state, so it never
+ * needs an approval step.
+ */
+export function readComponentGuide(args: Record<string, unknown>): GuideResult {
+  const raw = typeof args.topic === "string" ? args.topic.trim().toLowerCase() : "";
+  const topic = isGuideTopic(raw) ? raw : "overview";
+  return { topic, text: componentGuide(topic) };
 }

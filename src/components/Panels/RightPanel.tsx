@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Bot,
+  BookOpen,
   Check,
   ChevronDown,
   FilePlus2,
@@ -858,6 +859,7 @@ const TOOL_META: Record<
   create: { verb: "新建", Icon: FilePlus2 },
   delete: { verb: "删除", Icon: Trash2 },
   search: { verb: "搜索", Icon: Search },
+  guide: { verb: "查阅", Icon: BookOpen },
 };
 
 function ToolCard({ item }: { item: Extract<ChatItem, { kind: "tool" }> }) {

@@ -21,6 +21,7 @@ import {
   createNote,
   prepareDelete,
   runSearch,
+  readComponentGuide,
   type DiffView,
 } from "../lib/ai/tools";
 
@@ -43,7 +44,7 @@ export type ChatItem =
   | {
       id: string;
       kind: "tool";
-      tool: "read" | "edit" | "create" | "delete" | "search";
+      tool: "read" | "edit" | "create" | "delete" | "search" | "guide";
       status: ToolStatus;
       summary: string;
       diff?: DiffView;
@@ -122,6 +123,11 @@ function buildSystemPrompt(filePath: string | null, workspacePath: string | null
     "高亮标记必须是引用块第一行，标记与正文之间必须保留一条仅含 `>` 的空白引用行；块内每一行（包括段落之间的空行）都要保留引用前缀 `>`。正文可使用加粗、列表、链接等 Markdown 语法。",
     "高亮块省略 color 时默认为蓝色，例如 `> [!HIGHLIGHT]`；预设颜色为 yellow、blue、green、red、purple，也可使用六位十六进制颜色，例如 `color=#8b5cf6`。修改现有高亮块时保留其标记和颜色，除非用户明确要求改变颜色或取消高亮。",
     "读取时要兼容旧格式（标记行后直接跟正文）；但新增高亮块或整体重写相关内容时使用带空白引用行的新格式，避免普通 Markdown 编辑器把标记和正文合并成一行。",
+  );
+  lines.push(
+    "Idea Note 的笔记里还可以嵌入「可交互组件」：一个 ```input 参数块声明滑块、数字框、下拉框等控件，一个可运行代码块（python / node / bash 等）在用户本机执行，并把结果渲染成 Markdown、表格、Mermaid 图、图片或 HTML。用户想在笔记里要一个计算器、能调参数的图表、会自动重算的数据表、打开笔记就刷新的看板时，就用可交互组件实现，而不是只给一段普通代码。",
+    "写或修改可交互组件之前，先调用 component_guide 查阅规范（默认 topic=overview；需要细节时再取 input / data / output / run / examples），不要凭记忆猜语法——围栏属性、参数块 DSL 和输出协议都很容易记错。该工具还会告诉你本机启用了哪些运行器，只使用其中的语言。",
+    "组件代码是在用户电脑上真实执行的：只写计算和渲染逻辑，不要写删除文件、联网上传、安装软件之类的脚本；用到标准库以外的第三方库时，在笔记正文里说明需要先安装。",
   );
   if (filePath) {
     lines.push(
@@ -415,6 +421,21 @@ export const useChatStore = create<ChatState>((set, get) => {
         error: r.ok ? undefined : r.error,
       });
       return r.ok ? JSON.stringify({ query, hits: r.hits }) : `错误：${r.error}`;
+    }
+
+    if (call.name === "component_guide") {
+      // Read-only, local, no side effects: the card is informational and even
+      // ask_all mode has nothing worth confirming here.
+      const itemId = uid();
+      const r = readComponentGuide(call.args);
+      appendItem(sessionId, {
+        id: itemId,
+        kind: "tool",
+        tool: "guide",
+        status: "done",
+        summary: `可交互组件规范（${r.topic}）`,
+      });
+      return r.text;
     }
 
     if (call.name === "delete_file") {
