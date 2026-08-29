@@ -9,10 +9,10 @@
 
 import { create } from "zustand";
 
-import type { OutKind } from "../lib/codeRun/fenceAttrs";
 import {
   parseComponentOutput,
   type ComponentResult,
+  type DeclaredOut,
 } from "../lib/codeRun/resultProtocol";
 
 export type RunStatus = "running" | "done" | "killed" | "timeout" | "error";
@@ -54,7 +54,7 @@ export interface RunRecord {
   /** `principal=500000 · rate=3.85`, shown in the card header. */
   inputSummary: string;
   /** The fence's declared `out=`, or null when the result is self-describing. */
-  declaredOut: OutKind | null;
+  declaredOut: DeclaredOut | null;
   /** Parsed only after a successful run; renderers never consume raw stdout. */
   componentResult: ComponentResult | null;
   protocolError: string | null;

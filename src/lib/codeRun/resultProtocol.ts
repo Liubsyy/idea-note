@@ -1,5 +1,15 @@
 import { isOutKind, type OutKind } from "./fenceAttrs.ts";
 
+/**
+ * What a fence declared about its result.
+ *
+ * A concrete `OutKind` means stdout's last line is the bare data for that type.
+ * `"auto"` means the type is chosen at run time, so stdout must carry a full
+ * `idea_note_result` envelope — the same wire format a fence with no `out=`
+ * uses. `null` is that bare fence: an envelope is welcome but not required.
+ */
+export type DeclaredOut = OutKind | "auto";
+
 export type JsonValue =
   | null
   | boolean
@@ -104,14 +114,14 @@ const jsonError = (error: unknown): string =>
  */
 export function parseComponentOutput(
   stdout: string,
-  declaredOut: OutKind | null,
+  declaredOut: DeclaredOut | null,
 ): ParsedComponentOutput {
   const lines = stdout
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
 
-  if (declaredOut) {
+  if (declaredOut && declaredOut !== "auto") {
     const raw = lines[lines.length - 1];
     if (!raw)
       return { result: null, error: `out=${declaredOut} 没有返回 JSON data` };
@@ -154,6 +164,12 @@ export function parseComponentOutput(
       return { result: null, error: "idea_note_result 不是合法的单行 JSON" };
     if (invalidEnvelope)
       return { result: null, error: "idea_note_result 必须是包含 type 和 data 的对象" };
+    // A bare fence promised nothing, so silence is a plain code block that
+    // simply printed something. `out=auto` did promise an envelope, and its
+    // placeholder card is already sitting in the note waiting for one — saying
+    // so beats leaving that card stuck on 尚未运行.
+    if (declaredOut === "auto")
+      return { result: null, error: "out=auto 没有返回 idea_note_result" };
     return { result: null, error: null };
   }
 

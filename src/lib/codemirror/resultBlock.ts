@@ -246,7 +246,11 @@ function buildResults(state: EditorState): DecorationSet {
       const at = below ? doc.line(closeLine).to : line.from;
       ranges.push(
         Decoration.widget({
-          widget: new ResultWidget(runKey(filePath, code), attrs.outExplicit, at),
+          widget: new ResultWidget(
+            runKey(filePath, code),
+            attrs.outExplicit || attrs.outAuto,
+            at,
+          ),
           block: true,
           side: below ? 1 : -1,
         }).range(at),

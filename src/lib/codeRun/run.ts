@@ -23,7 +23,7 @@ import {
   resolveRunner,
   type CodeRunner,
 } from "./runners";
-import type { OutKind } from "./fenceAttrs";
+import type { DeclaredOut } from "./resultProtocol";
 
 /** How often buffered output is handed to the store. */
 const FLUSH_MS = 50;
@@ -94,8 +94,9 @@ export interface StartRunArgs {
   inputs?: Record<string, unknown> | null;
   /** One-line rendering of those values for the card header. */
   inputSummary?: string;
-  /** Explicit `out=` type, or null for a self-describing result envelope. */
-  declaredOut?: OutKind | null;
+  /** Explicit `out=` type, `"auto"` when the script names the type at run
+   *  time, or null for a bare fence. */
+  declaredOut?: DeclaredOut | null;
   /** Whether to pop the run-output panel open. A block whose result renders in
    *  the note has somewhere to show already; opening a panel on top of it (on
    *  every slider move, for a `watch` block) would be noise. */

@@ -65,9 +65,11 @@ export async function runBlock(
     env,
     inputs,
     inputSummary: summary,
-    declaredOut: attrs.outExplicit ? attrs.out : null,
+    declaredOut: attrs.outExplicit ? attrs.out : attrs.outAuto ? "auto" : null,
     // A block that renders its result in the note already shows it; don't cover
-    // the note with the output panel as well.
-    reveal: !attrs.outExplicit,
+    // the note with the output panel as well. `out=auto` counts: it names no
+    // type up front, but it does promise a result card, so it gets the same
+    // quiet treatment as a concrete `out=`.
+    reveal: !attrs.outExplicit && !attrs.outAuto,
   });
 }

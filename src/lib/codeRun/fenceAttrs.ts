@@ -58,8 +58,14 @@ export interface FenceAttrs {
   /** `in=…` */
   input: InputBinding | null;
   out: OutKind;
-  /** Whether `out=` was written down; otherwise stdout must self-describe. */
+  /** Whether a concrete `out=<type>` was written down; otherwise stdout must
+   *  self-describe. */
   outExplicit: boolean;
+  /** `out=auto` — the fence promises a self-describing `idea_note_result`
+   *  envelope without naming the type up front, so the script can choose it at
+   *  run time. Like a bare fence for parsing, like an explicit `out=` for the
+   *  note: the result has a home in the document, so no panel pops open. */
+  outAuto: boolean;
   /** `run=watch|open`, or the bare `watch` flag. */
   trigger: RunTrigger;
   /** All automatic triggers written on the fence. Kept separately from
@@ -81,6 +87,7 @@ const emptyAttrs = (): FenceAttrs => ({
   input: null,
   out: "text",
   outExplicit: false,
+  outAuto: false,
   trigger: "manual",
   triggers: [],
   placement: "above",
@@ -151,9 +158,14 @@ export function parseFenceInfo(info: string): FenceInfo {
         break;
       case "out": {
         const kind = value.toLowerCase();
-        if (isOutKind(kind)) {
+        // Written twice, the last one wins — so each branch clears the other.
+        if (kind === "auto") {
+          attrs.outAuto = true;
+          attrs.outExplicit = false;
+        } else if (isOutKind(kind)) {
           attrs.out = kind;
           attrs.outExplicit = true;
+          attrs.outAuto = false;
         }
         break;
       }
