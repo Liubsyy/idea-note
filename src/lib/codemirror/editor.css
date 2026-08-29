@@ -220,10 +220,11 @@
   padding: 0.15em 0.4em;
   border-radius: 4px;
 }
-/* In a heading, inline code names an API/field; the ordinary pill treatment
-   makes it look like a small tag or button and fixes its size to body text.
-   Keep the monospace distinction, but inherit the heading's visual weight and
-   scale so the phrase reads as one title. Body inline code stays unchanged. */
+/* In a heading, inline code keeps the same pill as in body text — an API or
+   field name should still read as code at a glance. Only its metrics are
+   re-based on the heading: the shared rule above pins the size to the body
+   font, which would leave a tiny pill inside a large title, so size/weight/
+   leading are inherited instead and the pill scales with the heading. */
 .cm-content :is(
     .cm-md-h1,
     .cm-md-h2,
@@ -236,9 +237,6 @@
   font-weight: inherit;
   line-height: inherit;
   color: inherit;
-  background: transparent;
-  padding: 0;
-  border-radius: 0;
 }
 .cm-md-link {
   color: var(--accent);
