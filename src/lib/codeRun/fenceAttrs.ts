@@ -62,6 +62,9 @@ export interface FenceAttrs {
   outExplicit: boolean;
   /** `run=watch|open`, or the bare `watch` flag. */
   trigger: RunTrigger;
+  /** All automatic triggers written on the fence. Kept separately from
+   *  `trigger` so older callers that expect one value remain compatible. */
+  triggers: RunTrigger[];
   /** `inline` — render the result in the document. Implied by a rich `out=`. */
   inline: boolean;
   /** `result=above|below`. Above by default: the result is what you are reading
@@ -81,6 +84,7 @@ const emptyAttrs = (): FenceAttrs => ({
   out: "text",
   outExplicit: false,
   trigger: "manual",
+  triggers: [],
   inline: false,
   placement: "above",
 });
@@ -115,13 +119,28 @@ export function parseFenceInfo(info: string): FenceInfo {
   if (close < brace) return { lang, attrs }; // unterminated — ignore the rest
   const body = info.slice(brace + 1, close);
 
+  const addTrigger = (trigger: RunTrigger) => {
+    if (trigger === "manual") {
+      attrs.triggers = [];
+      attrs.trigger = "manual";
+      return;
+    }
+    if (!attrs.triggers.includes(trigger)) attrs.triggers.push(trigger);
+    attrs.trigger = trigger;
+  };
+
+  const removeTrigger = (trigger: RunTrigger) => {
+    attrs.triggers = attrs.triggers.filter((item) => item !== trigger);
+    attrs.trigger = attrs.triggers[attrs.triggers.length - 1] ?? "manual";
+  };
+
   for (const raw of body.split(",")) {
     const entry = raw.trim();
     if (!entry) continue;
     const eq = entry.indexOf("=");
     if (eq < 0) {
       const flag = entry.toLowerCase();
-      if (flag === "watch") attrs.trigger = "watch";
+      if (flag === "watch") addTrigger("watch");
       else if (flag === "inline") attrs.inline = true;
       continue;
     }
@@ -143,12 +162,17 @@ export function parseFenceInfo(info: string): FenceInfo {
         break;
       }
       case "watch":
-        attrs.trigger = value === "false" ? "manual" : "watch";
+        if (value === "false") removeTrigger("watch");
+        else addTrigger("watch");
         break;
-      case "run":
-        if (value === "watch" || value === "open" || value === "manual")
-          attrs.trigger = value;
+      case "run": {
+        const triggers = value.toLowerCase().split(/[+|\s]+/);
+        for (const trigger of triggers) {
+          if (trigger === "manual" || trigger === "watch" || trigger === "open")
+            addTrigger(trigger);
+        }
         break;
+      }
       case "inline":
         // `inline=below` is the shorthand people reach for; it means the same
         // as writing `inline, result=below`.

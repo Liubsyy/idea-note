@@ -78,7 +78,12 @@ function targets(
     const bound =
       blockId === undefined ||
       (attrs.input?.kind === "block" && attrs.input.name === blockId);
-    if (attrs.trigger === trigger && bound && j > i + 1 && resolveRunner(lang, config))
+    if (
+      attrs.triggers.includes(trigger) &&
+      bound &&
+      j > i + 1 &&
+      resolveRunner(lang, config)
+    )
       found.push({
         info,
         code: doc.sliceString(doc.line(i + 1).from, doc.line(j - 1).to),

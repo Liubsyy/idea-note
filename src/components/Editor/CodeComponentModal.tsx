@@ -28,8 +28,11 @@ const SOURCES: { value: ComponentSource; label: string; hint: string }[] = [
 ];
 
 /** `watch` needs an input block to watch; `open` works with any source. */
-const TRIGGERS: { value: RunTrigger; label: string; hint: string }[] = [
-  { value: "manual", label: "无", hint: "只有点运行按钮才执行" },
+const TRIGGERS: {
+  value: Exclude<RunTrigger, "manual">;
+  label: string;
+  hint: string;
+}[] = [
   { value: "watch", label: "监听输入", hint: "参数控件一变就重新运行" },
   { value: "open", label: "打开时触发", hint: "每次会话里第一次打开这篇笔记时运行一次" },
 ];
@@ -81,7 +84,7 @@ export function CodeComponentModal({
   const [source, setSource] = useState<ComponentSource>("input");
   const [name, setName] = useState(NAME_FIELD.input!.value);
   const [out, setOut] = useState<OutKind>("markdown");
-  const [trigger, setTrigger] = useState<RunTrigger>("watch");
+  const [triggers, setTriggers] = useState<RunTrigger[]>(["watch"]);
   const [placement, setPlacement] = useState<ResultPlacement>("above");
 
   useEffect(() => {
@@ -94,11 +97,23 @@ export function CodeComponentModal({
 
   // Switching source swaps in that source's example name, so the preview is
   // never left showing a table name in a file path field. 监听输入 has nothing
-  // to watch without controls, so it steps aside too.
+  // to watch without controls; selecting 参数控件 adds it by default.
   const changeSource = (next: ComponentSource) => {
     setSource(next);
     setName(NAME_FIELD[next]?.value ?? "");
-    if (next !== "input" && trigger === "watch") setTrigger("manual");
+    setTriggers((current) => {
+      if (next === "input")
+        return current.includes("watch") ? current : ["watch", ...current];
+      return current.filter((trigger) => trigger !== "watch");
+    });
+  };
+
+  const toggleTrigger = (trigger: Exclude<RunTrigger, "manual">) => {
+    setTriggers((current) =>
+      current.includes(trigger)
+        ? current.filter((item) => item !== trigger)
+        : [...current, trigger],
+    );
   };
 
   const nameField = NAME_FIELD[source];
@@ -107,7 +122,7 @@ export function CodeComponentModal({
     source,
     name: name.trim() || nameField?.value || "",
     out,
-    trigger,
+    triggers,
     placement,
   });
 
@@ -220,24 +235,39 @@ export function CodeComponentModal({
           <div className="flex gap-3">
             <div className="flex-1">
               {row(
-                "触发",
-                <select
-                  value={trigger}
-                  onChange={(e) => setTrigger(e.target.value as RunTrigger)}
-                  className="w-full rounded px-2 py-1 text-sm outline-none"
+                "触发（可多选）",
+                <div
+                  className="space-y-1 rounded px-2 py-1.5"
                   style={selectStyle}
                 >
-                  {TRIGGERS.map((t) => (
-                    <option
-                      key={t.value}
-                      value={t.value}
-                      disabled={t.value === "watch" && source !== "input"}
-                    >
-                      {t.label}
-                    </option>
-                  ))}
-                </select>,
-                TRIGGERS.find((t) => t.value === trigger)?.hint,
+                  {TRIGGERS.map((t) => {
+                    const disabled = t.value === "watch" && source !== "input";
+                    return (
+                      <label
+                        key={t.value}
+                        className={`flex items-start gap-2 text-sm ${disabled ? "opacity-50" : "cursor-pointer"}`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 accent-[var(--accent)]"
+                          checked={triggers.includes(t.value)}
+                          disabled={disabled}
+                          onChange={() => toggleTrigger(t.value)}
+                        />
+                        <span>
+                          <span style={{ color: "var(--text)" }}>{t.label}</span>
+                          <span
+                            className="ml-1 text-[11px]"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            {t.hint}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>,
+                triggers.length === 0 ? "未选择时只有点运行按钮才执行" : undefined,
               )}
             </div>
             <div className="flex-1">
@@ -252,7 +282,7 @@ export function CodeComponentModal({
                   <option value="above">代码块上方</option>
                   <option value="below">代码块下方</option>
                 </select>,
-                trigger === "open"
+                triggers.includes("open")
                   ? "自动运行会先问一次；本次会话内不再询问"
                   : undefined,
               )}

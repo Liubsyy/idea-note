@@ -19,7 +19,10 @@ export interface ComponentOptions {
   /** Input block id, table name or file path, depending on `source`. */
   name: string;
   out: OutKind;
-  trigger: RunTrigger;
+  /** Automatic triggers. More than one may be enabled at the same time. */
+  triggers?: RunTrigger[];
+  /** Backwards-compatible single-trigger input for existing callers. */
+  trigger?: RunTrigger;
   placement: ResultPlacement;
 }
 
@@ -230,9 +233,11 @@ function fenceInfo(o: ComponentOptions): string {
   else if (o.source === "file") attrs.push(`in=file:${o.name}`);
   if (o.out !== "text") attrs.push(`out=${o.out}`);
   else attrs.push("inline");
-  // `watch` needs controls to watch; `open` stands on its own.
-  if (o.trigger === "watch" && o.source === "input") attrs.push("run=watch");
-  else if (o.trigger === "open") attrs.push("run=open");
+  const triggers = o.triggers ?? (o.trigger ? [o.trigger] : []);
+  // `watch` needs controls to watch; `open` stands on its own. Repeating
+  // `run=` keeps the generated Markdown readable when both are selected.
+  if (triggers.includes("watch") && o.source === "input") attrs.push("run=watch");
+  if (triggers.includes("open")) attrs.push("run=open");
   if (o.placement === "below") attrs.push("result=below");
   return attrs.length ? `${o.lang} {${attrs.join(", ")}}` : o.lang;
 }
