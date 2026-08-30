@@ -116,6 +116,11 @@ export const vaultChangePassword = (
   newPassword: string,
 ) => invoke<void>("vault_change_password", { workspace, oldSecret, newPassword });
 
+/** Replace the recovery slot after verifying the current password or recovery
+ *  code. The returned replacement is intentionally available only once. */
+export const vaultRegenerateRecovery = (workspace: string, secret: string) =>
+  invoke<{ recoveryCode: string }>("vault_regenerate_recovery", { workspace, secret });
+
 export const secretEncrypt = (blockId: string, plaintext: string) =>
   invoke<EncryptResult>("secret_encrypt", { blockId, plaintext });
 

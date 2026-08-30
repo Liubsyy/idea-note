@@ -14,6 +14,7 @@
     "test:workspace-path": "node --test --experimental-strip-types tests/workspacePath.test.mjs",
     "test:input-schema": "node --test --experimental-strip-types tests/inputSchema.test.mjs",
     "test:secret-block": "node --test --experimental-strip-types tests/secretBlock.test.mjs",
+    "test:vault-setup-stage": "node --test --experimental-strip-types tests/vaultSetupStage.test.mjs",
     "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
     "tauri": "tauri"
   },

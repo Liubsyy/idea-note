@@ -282,6 +282,22 @@ fn normalize_recovery(secret: &str) -> String {
         .collect()
 }
 
+/// Generate the canonical and human-readable forms of a recovery code. The
+/// canonical form is what Argon2id receives; the grouped form is shown once.
+fn new_recovery_code() -> (Zeroizing<String>, String) {
+    let mut raw = [0u8; 15];
+    random_bytes(&mut raw);
+    let flat = Zeroizing::new(base32(&raw));
+    raw.zeroize();
+    let grouped = flat
+        .as_bytes()
+        .chunks(6)
+        .map(|chunk| String::from_utf8_lossy(chunk).to_string())
+        .collect::<Vec<_>>()
+        .join("-");
+    (flat, grouped)
+}
+
 fn derive_kek(secret: &str, kdf: &KdfParams) -> Result<Zeroizing<[u8; KEY_LEN]>, String> {
     if kdf.alg != "argon2id" {
         return Err(format!("不支持的 KDF：{}", kdf.alg));
@@ -434,6 +450,27 @@ fn try_slot(slot: &Slot, secret: &str) -> Result<Option<Zeroizing<[u8; KEY_LEN]>
     }
 }
 
+/// Open one particular workspace key with any slot that belongs to it. The UI
+/// promises that either a password or a recovery code can authorize key-slot
+/// maintenance, so callers must not verify only the password slot.
+fn open_key_from_slots(
+    slots: &[Slot],
+    secret: &str,
+    key_id: &str,
+) -> Result<Zeroizing<[u8; KEY_LEN]>, String> {
+    let mut opened = None;
+    for slot in slots.iter().filter(|slot| slot.key_id == key_id) {
+        if let Some(mk) = try_slot(slot, secret)? {
+            // Keep trying all applicable slots so password and recovery-code
+            // authorization do not have observably different early exits.
+            if opened.is_none() {
+                opened = Some(mk);
+            }
+        }
+    }
+    opened.ok_or_else(|| ERR_WRONG_SECRET.to_string())
+}
+
 /* --------------------------------- payloads ----------------------------- */
 
 #[derive(Serialize)]
@@ -566,16 +603,7 @@ pub async fn vault_init(
             let mut mk = Zeroizing::new([0u8; KEY_LEN]);
             random_bytes(mk.as_mut());
 
-            let mut recovery_raw = [0u8; 15];
-            random_bytes(&mut recovery_raw);
-            let recovery_flat = base32(&recovery_raw);
-            recovery_raw.zeroize();
-            let recovery_code = recovery_flat
-                .as_bytes()
-                .chunks(6)
-                .map(|c| String::from_utf8_lossy(c).to_string())
-                .collect::<Vec<_>>()
-                .join("-");
+            let (recovery_flat, recovery_code) = new_recovery_code();
 
             let file = VaultFile {
                 version: VAULT_VERSION,
@@ -681,9 +709,10 @@ pub async fn vault_change_password(
         .position(|s| s.kind == "password")
         .ok_or_else(|| ERR_NOT_INITIALIZED.to_string())?;
     let old = file.slots[index].clone();
+    let slots = file.slots.clone();
 
     let replacement = tauri::async_runtime::spawn_blocking(move || -> Result<Slot, String> {
-        let mk = try_slot(&old, &old_secret)?.ok_or_else(|| ERR_WRONG_SECRET.to_string())?;
+        let mk = open_key_from_slots(&slots, &old_secret, &old.key_id)?;
         make_slot(&old.id, "password", &old.label, &old.key_id, &new_password, &mk)
     })
     .await
@@ -691,6 +720,47 @@ pub async fn vault_change_password(
 
     file.slots[index] = replacement;
     write_vault(&workspace, &file)
+}
+
+/// Replace the recovery slot after proving access with either the current
+/// password or recovery code. The old code stops working as soon as vault.json
+/// is written with the new wrapped copy of the same MK.
+#[tauri::command]
+pub async fn vault_regenerate_recovery(
+    workspace: String,
+    secret: String,
+) -> Result<InitResult, String> {
+    let mut file = read_vault(&workspace)?.ok_or_else(|| ERR_NOT_INITIALIZED.to_string())?;
+    let key_id = file.active_key_id.clone();
+    let index = file
+        .slots
+        .iter()
+        .position(|slot| slot.kind == "recovery" && slot.key_id == key_id)
+        .ok_or_else(|| ERR_NOT_INITIALIZED.to_string())?;
+    let old = file.slots[index].clone();
+    let slots = file.slots.clone();
+
+    let (replacement, recovery_code) = tauri::async_runtime::spawn_blocking(
+        move || -> Result<(Slot, String), String> {
+            let mk = open_key_from_slots(&slots, &secret, &key_id)?;
+            let (recovery_flat, recovery_code) = new_recovery_code();
+            let replacement = make_slot(
+                &old.id,
+                "recovery",
+                &old.label,
+                &old.key_id,
+                &recovery_flat,
+                &mk,
+            )?;
+            Ok((replacement, recovery_code))
+        },
+    )
+    .await
+    .map_err(|e| e.to_string())??;
+
+    file.slots[index] = replacement;
+    write_vault(&workspace, &file)?;
+    Ok(InitResult { recovery_code })
 }
 
 #[tauri::command]
@@ -921,6 +991,25 @@ mod tests {
         let by_recovery = try_slot(&reloaded.slots[1], &grouped).unwrap().unwrap();
         assert_eq!(by_password.as_ref(), &mk);
         assert_eq!(by_recovery.as_ref(), &mk);
+
+        // Key-slot maintenance accepts either credential, not just the slot
+        // that happens to be replaced.
+        assert_eq!(
+            open_key_from_slots(&reloaded.slots, "correct horse", "k1")
+                .unwrap()
+                .as_ref(),
+            &mk
+        );
+        assert_eq!(
+            open_key_from_slots(&reloaded.slots, &grouped, "k1")
+                .unwrap()
+                .as_ref(),
+            &mk
+        );
+        assert_eq!(
+            open_key_from_slots(&reloaded.slots, "wrong secret", "k1").unwrap_err(),
+            ERR_WRONG_SECRET
+        );
 
         // And a block encrypted under that MK opens after the round trip.
         let aad = block_aad(1, "k1", "b9f3a2c");

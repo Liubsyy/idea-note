@@ -50,7 +50,9 @@ const blockAt = (
 ): SecretBlockInfo[] => blocks.filter((b) => b.from <= from && b.to >= to);
 
 /**
- * Wrap the selection in a new encrypted block.
+ * Wrap the selection in a new encrypted block and leave that block sealed. The
+ * workspace key keeps its existing TTL: sealing one block is a display/privacy
+ * action, not a request to lock the whole vault.
  *
  * The range is grown to whole lines first: a fenced block has to start and end
  * on its own line, so encrypting half a paragraph would otherwise leave the
@@ -102,12 +104,11 @@ export async function encryptSelection(view: EditorView): Promise<void> {
       // Park the caret ahead of the new block; it cannot sit inside one.
       selection: { anchor: from },
     });
-    useVaultStore.getState().remember(secretKey(filePathOf(), blockId), {
-      body: result.body,
-      saved: plaintext,
-      draft: plaintext,
-    });
+    // A block is revealed only when its plaintext is remembered in the session
+    // store. Deliberately not remembering this new plaintext makes the card
+    // render sealed, while leaving the workspace MK and its TTL untouched.
     requestSecretRefresh(view);
+    toast("选中内容已加密，该加密块已上锁。");
   } catch (error) {
     toast(vaultErrorMessage(error), "error");
   }

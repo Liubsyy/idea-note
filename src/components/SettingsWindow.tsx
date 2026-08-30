@@ -31,9 +31,11 @@ import {
   vaultChangePassword,
   vaultErrorMessage,
   vaultInit,
+  vaultRegenerateRecovery,
   vaultStatus,
   type VaultStatus,
 } from "../lib/crypto/vault";
+import { vaultSetupStage } from "../lib/crypto/setupStage";
 import { VAULT_EVENT, VAULT_LOCK_REQUEST } from "../store/useVaultStore";
 import {
   VAULT_TTL_OPTIONS,
@@ -2277,8 +2279,21 @@ function SecurityTab() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [oldPassword, setOldPassword] = useState("");
+  const [recoverySecret, setRecoverySecret] = useState("");
   const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
+  const [replacingRecovery, setReplacingRecovery] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
+
+  // A one-time recovery code belongs to exactly one workspace. Never leave it
+  // visible if the settings window is repointed at another workspace.
+  useEffect(() => {
+    setRecoveryCode(null);
+    setAcknowledged(false);
+    setNewPassword("");
+    setConfirmPassword("");
+    setRecoverySecret("");
+    setReplacingRecovery(false);
+  }, [ws]);
 
   const reload = useCallback(async () => {
     if (!ws) return;
@@ -2296,7 +2311,9 @@ function SecurityTab() {
   if (!ws) {
     return <Notice>加密口令按工程分别保存。请先在主窗口打开一个工程，再回到这里配置。</Notice>;
   }
-  if (!status) return null;
+
+  const setupStage = vaultSetupStage(status?.initialized ?? null, recoveryCode);
+  if (setupStage === "loading") return null;
 
   const run = async (action: () => Promise<void>) => {
     if (busy) return;
@@ -2315,55 +2332,64 @@ function SecurityTab() {
     }
   };
 
-  /* --- not set up yet --- */
-  if (!status.initialized) {
-    if (recoveryCode) {
-      return (
-        <div className="space-y-4">
-          <Notice>
-            这串恢复码只显示这一次。抄到密码管理器或纸上——忘记口令时，它是唯一的入口。
-          </Notice>
-          <div
-            className="select-all rounded-xl px-4 py-4 text-center text-[13px] tracking-[0.14em]"
-            style={{
-              background: "var(--bg-elev)",
-              border: "1px solid var(--border)",
-              color: "var(--text)",
-              fontFamily: "var(--font-mono, monospace)",
+  /* The one-time code takes precedence over initialized status. */
+  if (setupStage === "recovery") {
+    return (
+      <div className="space-y-4">
+        <Notice>
+          {replacingRecovery
+            ? "新恢复码已生效，旧恢复码已失效。这串新码只显示一次，请立即保存。"
+            : "这串恢复码只显示这一次。抄到密码管理器或纸上——忘记口令时，它是唯一的入口。"}
+        </Notice>
+        <div
+          className="select-all rounded-xl px-4 py-4 text-center text-[13px] tracking-[0.14em]"
+          style={{
+            background: "var(--bg-elev)",
+            border: "1px solid var(--border)",
+            color: "var(--text)",
+            fontFamily: "var(--font-mono, monospace)",
+          }}
+        >
+          {recoveryCode}
+        </div>
+        <label
+          className="flex cursor-pointer items-start gap-2 px-1 text-[12px] leading-relaxed"
+          style={{ color: "var(--text-soft)" }}
+        >
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={acknowledged}
+            onChange={(e) => setAcknowledged(e.target.checked)}
+          />
+          <span>
+            我已经保存好恢复码。我明白同时丢失口令和恢复码，这些加密内容将永远无法恢复。
+          </span>
+        </label>
+        <div className="flex justify-end">
+          <TextButton
+            primary
+            disabled={!acknowledged}
+            onClick={() => {
+              setRecoveryCode(null);
+              setAcknowledged(false);
+              setDone(
+                replacingRecovery
+                  ? "新恢复码已保存，旧恢复码已失效。"
+                  : "加密口令已设置。现在可以在笔记里加密选中的内容了。",
+              );
+              setReplacingRecovery(false);
             }}
           >
-            {recoveryCode}
-          </div>
-          <label
-            className="flex cursor-pointer items-start gap-2 px-1 text-[12px] leading-relaxed"
-            style={{ color: "var(--text-soft)" }}
-          >
-            <input
-              type="checkbox"
-              className="mt-0.5"
-              checked={acknowledged}
-              onChange={(e) => setAcknowledged(e.target.checked)}
-            />
-            <span>
-              我已经保存好恢复码。我明白同时丢失口令和恢复码，这些加密内容将永远无法恢复。
-            </span>
-          </label>
-          <div className="flex justify-end">
-            <TextButton
-              primary
-              disabled={!acknowledged}
-              onClick={() => {
-                setRecoveryCode(null);
-                setAcknowledged(false);
-                setDone("加密口令已设置。现在可以在笔记里加密选中的内容了。");
-              }}
-            >
-              我已保存
-            </TextButton>
-          </div>
+            我已保存
+          </TextButton>
         </div>
-      );
-    }
+      </div>
+    );
+  }
+
+  /* --- not set up yet --- */
+  if (setupStage === "setup") {
     return (
       <div className="space-y-4">
         <Notice>
@@ -2391,6 +2417,7 @@ function SecurityTab() {
                 const { recoveryCode: code } = await vaultInit(ws, newPassword);
                 setNewPassword("");
                 setConfirmPassword("");
+                setReplacingRecovery(false);
                 setRecoveryCode(code);
               })
             }
@@ -2405,6 +2432,9 @@ function SecurityTab() {
       </div>
     );
   }
+
+  // The stage can only be "ready" here, which requires a loaded status.
+  if (!status) return null;
 
   /* --- already set up --- */
   return (
@@ -2457,6 +2487,43 @@ function SecurityTab() {
             </span>
           </Row>
         ))}
+      </Card>
+
+      <Card>
+        <div className="space-y-3 px-4 py-4">
+          <div>
+            <div className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
+              重新生成恢复码
+            </div>
+            <div className="mt-1 text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+              适用于恢复码遗失或未显示的情况。生成后旧恢复码会立即失效，笔记密文不会改变。
+            </div>
+          </div>
+          <Field label="当前口令或恢复码">
+            <Input
+              password
+              value={recoverySecret}
+              onChange={setRecoverySecret}
+              placeholder="用于验证身份"
+            />
+          </Field>
+          <div className="flex justify-end">
+            <TextButton
+              primary
+              disabled={busy || !recoverySecret}
+              onClick={() =>
+                void run(async () => {
+                  const { recoveryCode: code } = await vaultRegenerateRecovery(ws, recoverySecret);
+                  setRecoverySecret("");
+                  setReplacingRecovery(true);
+                  setRecoveryCode(code);
+                })
+              }
+            >
+              {busy ? "正在生成…" : "生成新恢复码"}
+            </TextButton>
+          </div>
+        </div>
       </Card>
 
       <Card>

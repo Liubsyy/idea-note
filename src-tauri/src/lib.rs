@@ -158,6 +158,7 @@ pub fn run() {
             crypto::vault_lock,
             crypto::vault_set_ttl,
             crypto::vault_change_password,
+            crypto::vault_regenerate_recovery,
             crypto::secret_encrypt,
             crypto::secret_encrypt_batch,
             crypto::secret_decrypt
