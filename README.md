@@ -110,6 +110,9 @@ xattr -rd com.apple.quarantine /Applications/Idea\ Note.app
 
 实现原理见 [doc/AI笔记助手原理.md](./doc/AI笔记助手原理.md)。
 
+接入AI模型可参考： [doc/AI笔记助手接入DeepSeek步骤.md](./doc/AI笔记助手接入DeepSeek步骤.md)。
+
+
 ### 🔄 Git 同步与历史记录
 
 在"设置 → 远程同步"中配置，基于命令行 git 实现（需已安装 git），支持两种方式：
