@@ -75,6 +75,22 @@ xattr -rd com.apple.quarantine /Applications/Idea\ Note.app
 
 
 
+### 🎛️ 可交互组件
+
+在运行代码块之上再加一层：给代码块配一个参数块，笔记就变成了一个小工具。读者拖滑块、改数字、选日期，脚本就在本机重跑一遍，结果直接渲染回笔记里——不用打开终端，也不用改代码。
+
+工具栏「代码块」菜单里的「可交互组件」可以直接生成骨架，也可以手写。一个组件 = 一个 `input` 参数块（可选）+ 一个带属性的可运行代码块。
+
+- **参数控件**：`number`（可配滑块）、`text`、`bool`、`select`、`file`、`date`、`time`、`datetime` 八种，值通过环境变量交给脚本。
+- **数据来源**：`in=` 除了参数块，还能直接绑定笔记里的表格（`in=table:排期`）或工作区里的文件（`in=file:./sales.csv`）。
+- **输出渲染**：`out=` 支持 markdown、table、json、mermaid、html、image 等，脚本只需在标准输出的最后打一行 JSON。
+- **触发方式**：`run=watch` 参数一改就重算，`run=open` 打开笔记就刷新，不写则手动点运行。
+
+完整语法见 [doc/可交互组件规范.md](./doc/可交互组件规范.md)，十几个现成例子（密码生成器、函数绘图仪、提交热力图等）见 [doc/可交互组件例子.md](./doc/可交互组件例子.md)。
+
+
+
+
 ### ![AI 助手](./doc/assets/ai-assistant.svg) AI 笔记助手
 
 点击标题栏机器人图标打开 AI 笔记助手面板。在设置中添加模型服务即可使用：支持 Anthropic、OpenAI 以及任何兼容两者接口的服务（自定义 Base URL、API Key 和模型 ID），对话中可随时切换模型与思考级别。

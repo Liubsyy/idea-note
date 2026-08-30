@@ -233,8 +233,12 @@ function fenceInfo(o: ComponentOptions): string {
   else if (o.source === "file") attrs.push(`in=file:${o.name}`);
   attrs.push(`out=${o.out}`);
   const triggers = o.triggers ?? (o.trigger ? [o.trigger] : []);
-  if (triggers.includes("watch") && o.source === "input") attrs.push("run=watch");
-  if (triggers.includes("open")) attrs.push("run=open");
+  // Several triggers combine into one `run=`, not one attribute each: the
+  // parser accumulates repeated keys, but `run=watch+open` is the written form.
+  const run: RunTrigger[] = [];
+  if (triggers.includes("watch") && o.source === "input") run.push("watch");
+  if (triggers.includes("open")) run.push("open");
+  if (run.length) attrs.push(`run=${run.join("+")}`);
   if (o.placement === "below") attrs.push("result=below");
   return `${o.lang} {${attrs.join(", ")}}`;
 }
