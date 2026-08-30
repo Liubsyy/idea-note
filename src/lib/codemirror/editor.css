@@ -1188,6 +1188,9 @@
 }
 .cm-md-input-control input[type="number"],
 .cm-md-input-control input[type="text"],
+.cm-md-input-control input[type="date"],
+.cm-md-input-control input[type="time"],
+.cm-md-input-control input[type="datetime-local"],
 .cm-md-input-control select {
   padding: 0.2em 0.45em;
   color: var(--text);
@@ -1203,6 +1206,20 @@
 }
 .cm-md-input-control input[type="checkbox"] {
   accent-color: var(--accent);
+}
+
+/* Date/time inputs draw their own calendar icon and popup, and WebKit picks
+   those colours from color-scheme rather than from ours — without this the
+   affordances stay light-on-light inside a dark theme. */
+.cm-md-input-control input[type="date"],
+.cm-md-input-control input[type="time"],
+.cm-md-input-control input[type="datetime-local"] {
+  color-scheme: light;
+}
+.dark .cm-md-input-control input[type="date"],
+.dark .cm-md-input-control input[type="time"],
+.dark .cm-md-input-control input[type="datetime-local"] {
+  color-scheme: dark;
 }
 
 .cm-md-input-unit {

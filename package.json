@@ -12,6 +12,7 @@
     "test:fence-attrs": "node --test tests/fenceAttrs.test.mjs",
     "test:result-protocol": "node --test tests/resultProtocol.test.mjs",
     "test:workspace-path": "node --test --experimental-strip-types tests/workspacePath.test.mjs",
+    "test:input-schema": "node --test --experimental-strip-types tests/inputSchema.test.mjs",
     "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
     "tauri": "tauri"
   },

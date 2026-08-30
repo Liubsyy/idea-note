@@ -105,16 +105,17 @@ years:     select = [10, 20, 30] {default: 30, label: 年限, unit: 年}
 title:     text   = "月度报告" {label: 标题}
 enabled:   bool   = true {label: 启用}
 source:    file   = "./sales.csv" {as: csv, label: 数据文件}
+start:     date   = "2026-01-01" {max: 2026-12-31, label: 起始日期}
 \`\`\`
 
 - 一行一个字段：\`名字: 类型 = 默认值 {选项}\`。**一行写错只跳过这一行**，其余照常渲染。
 - \`id\` 必须是标识符（\`[A-Za-z_][A-Za-z0-9_-]*\`），可运行块用 \`in=<id>\` 引用它。
 - 字段名必须是 \`[A-Za-z_][A-Za-z0-9_]*\`（会变成环境变量名），不能重复。
-- 类型可省略，按默认值猜：\`[a, b]\`→select，\`true/false\`→bool，数字→number，其余→text。
-  正式笔记里建议写全。
+- 类型可省略，按默认值猜：\`[a, b]\`→select，\`true/false\`→bool，数字→number，其余→text
+  （file 和日期时间三种猜不出来，必须显式写）。正式笔记里建议写全。
 - 只支持整行注释，别在字段行尾追加 \`# 说明\`。
 
-## 五种类型
+## 八种类型
 
 | 类型 | 控件 | 例子 |
 | --- | --- | --- |
@@ -123,6 +124,15 @@ source:    file   = "./sales.csv" {as: csv, label: 数据文件}
 | \`bool\` | 复选框 | \`enabled: bool = true\` |
 | \`select\` | 下拉框 | \`years: select = [10, 20, 30] {default: 30}\` |
 | \`file\` | 路径输入框 | \`data: file = "./data.csv" {as: csv}\` |
+| \`date\` | 日期选择器 | \`start: date = "2026-01-01"\` |
+| \`time\` | 时间选择器 | \`alarm: time = "09:30"\` |
+| \`datetime\` | 日期 + 时间选择器 | \`deadline: datetime = "2026-01-31T18:00"\` |
+
+日期时间这三种的值就是字符串，格式固定：\`date\` 是 \`YYYY-MM-DD\`，\`time\` 是 \`HH:MM\`
+（可带 \`:SS\`），\`datetime\` 是 \`YYYY-MM-DDTHH:MM\`（笔记里写成空格分隔也认，进脚本前
+统一成 \`T\`）。默认值不合法（\`2026-13-01\`、\`2026-02-30\`）整行报错；不写默认值就是一个
+空选择器，用户也可以把它清空，两种情况脚本都会收到空字符串，记得处理。
+这三种**不参与类型推断**，必须显式写 \`: date\` / \`: time\` / \`: datetime\`。
 
 ## 选项
 
@@ -130,7 +140,8 @@ source:    file   = "./sales.csv" {as: csv, label: 数据文件}
 | --- | --- | --- | --- |
 | \`label\` | 全部 | 文本 | 控件左侧显示名，默认取字段名 |
 | \`default\` | 全部 | 字面量 | 覆盖初始值；\`select\` 用它指定默认项 |
-| \`min\` \`max\` \`step\` | number | 数字 | 约束与步进 |
+| \`min\` \`max\` | number 与日期时间三种 | 数字，或同类型的日期字面量 | 可选范围的两端 |
+| \`step\` | number 与日期时间三种 | 数字 | 步进（date 按天，time/datetime 按秒） |
 | \`slider\` | number | \`true\` 或 \`0..100\` | 加滑块；范围写法同时设 min/max |
 | \`unit\` | 全部 | 文本 | 控件右侧单位后缀 |
 | \`as\` | file | \`csv\` / \`json\` / \`text\` | 文件内容按什么解析，默认 text |
@@ -165,6 +176,7 @@ const DATA = `# 数据怎么进脚本
 | text | 原文本 | JSON string |
 | bool | \`"true"\` / \`"false"\` | JSON boolean |
 | select | 所选值的字符串形式 | 选项原本的类型 |
+| date / time / datetime | 原样字符串，如 \`"2026-01-31"\` | 同一份 JSON string |
 | file | 解析后的绝对路径 | 该字段是绝对路径，另有 \`<字段名>_data\` 存内容 |
 
 一个名为 \`source\` 的 file 字段会生出四个入口：环境变量 \`source\` 和 \`source_path\`
@@ -411,6 +423,35 @@ const result =
     ? { type: "table", data: { columns: ["项目", "值"], rows: [["状态", "正常"]] } }
     : { type: "markdown", data: "**状态：正常**" };
 console.log(JSON.stringify({ idea_note_result: result }));
+\`\`\`
+
+## 6. 日期区间统计（date / time）
+
+\`\`\`input {id=span}
+start:   date = "2026-01-01" {label: 开始日期}
+end:     date = "2026-03-31" {min: 2026-01-01, label: 结束日期}
+per_day: time = "07:30" {label: 每天投入, step: 1800}
+\`\`\`
+
+\`\`\`python {in=span, out=markdown, run=watch}
+import datetime, json, os
+
+data = json.loads(os.environ["IDEA_NOTE_INPUT"])
+if not data["start"] or not data["end"]:
+    print(json.dumps("请先选好起止日期。", ensure_ascii=False))
+    raise SystemExit
+
+start = datetime.date.fromisoformat(data["start"])
+end = datetime.date.fromisoformat(data["end"])
+days = (end - start).days + 1
+h, m = (int(x) for x in data["per_day"].split(":")[:2])
+hours = days * (h + m / 60)
+
+print(json.dumps(
+    f"**共 {days} 天，合计投入 {hours:.1f} 小时**\\n\\n"
+    f"- 工作日：{sum(1 for i in range(days) if (start + datetime.timedelta(i)).weekday() < 5)} 天",
+    ensure_ascii=False,
+))
 \`\`\``;
 
 const SECTIONS: Record<GuideTopic, string> = {

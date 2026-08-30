@@ -14,7 +14,15 @@
 
 export type InputValue = string | number | boolean;
 
-export type FieldType = "number" | "text" | "bool" | "select" | "file";
+export type FieldType =
+  | "number"
+  | "text"
+  | "bool"
+  | "select"
+  | "file"
+  | "date"
+  | "time"
+  | "datetime";
 
 /** How a `file` field's contents reach the script. */
 export type FileFormat = "csv" | "json" | "text";
@@ -28,8 +36,9 @@ export interface InputField {
   value: InputValue;
   /** `select` choices. */
   options: InputValue[];
-  min: number | null;
-  max: number | null;
+  /** Bounds: numbers on a `number` field, an ISO literal on a date/time one. */
+  min: number | string | null;
+  max: number | string | null;
   step: number | null;
   /** Render a number field as a slider (implied by `slider: a..b`). */
   slider: boolean;
@@ -52,7 +61,16 @@ export interface InputSchema {
 }
 
 const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const TYPES: FieldType[] = ["number", "text", "bool", "select", "file"];
+const TYPES: FieldType[] = [
+  "number",
+  "text",
+  "bool",
+  "select",
+  "file",
+  "date",
+  "time",
+  "datetime",
+];
 const FORMATS: FileFormat[] = ["csv", "json", "text"];
 
 /** Strip one layer of matching quotes. */
@@ -115,6 +133,73 @@ const numberOpt = (opts: Options, key: string): number | null => {
   return raw !== undefined && isNumeric(raw) ? Number(raw) : null;
 };
 
+/* ------------------------------ date & time ------------------------------ */
+
+/** The three picker types, and the literal each one reads and writes. */
+export type MomentType = "date" | "time" | "datetime";
+
+const MOMENTS: MomentType[] = ["date", "time", "datetime"];
+
+export const isMoment = (type: FieldType): type is MomentType =>
+  (MOMENTS as FieldType[]).includes(type);
+
+/** How each picker's literal should look, for the error message. */
+const MOMENT_HINT: Record<MomentType, string> = {
+  date: "日期，应形如 2026-01-31",
+  time: "时间，应形如 09:30",
+  datetime: "日期时间，应形如 2026-01-31T09:30",
+};
+
+const DATE_RE = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/;
+const TIME_RE = /^([0-9]{2}):([0-9]{2})(?::([0-9]{2}))?$/;
+const DATETIME_RE =
+  /^([0-9]{4}-[0-9]{2}-[0-9]{2})[T ]([0-9]{2}:[0-9]{2}(?::[0-9]{2})?)$/;
+
+/** `2026-02-30` matches the shape but isn't a day, and Date.parse happily rolls
+ *  it over into March — so round-trip the parts and check they survived. */
+function isRealDate(s: string): boolean {
+  const m = s.match(DATE_RE);
+  if (!m) return false;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  return (
+    dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d
+  );
+}
+
+function isRealTime(s: string): boolean {
+  const m = s.match(TIME_RE);
+  if (!m) return false;
+  return Number(m[1]) < 24 && Number(m[2]) < 60 && Number(m[3] ?? "0") < 60;
+}
+
+/**
+ * A date/time literal in the form the native picker wants, or null when it
+ * isn't a real moment. Empty is a real answer — a cleared picker reads "" —
+ * and `datetime` accepts a space where the note is easier to read that way.
+ */
+export function normalizeMoment(type: MomentType, raw: InputValue): string | null {
+  const s = unquote(String(raw)).trim();
+  if (!s) return "";
+  if (type === "date") return isRealDate(s) ? s : null;
+  if (type === "time") return isRealTime(s) ? s : null;
+  const m = s.match(DATETIME_RE);
+  if (!m || !isRealDate(m[1]) || !isRealTime(m[2])) return null;
+  return `${m[1]}T${m[2]}`;
+}
+
+/** `{min: …}` / `{max: …}` for a date/time field: an ISO literal, or null. */
+const momentOpt = (
+  opts: Options,
+  key: string,
+  type: MomentType,
+): string | null => {
+  const raw = opts.entries.get(key);
+  if (raw === undefined) return null;
+  const out = normalizeMoment(type, raw);
+  return out ? out : null;
+};
+
 /** `0..2000000` → [0, 2000000]. */
 function parseRange(raw: string): [number, number] | null {
   const m = raw.match(/^(-?[0-9.]+)\s*\.\.\s*(-?[0-9.]+)$/);
@@ -136,8 +221,8 @@ export function coerce(field: InputField, raw: InputValue): InputValue {
       const n = typeof raw === "number" ? raw : Number(String(raw).trim());
       if (!Number.isFinite(n)) return typeof field.value === "number" ? field.value : 0;
       let out = n;
-      if (field.min !== null) out = Math.max(field.min, out);
-      if (field.max !== null) out = Math.min(field.max, out);
+      if (typeof field.min === "number") out = Math.max(field.min, out);
+      if (typeof field.max === "number") out = Math.min(field.max, out);
       return out;
     }
     case "bool":
@@ -145,6 +230,15 @@ export function coerce(field: InputField, raw: InputValue): InputValue {
     case "select": {
       const hit = field.options.find((o) => String(o) === String(raw));
       return hit !== undefined ? hit : (field.options[0] ?? "");
+    }
+    case "date":
+    case "time":
+    case "datetime": {
+      // Half-typed dates reach us as "" from the picker, which is fine; only a
+      // value that can never be a moment falls back to the note's default.
+      const out = normalizeMoment(field.type, raw);
+      if (out !== null) return out;
+      return typeof field.value === "string" ? field.value : "";
     }
     default:
       return typeof raw === "string" ? raw : String(raw);
@@ -180,6 +274,8 @@ function parseField(line: string, lineNo: number): InputField | InputParseError 
     return fail("select 需要一个选项列表，例如 = [20, 25, 30]");
   if (type === "number" && rhs && !isNumeric(unquote(rhs)))
     return fail(`「${rhs}」不是数字`);
+  if (isMoment(type) && rhs && normalizeMoment(type, rhs) === null)
+    return fail(`「${rhs}」不是合法的${MOMENT_HINT[type]}`);
 
   const range = opts.entries.has("slider")
     ? parseRange(opts.entries.get("slider") ?? "")
@@ -192,8 +288,16 @@ function parseField(line: string, lineNo: number): InputField | InputParseError 
     label: opts.entries.get("label") || name,
     value: type === "number" ? Number(unquote(rhs) || 0) : literal,
     options: list ?? [],
-    min: range ? range[0] : numberOpt(opts, "min"),
-    max: range ? range[1] : numberOpt(opts, "max"),
+    min: isMoment(type)
+      ? momentOpt(opts, "min", type)
+      : range
+        ? range[0]
+        : numberOpt(opts, "min"),
+    max: isMoment(type)
+      ? momentOpt(opts, "max", type)
+      : range
+        ? range[1]
+        : numberOpt(opts, "max"),
     step: numberOpt(opts, "step"),
     slider: range !== null || opts.entries.get("slider") === "true",
     unit: opts.entries.get("unit") ?? "",

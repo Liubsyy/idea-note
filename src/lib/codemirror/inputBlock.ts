@@ -28,6 +28,7 @@ import {
 import { scanInputBlocks, type InputBlockInfo } from "../inputs/sources";
 import {
   coerce,
+  isMoment,
   literalOf,
   type InputField,
   type InputValue,
@@ -213,6 +214,28 @@ function buildControl(
         sync: (v) => {
           if (idle(number)) number.value = String(v);
           if (slider && idle(slider)) slider.value = String(v);
+        },
+      },
+    };
+  }
+
+  if (isMoment(field.type)) {
+    const picker = document.createElement("input");
+    picker.type = field.type === "datetime" ? "datetime-local" : field.type;
+    picker.value = String(value);
+    if (field.min !== null) picker.min = String(field.min);
+    if (field.max !== null) picker.max = String(field.max);
+    if (field.step !== null) picker.step = String(field.step);
+    // A picker reads "" until the date it is holding is complete, so a value
+    // being typed in briefly looks cleared. That is the same state as an empty
+    // picker, and the script sees an empty string either way.
+    picker.addEventListener("input", () => onChange(coerce(field, picker.value)));
+    row.append(picker);
+    return {
+      node: row,
+      handle: {
+        sync: (v) => {
+          if (idle(picker)) picker.value = String(v);
         },
       },
     };
