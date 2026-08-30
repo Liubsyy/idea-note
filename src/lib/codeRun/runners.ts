@@ -52,7 +52,7 @@ export const DEFAULT_CODE_RUN_FONT_SIZE = 13;
  */
 const HARD_EXCLUDED = new Set(["mermaid", "input", "output"]);
 
-/** Built-in runners. All are available by default and can be disabled separately. */
+/** Built-in runners. Platform-specific runners start disabled where unavailable. */
 export function builtinRunners(): CodeRunner[] {
   return [
     {
@@ -121,6 +121,21 @@ export function builtinRunners(): CodeRunner[] {
       // these arguments.
       args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"],
       ext: ".ps1",
+      env: {},
+      timeoutMs: DEFAULT_TIMEOUT_MS,
+    },
+    {
+      // Keep `bat` canonical so the most familiar Markdown fence and the
+      // temporary file extension agree. `cmd` is the equivalent Windows
+      // batch-script extension/language marker, not a separate interpreter.
+      lang: "bat",
+      aliases: ["cmd", "batch"],
+      enabled: isWindows,
+      command: "cmd.exe",
+      // /D disables per-user AutoRun commands, keeping note execution
+      // deterministic. code_run_start appends the .bat path after /C.
+      args: ["/D", "/C"],
+      ext: ".bat",
       env: {},
       timeoutMs: DEFAULT_TIMEOUT_MS,
     },

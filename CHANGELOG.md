@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.2
+- Windows 新增内置 Batch/CMD 代码块运行器，支持 `bat`、`cmd` 和 `batch` 围栏标识
+
+
 ## 1.1.1
 - markdown代码块新玩法：增加可交互组件
 - AI 笔记助手学会写可交互组件：新增 `component_guide` 工具，让模型现查组件规范和本机可用运行器后再动手

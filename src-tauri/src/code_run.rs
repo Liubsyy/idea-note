@@ -30,6 +30,19 @@ use crate::proc;
 /// How often the supervisor/watchdog threads re-check a running child.
 const POLL: Duration = Duration::from_millis(60);
 
+/// `cmd.exe` is much less forgiving than the other interpreters here: Markdown
+/// source uses LF internally, while batch files need Windows line endings to
+/// avoid consuming characters from the following line. Switch the isolated
+/// child console to UTF-8 as well, so batch blocks can contain and print the
+/// same Unicode text as their note.
+fn snippet_contents(ext: &str, code: &str) -> String {
+    if !ext.eq_ignore_ascii_case(".bat") && !ext.eq_ignore_ascii_case(".cmd") {
+        return code.to_string();
+    }
+    let normalized = code.replace("\r\n", "\n").replace('\r', "\n");
+    format!("@chcp 65001 >nul\r\n{}", normalized.replace('\n', "\r\n"))
+}
+
 struct RunSession {
     child: Arc<Mutex<Child>>,
     /// Deleted when the session is dropped, i.e. once the child has exited.
@@ -179,7 +192,8 @@ pub fn code_run_start(
         .tempdir()
         .map_err(|e| format!("无法创建临时目录：{e}"))?;
     let snippet = dir.path().join(format!("snippet{ext}"));
-    std::fs::write(&snippet, code).map_err(|e| format!("无法写入临时文件：{e}"))?;
+    std::fs::write(&snippet, snippet_contents(&ext, &code))
+        .map_err(|e| format!("无法写入临时文件：{e}"))?;
 
     let mut cmd = proc::command(&command);
     cmd.args(&args).arg(&snippet);
@@ -329,6 +343,47 @@ pub fn code_run_snippet_path(app: AppHandle, ext: String, code: String) -> Resul
         .join("terminal-snippets");
     std::fs::create_dir_all(&dir).map_err(|e| format!("无法创建临时目录：{e}"))?;
     let path = dir.join(format!("snippet{ext}"));
-    std::fs::write(&path, code).map_err(|e| format!("无法写入临时文件：{e}"))?;
+    std::fs::write(&path, snippet_contents(&ext, &code))
+        .map_err(|e| format!("无法写入临时文件：{e}"))?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::snippet_contents;
+
+    #[test]
+    fn only_batch_snippets_get_windows_line_endings_and_utf8_setup() {
+        assert_eq!(
+            snippet_contents(".bat", "@echo off\necho 测试\n"),
+            "@chcp 65001 >nul\r\n@echo off\r\necho 测试\r\n"
+        );
+        assert_eq!(
+            snippet_contents(".py", "print('测试')\n"),
+            "print('测试')\n"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn prepared_batch_snippet_runs_through_cmd() {
+        let dir = tempfile::Builder::new()
+            .prefix("idea note batch test ")
+            .tempdir()
+            .unwrap();
+        let path = dir.path().join("snippet.bat");
+        let code = "@echo off\nset /a total=0\nfor /l %%n in (1,1,10) do set /a total+=%%n\necho Batch: OK\necho 1 到 10 的和：%total%\n";
+        std::fs::write(&path, snippet_contents(".bat", code)).unwrap();
+
+        let output = std::process::Command::new("cmd.exe")
+            .args(["/D", "/C"])
+            .arg(&path)
+            .output()
+            .unwrap();
+
+        assert!(output.status.success());
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains("Batch: OK"));
+        assert!(stdout.contains("1 到 10 的和：55"));
+    }
 }

@@ -1253,7 +1253,7 @@ function Notice({ tone, children }: { tone?: "danger"; children: React.ReactNode
 
 /** Languages whose runner is a shell: enabling one means a note can run any
  *  command the user can, so they get an extra warning. */
-const SHELL_LANGS = new Set(["bash", "powershell"]);
+const SHELL_LANGS = new Set(["bash", "powershell", "bat"]);
 
 const RUNNER_LABEL: Record<string, string> = {
   python: "Python",
@@ -1262,6 +1262,7 @@ const RUNNER_LABEL: Record<string, string> = {
   perl: "Perl",
   bash: "Bash / Shell",
   powershell: "PowerShell",
+  bat: "Windows Batch / CMD",
 };
 
 /** An empty form for a language the app doesn't ship. */
@@ -1293,12 +1294,12 @@ const runnerCommandLine = (command: string, args: string[], ext: string) =>
  * The "代码块执行" tab: the master switch, one card per built-in language
  * runner, and a list of the user's own.
  *
- * Built-in runners are on by default and can only be re-pointed at a different
- * interpreter — their language ids are owned by the app. Anything else the user
- * adds here, which is any language whose interpreter runs a single source file
- * in one command; the rest belong in the integrated terminal. The first run in
- * each workspace still requires confirmation before a note can execute local
- * commands.
+ * Built-in runners are on by default where the platform provides them and can
+ * only be re-pointed at a different interpreter — their language ids are owned
+ * by the app. Anything else the user adds here can be any language whose
+ * interpreter runs a single source file in one command; the rest belong in the
+ * integrated terminal. The first run in each workspace still requires
+ * confirmation before a note can execute local commands.
  */
 function CodeRunTab() {
   const config = useAppStore((s) => s.codeRunConfig);

@@ -69,7 +69,7 @@ xattr -rd com.apple.quarantine /Applications/Idea\ Note.app
 
 在代码块右上角点击运行图标，程序在本机执行，输出实时显示在独立的"运行输出"面板里。面板按当前文件显示运行记录，可停止、重跑、跳回代码块，或把结果作为 ```output 块插入笔记。
 
-> 支持 Python、JavaScript/Node、Ruby、Perl、Bash、PowerShell以及自定义执行器
+> 支持 Python、JavaScript/Node、Ruby、Perl、Bash、PowerShell、Windows Batch/CMD 以及自定义执行器
 
 <img src="doc/assets/run_code.png" width="90%">
 

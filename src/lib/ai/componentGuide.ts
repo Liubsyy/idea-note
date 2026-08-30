@@ -290,7 +290,8 @@ const RUN = `# 运行：用什么跑、什么时候跑
 ## 语言
 
 内置运行器：\`python\`（别名 py、python3）、\`node\`（js、javascript、mjs）、
-\`ruby\`（rb）、\`perl\`（pl）、\`bash\`（sh、shell、zsh）、\`powershell\`（ps1、pwsh）。
+\`ruby\`（rb）、\`perl\`（pl）、\`bash\`（sh、shell、zsh）、\`powershell\`（ps1、pwsh）、
+以及 Windows 上的 \`bat\`（cmd、batch）。
 \`mermaid\`、\`input\`、\`output\` 是保留标识，不能当可运行语言。
 运行器可以在设置里禁用或改命令，**能不能跑最终取决于用户设备上装没装解释器**。
 

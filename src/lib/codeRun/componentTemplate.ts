@@ -50,6 +50,12 @@ const dq = (text: string) => JSON.stringify(text);
 const psq = (text: string) => `'${text.replace(/'/g, "''")}'`;
 const shq = (text: string) => `'${text.replace(/'/g, `'"'"'`)}'`;
 const jsonStringFragment = (text: string) => JSON.stringify(text).slice(1, -1);
+const batEchoEscape = (text: string) =>
+  text
+    .replace(/\^/g, "^^")
+    .replace(/%/g, "%%")
+    .replace(/[&|<>]/g, "^$&");
+const batEcho = (text: string) => `echo(${batEchoEscape(text)}`;
 
 const EMITTERS: Record<string, Emit> = {
   python: {
@@ -173,6 +179,24 @@ const EMITTERS: Record<string, Emit> = {
       "Write-Output ($result | ConvertTo-Json -Compress -Depth 10)",
     ],
     comment: (text) => `# ${text}`,
+  },
+
+  bat: {
+    prelude: ({ bound }) => [
+      "@echo off",
+      ...(bound
+        ? ["rem 绑定数据位于 %IDEA_NOTE_INPUT%；复杂 JSON 处理建议改用 PowerShell。"]
+        : []),
+    ],
+    literalJson: (json) => batEcho(json),
+    envString: (prefix, name, suffix) =>
+      `echo("${batEchoEscape(jsonStringFragment(prefix))}%${name}%${batEchoEscape(jsonStringFragment(suffix))}"`,
+    table: (hasParams) => [
+      hasParams
+        ? 'echo({"columns":["项目","数值"],"rows":[["金额",%amount%],["比例",3.85]]}'
+        : batEcho('{"columns":["项目","数值"],"rows":[["金额",500000],["比例",3.85]]}'),
+    ],
+    comment: (text) => `rem ${text}`,
   },
 };
 

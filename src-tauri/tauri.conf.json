@@ -41,7 +41,7 @@
           "js", "jsx", "mjs", "cjs", "ts", "tsx", "html", "htm", "css", "scss",
           "sass", "less", "vue", "svelte", "astro",
           "py", "rs", "go", "java", "kt", "kts", "c", "h", "cpp", "cc", "cxx",
-          "hpp", "cs", "rb", "php", "sh", "bash", "zsh", "fish", "ps1", "bat",
+          "hpp", "cs", "rb", "php", "sh", "bash", "zsh", "fish", "ps1", "bat", "cmd",
           "sql", "swift", "lua", "r", "pl", "dart", "scala", "clj", "ex", "exs",
           "gradle", "tex", "bib", "rst", "adoc", "org"
         ],
