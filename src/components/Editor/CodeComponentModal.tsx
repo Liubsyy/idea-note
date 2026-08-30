@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { useAppStore } from "../../store/useAppStore";
 import type {
@@ -140,7 +141,13 @@ export function CodeComponentModal({
     </div>
   );
 
-  return (
+  // Rendered into <body> rather than in place: the toolbar row this modal is
+  // mounted from carries `backdrop-blur`, and an element with a backdrop-filter
+  // becomes the containing block for its fixed-position descendants — the
+  // overlay would cover the 44px toolbar instead of the window, and the editor
+  // would paint straight over it. The toolbar's own dropdowns portal for the
+  // same reason.
+  const modal = (
     <div
       className="fixed inset-0 z-[60] flex items-start justify-center"
       style={{ background: "rgba(0,0,0,0.35)" }}
@@ -323,4 +330,6 @@ export function CodeComponentModal({
       </div>
     </div>
   );
+
+  return createPortal(modal, document.body);
 }
