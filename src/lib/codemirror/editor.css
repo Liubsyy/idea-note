@@ -1415,3 +1415,129 @@
   padding: 0.25em 0.6em;
   border: 1px solid var(--border);
 }
+
+/* ------------------------------ secret blocks ---------------------------- */
+/* Outer element: spacing only, as padding — a margin is invisible to the
+   height map, same as .cm-md-input. */
+.cm-md-secret {
+  display: block;
+  margin: 0;
+  padding: 0.35em 0;
+}
+
+.cm-md-secret-card {
+  padding: 0.7em 0.9em;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--code-bg);
+}
+/* Unlocked blocks read as ordinary prose with a marked edge, so an open note
+   doesn't look like a wall of alert boxes. */
+.cm-md-secret-card.is-ready {
+  border-left: 3px solid var(--accent, var(--text-muted));
+}
+.cm-md-secret-card.is-error,
+.cm-md-secret-card.is-unsupported {
+  border-color: var(--text-muted);
+}
+
+.cm-md-secret-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.cm-md-secret-title {
+  flex: 1;
+  color: var(--text-muted);
+  font-size: 0.85em;
+  letter-spacing: 0.04em;
+}
+
+.cm-md-secret-btn {
+  padding: 0.15em 0.6em;
+  color: var(--text-soft);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 0.8em;
+  cursor: pointer;
+}
+.cm-md-secret-btn:hover {
+  color: var(--text);
+  background: var(--hover);
+  border-color: var(--text-muted);
+}
+
+.cm-md-secret-hint {
+  margin-top: 0.5em;
+  color: var(--text-soft);
+  font-size: 0.85em;
+}
+
+.cm-md-secret-note {
+  margin-top: 0.25em;
+  color: var(--text-muted);
+  font-size: 0.8em;
+}
+
+/* The nested plaintext editor. It carries no chrome of its own so the block
+   reads as part of the note rather than as an embedded app. */
+.cm-md-secret-body {
+  margin-top: 0.6em;
+}
+.cm-md-secret-body .cm-editor {
+  background: transparent;
+}
+.cm-md-secret-body .cm-scroller {
+  font-family: inherit;
+  line-height: inherit;
+}
+.cm-md-secret-body .cm-content {
+  padding: 0;
+}
+
+/* Deriving a key takes a beat; the block says so instead of just sitting
+   there. Sized in em so it tracks the note's own font size. */
+.cm-md-secret-working {
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+}
+
+.cm-md-secret-spinner {
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent, var(--text-muted));
+  border-radius: 50%;
+  animation: cm-md-secret-spin 0.7s linear infinite;
+}
+
+@keyframes cm-md-secret-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* The card swaps between locked / working / open states; ease the change so it
+   reads as the same block changing rather than three different ones. */
+.cm-md-secret-card {
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.cm-md-secret-body {
+  animation: cm-md-secret-open 180ms ease both;
+}
+
+@keyframes cm-md-secret-open {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cm-md-secret-spinner { animation-duration: 2s; }
+  .cm-md-secret-card { transition: none; }
+  .cm-md-secret-body { animation: none; }
+}

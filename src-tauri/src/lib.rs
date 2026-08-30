@@ -7,6 +7,7 @@ mod ai_models;
 mod app_data;
 mod clipboard;
 mod code_run;
+mod crypto;
 mod encoding;
 mod files;
 mod fix_path;
@@ -19,6 +20,7 @@ mod terminal;
 mod tree;
 
 use code_run::CodeRunState;
+use crypto::Vault;
 use open_with::PendingOpenFiles;
 use terminal::TerminalState;
 
@@ -98,6 +100,7 @@ pub fn run() {
         .manage(TerminalState::default())
         .manage(CodeRunState::default())
         .manage(encoding::EncodingState::default())
+        .manage(Vault::default())
         .manage(pending)
         .invoke_handler(tauri::generate_handler![
             open_with::take_pending_open_files,
@@ -148,7 +151,16 @@ pub fn run() {
             terminal::term_close,
             code_run::code_run_start,
             code_run::code_run_stop,
-            code_run::code_run_snippet_path
+            code_run::code_run_snippet_path,
+            crypto::vault_status,
+            crypto::vault_init,
+            crypto::vault_unlock,
+            crypto::vault_lock,
+            crypto::vault_set_ttl,
+            crypto::vault_change_password,
+            crypto::secret_encrypt,
+            crypto::secret_encrypt_batch,
+            crypto::secret_decrypt
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

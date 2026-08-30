@@ -493,3 +493,24 @@ body {
 .sync-arrow-up {
   animation: sync-flow-up 1.1s ease-in-out infinite;
 }
+
+/* Indeterminate progress for the vault dialog. Argon2id runs for the better
+   part of a second by design; the bar is there so the wait reads as work being
+   done rather than as the window having hung. */
+.vault-progress {
+  background: var(--accent);
+  animation: vault-progress-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes vault-progress-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vault-progress {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}

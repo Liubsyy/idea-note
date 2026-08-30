@@ -12,6 +12,14 @@ import { copyText, readClipboardText } from "../../lib/clipboard";
 import { codeBlockAt } from "../../lib/codeRun/document";
 import { runInTerminal } from "../../lib/codeRun/run";
 
+import {
+  decryptSelectedBlock,
+  decryptableBlockAt,
+  encryptSelection,
+  lockNow,
+} from "../../lib/crypto/commands";
+import { useVaultStore } from "../../store/useVaultStore";
+
 export interface EditorMenuState {
   x: number;
   y: number;
@@ -42,6 +50,8 @@ export function EditorContextMenu({
   // selection head tells us whether the click landed in a code block.
   const view = getActiveView();
   const block = view ? codeBlockAt(view, view.state.selection.main.head) : null;
+  const canDecrypt = view ? decryptableBlockAt(view) : false;
+  const vaultOpen = useVaultStore((s) => !!s.status && !s.status.locked);
 
   // Dismiss on any click outside the menu, Escape, or window blur.
   useEffect(() => {
@@ -115,6 +125,21 @@ export function EditorContextMenu({
       <Item hint={`${alt}${mod}F`} onClick={() => run((v) => openSearchWithReplace(v))}>
         替换
       </Item>
+      <div className="my-1" style={{ borderTop: "1px solid var(--border)" }} />
+      <Item
+        disabled={!menu.hasSelection}
+        onClick={() => run((v) => void encryptSelection(v))}
+      >
+        加密选中内容
+      </Item>
+      {canDecrypt && (
+        <Item onClick={() => run((v) => void decryptSelectedBlock(v))}>
+          解密这个块
+        </Item>
+      )}
+      {vaultOpen && (
+        <Item onClick={() => run((v) => void lockNow(v))}>立即上锁</Item>
+      )}
       {block && (
         <>
           <div className="my-1" style={{ borderTop: "1px solid var(--border)" }} />

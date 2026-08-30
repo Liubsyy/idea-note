@@ -13,6 +13,7 @@ import {
   Image as ImageIcon,
   Keyboard,
   ListTree,
+  Lock,
   Minus,
   Moon,
   Palette,
@@ -27,6 +28,15 @@ import {
   X,
 } from "lucide-react";
 import {
+  vaultChangePassword,
+  vaultErrorMessage,
+  vaultInit,
+  vaultStatus,
+  type VaultStatus,
+} from "../lib/crypto/vault";
+import { VAULT_EVENT, VAULT_LOCK_REQUEST } from "../store/useVaultStore";
+import {
+  VAULT_TTL_OPTIONS,
   useAppStore,
   readSyncConfig,
   saveSyncConfig,
@@ -114,7 +124,8 @@ type TabId =
   | "attachments"
   | "coderun"
   | "models"
-  | "sync";
+  | "sync"
+  | "security";
 
 interface Tab {
   id: TabId;
@@ -132,6 +143,7 @@ const tabs: Tab[] = [
   { id: "coderun", label: "代码块执行", caption: "可运行的代码块语言", icon: <Play size={16} /> },
   { id: "models", label: "AI笔记助手", caption: "模型、字号与 API Key", icon: <Bot size={16} /> },
   { id: "sync", label: "远程同步", caption: "Git 仓库同步", icon: <ArrowDownUp size={16} /> },
+  { id: "security", label: "加密", caption: "笔记内容加密口令", icon: <Lock size={16} /> },
 ];
 
 /** Initial tab from the `tab` URL param (set by openSettings), else 外观. */
@@ -504,6 +516,7 @@ export function SettingsWindow() {
             />
           )}
           {activeTab === "sync" && <SyncTab />}
+          {activeTab === "security" && <SecurityTab />}
         </div>
       </section>
     </div>
@@ -2225,6 +2238,271 @@ function TextButton({
     >
       {children}
     </button>
+  );
+}
+
+/* ------------------------------ security tab ---------------------------- */
+
+/**
+ * The "加密" tab: the vault behind ```secret blocks.
+ *
+ * Everything here is per workspace, because the vault is a file inside it
+ * (.ideanote/vault.json) that travels with the repository — that file is what
+ * lets another device open the same notes with the same password.
+ *
+ * The setup flow refuses to finish until the recovery code is acknowledged.
+ * Password plus recovery code are the only two ways in; losing both means the
+ * encrypted notes are unreadable forever, by anyone, including us.
+ */
+function SecurityTab() {
+  const [ws, setWs] = useState<string | null>(() => readSyncContext().ws);
+  useEffect(() => {
+    const un = listen<{ ws: string | null }>(SETTINGS_CONTEXT_EVENT, ({ payload }) =>
+      setWs(payload.ws),
+    );
+    return () => {
+      un.then((fn) => fn());
+    };
+  }, []);
+
+  const vaultTtlMinutes = useAppStore((s) => s.vaultTtlMinutes);
+  const setVaultTtlMinutes = useAppStore((s) => s.setVaultTtlMinutes);
+
+  const [status, setStatus] = useState<VaultStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+
+  // Setup form
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [oldPassword, setOldPassword] = useState("");
+  const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
+  const [acknowledged, setAcknowledged] = useState(false);
+
+  const reload = useCallback(async () => {
+    if (!ws) return;
+    try {
+      setStatus(await vaultStatus(ws));
+    } catch (e) {
+      setError(vaultErrorMessage(e));
+    }
+  }, [ws]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  if (!ws) {
+    return <Notice>加密口令按工程分别保存。请先在主窗口打开一个工程，再回到这里配置。</Notice>;
+  }
+  if (!status) return null;
+
+  const run = async (action: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    setDone(null);
+    try {
+      await action();
+      await reload();
+      // Other windows hold their own copy of the lock state.
+      emit(VAULT_EVENT, { workspace: ws }).catch(() => {});
+    } catch (e) {
+      setError(vaultErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /* --- not set up yet --- */
+  if (!status.initialized) {
+    if (recoveryCode) {
+      return (
+        <div className="space-y-4">
+          <Notice>
+            这串恢复码只显示这一次。抄到密码管理器或纸上——忘记口令时，它是唯一的入口。
+          </Notice>
+          <div
+            className="select-all rounded-xl px-4 py-4 text-center text-[13px] tracking-[0.14em]"
+            style={{
+              background: "var(--bg-elev)",
+              border: "1px solid var(--border)",
+              color: "var(--text)",
+              fontFamily: "var(--font-mono, monospace)",
+            }}
+          >
+            {recoveryCode}
+          </div>
+          <label
+            className="flex cursor-pointer items-start gap-2 px-1 text-[12px] leading-relaxed"
+            style={{ color: "var(--text-soft)" }}
+          >
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={acknowledged}
+              onChange={(e) => setAcknowledged(e.target.checked)}
+            />
+            <span>
+              我已经保存好恢复码。我明白同时丢失口令和恢复码，这些加密内容将永远无法恢复。
+            </span>
+          </label>
+          <div className="flex justify-end">
+            <TextButton
+              primary
+              disabled={!acknowledged}
+              onClick={() => {
+                setRecoveryCode(null);
+                setAcknowledged(false);
+                setDone("加密口令已设置。现在可以在笔记里加密选中的内容了。");
+              }}
+            >
+              我已保存
+            </TextButton>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="space-y-4">
+        <Notice>
+          设置口令后，就能把笔记里的任意一段内容加密。密文随笔记一起提交到仓库，在其他设备上输入同一口令即可打开。
+        </Notice>
+        <Card>
+          <div className="space-y-3 px-4 py-4">
+            <Field label="设置口令">
+              <Input password value={newPassword} onChange={setNewPassword} placeholder="选一个你不会忘的口令" />
+            </Field>
+            <Field label="再次输入">
+              <Input password value={confirmPassword} onChange={setConfirmPassword} placeholder="确认口令" />
+            </Field>
+          </div>
+        </Card>
+        {error && <Notice tone="danger">{error}</Notice>}
+        {done && <Notice>{done}</Notice>}
+        <div className="flex justify-end">
+          <TextButton
+            primary
+            disabled={busy || !newPassword}
+            onClick={() =>
+              void run(async () => {
+                if (newPassword !== confirmPassword) throw "两次输入的口令不一致。";
+                const { recoveryCode: code } = await vaultInit(ws, newPassword);
+                setNewPassword("");
+                setConfirmPassword("");
+                setRecoveryCode(code);
+              })
+            }
+          >
+            {busy ? "正在生成密钥…" : "设置口令"}
+          </TextButton>
+        </div>
+        <div className="px-1 text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+          口令本身不会被保存到任何地方。工程目录下会生成 <code>.ideanote/vault.json</code>，
+          里面只有被口令包裹后的密钥，请把它一起提交到仓库——否则其他设备打不开加密内容。
+        </div>
+      </div>
+    );
+  }
+
+  /* --- already set up --- */
+  return (
+    <div className="space-y-4">
+      <Card>
+        <Row
+          title={status.locked ? "已上锁" : "已解锁"}
+          desc={
+            status.locked
+              ? "加密内容当前不可读。在笔记里点击加密块即可解锁。"
+              : "本次会话已解锁。关闭工程或点击上锁后需要重新输入口令。"
+          }
+        >
+          <TextButton
+            disabled={busy || status.locked}
+            onClick={() =>
+              void run(async () => {
+                // The main window owns the editor holding any un-encrypted
+                // edits, so it does the locking; we only ask.
+                await emit(VAULT_LOCK_REQUEST, {});
+              })
+            }
+          >
+            立即上锁
+          </TextButton>
+        </Row>
+        <Row
+          title="口令有效期"
+          desc="输入口令后空闲多长时间无需输入口令，如选择立即过期则每次都需要输入口令。"
+        >
+          <div className="w-32">
+            <Select
+              value={String(vaultTtlMinutes)}
+              options={VAULT_TTL_OPTIONS.map((m) => ({
+                value: String(m),
+                label: m < 0 ? "立即过期" : m === 0 ? "从不过期" : `${m} 分钟`,
+              }))}
+              onChange={(v) => setVaultTtlMinutes(Number(v))}
+            />
+          </div>
+        </Row>
+        {status.slots.map((slot) => (
+          <Row
+            key={slot.id}
+            title={slot.label}
+            desc={`${slot.kind === "recovery" ? "恢复码" : "口令"} · 创建于 ${new Date(slot.createdAt).toLocaleDateString()}`}
+          >
+            <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+              {slot.keyId}
+            </span>
+          </Row>
+        ))}
+      </Card>
+
+      <Card>
+        <div className="space-y-3 px-4 py-4">
+          <div className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
+            修改口令
+          </div>
+          <Field label="当前口令或恢复码">
+            <Input password value={oldPassword} onChange={setOldPassword} placeholder="用于验证身份" />
+          </Field>
+          <Field label="新口令">
+            <Input password value={newPassword} onChange={setNewPassword} placeholder="新口令" />
+          </Field>
+          <Field label="再次输入新口令">
+            <Input password value={confirmPassword} onChange={setConfirmPassword} placeholder="确认新口令" />
+          </Field>
+          <div className="flex justify-end">
+            <TextButton
+              primary
+              disabled={busy || !oldPassword || !newPassword}
+              onClick={() =>
+                void run(async () => {
+                  if (newPassword !== confirmPassword) throw "两次输入的新口令不一致。";
+                  await vaultChangePassword(ws, oldPassword, newPassword);
+                  setOldPassword("");
+                  setNewPassword("");
+                  setConfirmPassword("");
+                  setDone("口令已修改。笔记内容没有被改动，其他设备下次输入新口令即可。");
+                })
+              }
+            >
+              {busy ? "正在重设密钥…" : "修改口令"}
+            </TextButton>
+          </div>
+        </div>
+      </Card>
+
+      {error && <Notice tone="danger">{error}</Notice>}
+      {done && <Notice>{done}</Notice>}
+
+      <div className="px-1 text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+        修改口令只会重新包裹密钥，不会重写任何笔记——所以它不产生大量改动，也不会和其他设备冲突。
+        <br />
+        请确保 <code>.ideanote/vault.json</code> 已提交到仓库；忽略它会导致其他设备无法解密。
+      </div>
+    </div>
   );
 }
 

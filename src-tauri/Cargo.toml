@@ -46,6 +46,15 @@ arboard = { version = "3.6", features = ["wayland-data-control"] }
 # Encode arboard's RGBA clipboard images as PNG files.
 png = "0.17"
 
+# Per-block note encryption (crypto.rs). XChaCha20-Poly1305 over Argon2id:
+# the 24-byte nonce lets every save draw a fresh random one with no counter to
+# keep in sync across devices, which a 12-byte AEAD could not survive.
+chacha20poly1305 = "0.10"
+argon2 = "0.5"
+zeroize = { version = "1", features = ["derive"] }
+rand = "0.8"
+base64 = "0.22"
+
 # Desktop-only: remember window size/position across restarts, and route a
 # second "Open With" launch (Windows/Linux pass the file path as a CLI arg) back
 # to the already-running instance.

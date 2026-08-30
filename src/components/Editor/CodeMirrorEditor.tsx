@@ -28,6 +28,9 @@ import { htmlPreview } from "../../lib/codemirror/htmlPreview";
 import { inlineMath, mathBlock } from "../../lib/codemirror/math";
 import { mermaidBlock } from "../../lib/codemirror/diagram";
 import { inputBlock } from "../../lib/codemirror/inputBlock";
+import { secretBlock } from "../../lib/codemirror/secretBlock";
+import { flushSecretEdits } from "../../lib/crypto/secretEdits";
+import { useVaultStore } from "../../store/useVaultStore";
 import { resultBlock } from "../../lib/codemirror/resultBlock";
 import { autoRuns } from "../../lib/codemirror/autoRuns";
 import {
@@ -61,6 +64,10 @@ const previewPlugins = [
   inputBlock,
   resultBlock,
   autoRuns,
+  // Encrypted blocks render as cards here and not in source mode: source mode
+  // means "show me the actual bytes", and a lock card sitting where the fence
+  // should be is exactly what it promises not to do.
+  secretBlock,
 ];
 
 // Extensions for a markdown view mode, swapped in/out via the compartment:
@@ -264,6 +271,15 @@ export function CodeMirrorEditor() {
       window.clearTimeout(scrollTimer);
       setActiveView(null);
       view.destroy();
+      // Revealing a block is scoped to this viewing of the note, not to the
+      // session: closing it re-seals every block, so coming back shows locked
+      // cards again rather than the plaintext someone opened an hour ago.
+      // flushActiveTab has already run by the time this fires, so nothing
+      // unencrypted is dropped here.
+      // Only what is already safely encrypted is dropped. An edit that could
+      // not be encrypted (the key expired and the user declined to re-enter it)
+      // is kept: discarding it here would silently lose what they typed.
+      if (path) useVaultStore.getState().sealClean(path);
     };
   }, [setContent, setActiveFormats, editorLineNumbers, editorKeybindings]);
 
@@ -274,10 +290,17 @@ export function CodeMirrorEditor() {
     if (!view) return;
     const path = useAppStore.getState().activeFilePath;
     if (!path || (!isMarkdownFile(path) && !isDraftPath(path))) return;
-    view.dispatch({
-      effects: previewCompartment.current.reconfigure(
-        modeExtensions(mdViewMode, editorLineNumbers),
-      ),
+    // Encrypt anything still pending in a nested block editor before the
+    // reconfigure tears those editors down. In source mode the user is about to
+    // see (and may edit) the raw ciphertext, so it had better be the ciphertext
+    // that matches what they just typed.
+    void flushSecretEdits(path, view, { prompt: true }).then(() => {
+      if (getActiveView() !== view) return;
+      view.dispatch({
+        effects: previewCompartment.current.reconfigure(
+          modeExtensions(mdViewMode, editorLineNumbers),
+        ),
+      });
     });
     // Reconfiguring doesn't fire a selection/doc change, so sync the toolbar's
     // active-format highlight to the new mode: cleared in read-only, otherwise

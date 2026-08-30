@@ -3,6 +3,8 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 
+import { lockNow } from "./lib/crypto/commands";
+import { VAULT_LOCK_REQUEST } from "./store/useVaultStore";
 import { Sidebar } from "./components/Sidebar/Sidebar";
 import { Toolbar } from "./components/Editor/Toolbar";
 import { EditorModeTabs } from "./components/Editor/EditorModeTabs";
@@ -20,6 +22,7 @@ import { RunPanel } from "./components/Panels/RunOutputPanel";
 import { TitleBar } from "./components/TitleBar";
 import { PromptModal } from "./components/PromptModal";
 import { ConfirmModal } from "./components/ConfirmModal";
+import { VaultModal } from "./components/VaultModal";
 import { HistoryModal } from "./components/HistoryModal";
 import { isDraftPath, useAppStore } from "./store/useAppStore";
 import {
@@ -69,6 +72,19 @@ function App() {
   }, [bottomPanelOpen]);
   const save = useAppStore((s) => s.save);
   const restoreWorkspace = useAppStore((s) => s.restoreWorkspace);
+
+  // Locking is driven from here even when the settings window asked for it:
+  // any plaintext the user typed into an unlocked block lives in this window's
+  // editor, and lockNow encrypts it back into the document before the keys are
+  // dropped. Locking anywhere else would throw that writing away.
+  useEffect(() => {
+    const un = listen(VAULT_LOCK_REQUEST, () => {
+      void lockNow(getActiveView() ?? undefined);
+    });
+    return () => {
+      un.then((fn) => fn());
+    };
+  }, []);
 
   // What to show on launch: a workspace handed over in the URL (a folder sent
   // to a new window), the last workspace (original window only), or an empty
@@ -530,6 +546,7 @@ function App() {
 
       <PromptModal />
       <ConfirmModal />
+      <VaultModal />
       <HistoryModal />
     </div>
   );

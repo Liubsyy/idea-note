@@ -38,8 +38,11 @@ import {
   type SearchOptions,
 } from "../lib/search";
 import { loadModels, saveModels } from "../lib/ai/config";
+import { flushSecretEdits } from "../lib/crypto/secretEdits";
 import { useRunStore } from "./useRunStore";
 import { useInputStore } from "./useInputStore";
+import { vaultSetTtl } from "../lib/crypto/vault";
+import { useVaultStore } from "./useVaultStore";
 import {
   defaultCodeRunConfig,
   loadCodeRunConfig,
@@ -128,6 +131,10 @@ interface AppSettings {
   /** How many files may be open in the editor tab strip at once. */
   editorMaxTabs: number;
   aiAssistantFontSize: number;
+  /** How long an unlocked encryption key may sit in memory: -1 = drop it as
+   *  soon as the work needing it is done, 0 = never, >0 = minutes of disuse.
+   *  Enforced in Rust; persisted here so it survives a restart. */
+  vaultTtlMinutes: number;
   compactSidebar: boolean;
   /** Tighten the editor's vertical rhythm (line spacing + heading padding). */
   compactEditor: boolean;
@@ -217,6 +224,12 @@ const EDITOR_MAX_TABS_DEFAULT = 5;
 const SIDEBAR_FONT_MIN = 11;
 const SIDEBAR_FONT_MAX = 20;
 const SIDEBAR_FONT_DEFAULT = 14;
+/** Must match DEFAULT_TTL_MINUTES in src-tauri/src/crypto.rs. */
+const VAULT_TTL_DEFAULT = 15;
+/** Offered key lifetimes: -1 = drop it as soon as the work needing it is
+ *  done, 0 = never expire, >0 = minutes of disuse. */
+export const VAULT_TTL_OPTIONS = [-1, 1, 5, 15, 30, 60, 0];
+
 const AI_ASSISTANT_FONT_MIN = 11;
 const AI_ASSISTANT_FONT_MAX = 18;
 const AI_ASSISTANT_FONT_DEFAULT = 13;
@@ -400,6 +413,7 @@ interface AppState {
   editorHeadingScale: number;
   editorMaxTabs: number;
   aiAssistantFontSize: number;
+  vaultTtlMinutes: number;
   compactSidebar: boolean;
   compactEditor: boolean;
   uiZoom: number;
@@ -582,6 +596,8 @@ interface AppState {
   /** Clear all editor-shortcut overrides, restoring every default. */
   resetEditorKeybindings: () => void;
   setAiAssistantFontSize: (size: number) => void;
+  /** Set how long an unlocked encryption key lives (minutes; 0 = never). */
+  setVaultTtlMinutes: (minutes: number) => void;
   setCompactSidebar: (compact: boolean) => void;
   setCompactEditor: (compact: boolean) => void;
   setUiZoom: (zoom: number) => void;
@@ -1169,6 +1185,7 @@ function readSettings(): AppSettings {
     editorHeadingScale: HEADING_SCALE_DEFAULT,
     editorMaxTabs: EDITOR_MAX_TABS_DEFAULT,
     aiAssistantFontSize: AI_ASSISTANT_FONT_DEFAULT,
+    vaultTtlMinutes: VAULT_TTL_DEFAULT,
     compactSidebar: false,
     compactEditor: false,
     uiZoom: 1,
@@ -1255,6 +1272,11 @@ function readSettings(): AppSettings {
               Math.max(AI_ASSISTANT_FONT_MIN, parsed.aiAssistantFontSize),
             )
           : fallback.aiAssistantFontSize,
+      vaultTtlMinutes:
+        typeof parsed.vaultTtlMinutes === "number" &&
+        VAULT_TTL_OPTIONS.includes(parsed.vaultTtlMinutes)
+          ? parsed.vaultTtlMinutes
+          : fallback.vaultTtlMinutes,
       compactSidebar:
         typeof parsed.compactSidebar === "boolean"
           ? parsed.compactSidebar
@@ -1401,6 +1423,7 @@ function snapshotSettings(get: () => AppState): AppSettings {
     editorHeadingScale: s.editorHeadingScale,
     editorMaxTabs: s.editorMaxTabs,
     aiAssistantFontSize: s.aiAssistantFontSize,
+    vaultTtlMinutes: s.vaultTtlMinutes,
     compactSidebar: s.compactSidebar,
     compactEditor: s.compactEditor,
     uiZoom: s.uiZoom,
@@ -1496,6 +1519,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   editorHeadingScale: initialSettings.editorHeadingScale,
   editorMaxTabs: initialSettings.editorMaxTabs,
   aiAssistantFontSize: initialSettings.aiAssistantFontSize,
+  vaultTtlMinutes: initialSettings.vaultTtlMinutes,
   compactSidebar: initialSettings.compactSidebar,
   compactEditor: initialSettings.compactEditor,
   uiZoom: initialSettings.uiZoom,
@@ -1548,6 +1572,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     localStorage.setItem(WORKSPACE_KEY, path);
     await ensureSyncConfigsLoaded();
+    // Keys belong to one workspace; opening another drops them (crypto.rs
+    // clears its own state on the same check).
+    void useVaultStore.getState().refresh(path);
     set((s) => ({
       workspacePath: path,
       tree,
@@ -1599,6 +1626,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     localStorage.removeItem(WORKSPACE_KEY);
+    void useVaultStore.getState().lock();
     set((s) => ({
       workspacePath: null,
       tree: [],
@@ -1669,6 +1697,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const tree = await listDir(saved);
       await ensureSyncConfigsLoaded();
+      void useVaultStore.getState().refresh(saved);
       set({
         workspacePath: saved,
         tree,
@@ -2185,6 +2214,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   save: async () => {
+    // Encrypt any edits still sitting in an unlocked block's nested editor
+    // before reading `content`: the main buffer holds ciphertext, so an
+    // un-flushed block would be saved with its previous contents.
+    const flushed = await flushSecretEdits(get().activeFilePath ?? "", undefined, {
+      prompt: true,
+    });
+    if (flushed.blocked > 0)
+      get().showToast(
+        `有 ${flushed.blocked} 个加密块未能保存：需要先解锁`,
+        "error",
+      );
     const { activeFilePath, content, isDirty } = get();
     // First save of an untitled draft: let the user pick a directory + filename
     // via the native "save as" dialog, then swap the sentinel tab for the path.
@@ -2265,6 +2305,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   flushActiveTab: async () => {
+    // Edits inside an unlocked block live in useVaultStore, not in the
+    // document, so a note can have unsaved secret changes while `isDirty` is
+    // still false. Encrypt them first — otherwise switching tabs drops them.
+    const flushed = await flushSecretEdits(get().activeFilePath ?? "", undefined, {
+      prompt: true,
+    });
+    if (flushed.blocked > 0)
+      get().showToast(
+        `有 ${flushed.blocked} 个加密块未能保存：需要先解锁`,
+        "error",
+      );
     const { activeFilePath, content, isDirty } = get();
     if (isDraftPath(activeFilePath)) {
       // Stash the live text so it survives while the draft is backgrounded.
@@ -2744,6 +2795,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({ editorMaxTabs, openTabs: trimTabs(s.openTabs, editorMaxTabs, s.activeFilePath) }));
   },
 
+  setVaultTtlMinutes: (minutes) => {
+    const vaultTtlMinutes = VAULT_TTL_OPTIONS.includes(minutes)
+      ? minutes
+      : VAULT_TTL_DEFAULT;
+    set({ vaultTtlMinutes });
+    commitSettings(snapshotSettings(get));
+    // Rust holds the key and enforces the timer; this is only where the number
+    // is remembered across restarts.
+    void useVaultStore.getState().setTtlMinutes(vaultTtlMinutes);
+  },
+
   setAiAssistantFontSize: (size) => {
     const aiAssistantFontSize = Math.min(
       AI_ASSISTANT_FONT_MAX,
@@ -3153,6 +3215,9 @@ listen<AppSettings>(SETTINGS_EVENT, ({ payload }) => {
   applyAiAssistantSettings(payload);
   applySidebarSettings(payload);
   applyZoom(payload.uiZoom);
+  // The key lives in one Rust process shared by both windows, so a change made
+  // in settings has to reach it from whichever window emitted.
+  void vaultSetTtl(payload.vaultTtlMinutes).catch(() => {});
   useAppStore.setState((s) => ({
     theme: mode,
     themeId,
@@ -3167,6 +3232,7 @@ listen<AppSettings>(SETTINGS_EVENT, ({ payload }) => {
     editorHeadingScale: payload.editorHeadingScale,
     editorMaxTabs: payload.editorMaxTabs,
     aiAssistantFontSize: payload.aiAssistantFontSize,
+    vaultTtlMinutes: payload.vaultTtlMinutes,
     compactSidebar: payload.compactSidebar,
     compactEditor: payload.compactEditor,
     uiZoom: payload.uiZoom,
@@ -3177,6 +3243,10 @@ listen<AppSettings>(SETTINGS_EVENT, ({ payload }) => {
     editorKeybindings: payload.editorKeybindings ?? {},
   }));
 }).catch(() => {});
+
+// Rust starts every launch on its built-in default; hand it the remembered
+// setting as soon as the store loads, in both windows (idempotent).
+void vaultSetTtl(initialSettings.vaultTtlMinutes).catch(() => {});
 
 // Warm the sync-config cache (and run the one-time localStorage migration) as
 // soon as the store loads, in both the main and settings windows.

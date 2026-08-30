@@ -50,7 +50,10 @@ export const DEFAULT_CODE_RUN_FONT_SIZE = 13;
  * block's parameters (it is data, not code), and `output` is the block we write
  * results into — giving it a button would let results run results.
  */
-const HARD_EXCLUDED = new Set(["mermaid", "input", "output"]);
+// `secret` is excluded for a different reason than the others: a user-defined
+// runner for it would put a 运行 button on every encrypted block and pipe the
+// ciphertext into an interpreter.
+const HARD_EXCLUDED = new Set(["mermaid", "input", "output", "secret"]);
 
 /** Built-in runners. Platform-specific runners start disabled where unavailable. */
 export function builtinRunners(): CodeRunner[] {
