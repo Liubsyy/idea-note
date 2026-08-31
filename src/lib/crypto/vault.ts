@@ -16,7 +16,8 @@ export type VaultErrorCode =
   | "bad_format"
   | "wrong_secret"
   | "not_initialized"
-  | "already_initialized";
+  | "already_initialized"
+  | "rotation_pending";
 
 const CODES = new Set<string>([
   "locked",
@@ -26,6 +27,7 @@ const CODES = new Set<string>([
   "wrong_secret",
   "not_initialized",
   "already_initialized",
+  "rotation_pending",
 ]);
 
 /** The error code in a rejected command, or null when it failed for some other
@@ -53,6 +55,8 @@ export function vaultErrorMessage(error: unknown): string {
       return "当前工作区还没有设置加密口令。";
     case "already_initialized":
       return "当前工作区已经设置过加密口令。";
+    case "rotation_pending":
+      return "MK 重置尚未完成，请先继续完成迁移。";
     default:
       return typeof error === "string" ? error : String(error ?? "未知错误");
   }
@@ -77,6 +81,9 @@ export interface VaultStatus {
   /** Seconds left on that timer, so the UI can schedule one re-check instead
    *  of polling. Null while locked or when expiry is off. */
   expiresInSecs: number | null;
+  /** A crash-safe rotation has committed its dual-key transition but has not
+   *  yet moved/pruned every old-key secret. */
+  rotationPending: boolean;
 }
 
 export interface EncryptResult {
@@ -121,6 +128,26 @@ export const vaultChangePassword = (
  *  code. The returned replacement is intentionally available only once. */
 export const vaultRegenerateRecovery = (workspace: string, secret: string) =>
   invoke<{ recoveryCode: string }>("vault_regenerate_recovery", { workspace, secret });
+
+export interface VaultRotationResult {
+  recoveryCode: string;
+  filesChanged: number;
+  secretsChanged: number;
+  activeKeyId: string;
+}
+
+/** Replace the workspace MK and migrate every Markdown secret. `password`
+ *  must be the current password (a recovery code is intentionally rejected). */
+export const vaultRotateMasterKey = (
+  workspace: string,
+  password: string,
+  operation: string,
+) =>
+  invoke<VaultRotationResult>("vault_rotate_master_key", {
+    workspace,
+    password,
+    operation,
+  });
 
 export const secretEncrypt = (
   workspace: string,

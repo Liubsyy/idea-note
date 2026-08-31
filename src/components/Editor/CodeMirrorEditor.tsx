@@ -117,6 +117,7 @@ export function CodeMirrorEditor() {
   const editorKeybindings = useAppStore((s) => s.editorKeybindings);
   const mdViewMode = useAppStore((s) => s.mdViewMode);
   const codeRunConfig = useAppStore((s) => s.codeRunConfig);
+  const vaultRotationBusy = useAppStore((s) => s.vaultRotationBusy);
   // Compartment holding the view-mode extensions for markdown files, so switching
   // mode reconfigures them in place (no remount, cursor/scroll/edits kept).
   const previewCompartment = useRef(new Compartment());
@@ -169,6 +170,9 @@ export function CodeMirrorEditor() {
       // bindings for everything it doesn't manage.
       buildEditorKeymap(editorKeybindings, isMd),
       updateListener,
+      ...(vaultRotationBusy
+        ? [EditorState.readOnly.of(true), EditorView.editable.of(false)]
+        : []),
     ];
 
     // Markdown files get the full Typora-style live preview. Any other file
@@ -291,7 +295,13 @@ export function CodeMirrorEditor() {
       // is kept: discarding it here would silently lose what they typed.
       if (path) useVaultStore.getState().sealClean(path);
     };
-  }, [setContent, setActiveFormats, editorLineNumbers, editorKeybindings]);
+  }, [
+    setContent,
+    setActiveFormats,
+    editorLineNumbers,
+    editorKeybindings,
+    vaultRotationBusy,
+  ]);
 
   // Swap view-mode extensions when the user switches the editor mode tab,
   // reconfiguring in place so the cursor, scroll position and history survive.

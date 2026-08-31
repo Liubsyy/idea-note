@@ -15,6 +15,7 @@
     "test:input-schema": "node --test --experimental-strip-types tests/inputSchema.test.mjs",
     "test:secret-block": "node --test --experimental-strip-types tests/secretBlock.test.mjs",
     "test:vault-setup-stage": "node --test --experimental-strip-types tests/vaultSetupStage.test.mjs",
+    "test:vault-rotation": "node --test --experimental-strip-types tests/vaultRotation.test.mjs",
     "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
     "tauri": "tauri"
   },

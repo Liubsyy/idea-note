@@ -165,6 +165,7 @@ pub fn run() {
             crypto::vault_set_ttl,
             crypto::vault_change_password,
             crypto::vault_regenerate_recovery,
+            crypto::vault_rotate_master_key,
             crypto::secret_encrypt,
             crypto::secret_encrypt_batch,
             crypto::secret_decrypt

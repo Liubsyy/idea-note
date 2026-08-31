@@ -57,6 +57,32 @@ export const VAULT_EVENT = "vault-changed";
  *  flush, so it can only ask. */
 export const VAULT_LOCK_REQUEST = "vault-lock-request";
 
+/** Settings asks every main window to prove its matching workspace buffer is
+ * clean, then hold it read-only for one MK rotation operation. */
+export const VAULT_ROTATION_PREPARE = "vault-rotation:prepare";
+export const VAULT_ROTATION_ACK = "vault-rotation:ack";
+export const VAULT_ROTATION_END = "vault-rotation:end";
+
+export interface VaultRotationPrepare {
+  operation: string;
+  workspace: string;
+  targets: string[];
+}
+
+export interface VaultRotationAck {
+  operation: string;
+  window: string;
+  matches: boolean;
+  ready: boolean;
+  reason?: string;
+}
+
+export interface VaultRotationEnd {
+  operation: string;
+  workspace: string;
+  reload: boolean;
+}
+
 export const secretKey = (filePath: string, blockId: string) =>
   `${filePath} ${blockId}`;
 
@@ -270,3 +296,10 @@ export const vaultUnlocked = (): boolean => {
   const { status } = useVaultStore.getState();
   return status !== null && status.initialized && !status.locked;
 };
+
+/** Secret drafts do not mark the outer editor dirty, so workspace-wide
+ * maintenance must ask this store separately. */
+export const hasPendingSecretEdits = (): boolean =>
+  Object.values(useVaultStore.getState().entries).some(
+    (entry) => entry.draft !== entry.saved,
+  );

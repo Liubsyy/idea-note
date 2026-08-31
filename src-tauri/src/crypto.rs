@@ -4,10 +4,11 @@
 //
 //   password ──Argon2id(salt)──> KEK ──unwrap──> MK ──> each ```secret block
 //
-// The MK is random and generated once per workspace; the password only ever
+// The MK is random and normally stable for a workspace; the password only ever
 // wraps it. Changing the password rewraps the same MK, so it never rewrites a
-// single note — which is what keeps a password change from turning into a
-// repository-wide diff that every other device then has to merge.
+// single note. The explicit reset operation is the exception: it rotates the
+// MK and deliberately migrates every encrypted note under a crash-safe
+// dual-key transition.
 //
 // Slots work like LUKS key slots: several wrapped copies of the same MK, each
 // openable by a different secret (the password, the recovery code, later a
@@ -18,8 +19,9 @@
 // ciphertext (or the reverse); nothing here returns key material, and nothing
 // should ever be changed to.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -31,7 +33,7 @@ use chacha20poly1305::aead::{Aead, Payload};
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305, XNonce};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 use zeroize::{Zeroize, Zeroizing};
 
 /* ------------------------------ error codes ----------------------------- */
@@ -45,6 +47,7 @@ pub const ERR_BAD_FORMAT: &str = "bad_format";
 pub const ERR_WRONG_SECRET: &str = "wrong_secret";
 pub const ERR_NOT_INITIALIZED: &str = "not_initialized";
 pub const ERR_ALREADY_INITIALIZED: &str = "already_initialized";
+pub const ERR_ROTATION_PENDING: &str = "rotation_pending";
 
 /* -------------------------------- constants ----------------------------- */
 
@@ -109,6 +112,18 @@ struct VaultFile {
     version: u32,
     active_key_id: String,
     slots: Vec<Slot>,
+    /// Present only while a crash-safe master-key rotation is committing note
+    /// files. Old and target slots coexist until every note has moved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    rotation: Option<RotationState>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct RotationState {
+    target_key_id: String,
+    retired_key_ids: Vec<String>,
+    started_at: u64,
 }
 
 /* ------------------------------ session state --------------------------- */
@@ -341,17 +356,52 @@ fn read_vault(workspace: &str) -> Result<Option<VaultFile>, String> {
         .map_err(|e| format!("vault.json 解析失败（请从 git 历史恢复）：{e}"))
 }
 
+/// Replace one file through a sibling temporary file. Keeping the temporary on
+/// the same filesystem makes the final rename atomic, so a power loss cannot
+/// leave half a ciphertext or half a vault.json behind.
+fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("路径没有父目录：{}", path.display()))?;
+    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let old_permissions = fs::metadata(path).ok().map(|m| m.permissions());
+    let mut temp = tempfile::Builder::new()
+        .prefix(".ideanote-rotate-")
+        .tempfile_in(parent)
+        .map_err(|e| format!("创建临时文件失败（{}）：{e}", path.display()))?;
+    temp.write_all(bytes)
+        .and_then(|_| temp.flush())
+        .and_then(|_| temp.as_file().sync_all())
+        .map_err(|e| format!("写入临时文件失败（{}）：{e}", path.display()))?;
+    if let Some(permissions) = old_permissions {
+        temp.as_file()
+            .set_permissions(permissions)
+            .map_err(|e| format!("保留文件权限失败（{}）：{e}", path.display()))?;
+    }
+    temp.persist(path)
+        .map_err(|e| format!("替换文件失败（{}）：{}", path.display(), e.error))?;
+    Ok(())
+}
+
 fn write_vault(workspace: &str, vault: &VaultFile) -> Result<(), String> {
     let path = vault_path(workspace);
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
     let json = serde_json::to_string_pretty(vault).map_err(|e| e.to_string())?;
-    fs::write(&path, json).map_err(|e| e.to_string())
+    atomic_write(&path, json.as_bytes())
 }
 
 fn random_bytes(out: &mut [u8]) {
     rand::rngs::OsRng.fill_bytes(out);
+}
+
+fn random_ident(prefix: char) -> String {
+    let mut raw = [0u8; 8];
+    random_bytes(&mut raw);
+    let mut out = String::with_capacity(17);
+    out.push(prefix);
+    for byte in raw {
+        out.push_str(&format!("{byte:02x}"));
+    }
+    out
 }
 
 /// RFC 4648 base32, no padding. 15 random bytes land on exactly 24 characters.
@@ -573,6 +623,625 @@ fn open_key_from_slots(
     opened.ok_or_else(|| ERR_WRONG_SECRET.to_string())
 }
 
+/// A rotation deliberately requires the current *password*, not a recovery
+/// code. The same password must unwrap every key that is about to be retired,
+/// otherwise finishing the migration could strand an older block.
+fn open_password_keys(
+    slots: &[Slot],
+    password: &str,
+) -> Result<HashMap<String, Zeroizing<[u8; KEY_LEN]>>, String> {
+    let mut keys = HashMap::new();
+    for slot in slots.iter().filter(|slot| slot.kind == "password") {
+        if let Some(mk) = try_slot(slot, password)? {
+            keys.entry(slot.key_id.clone()).or_insert(mk);
+        }
+    }
+    if keys.is_empty() {
+        return Err(ERR_WRONG_SECRET.to_string());
+    }
+    Ok(keys)
+}
+
+/* ----------------------- whole-workspace key rotation ------------------ */
+
+#[derive(Clone, Copy, PartialEq)]
+enum SecretShape {
+    Block,
+    Inline,
+}
+
+struct SecretSpan {
+    shape: SecretShape,
+    v: u32,
+    key_id: String,
+    block_id: String,
+    key_from: usize,
+    key_to: usize,
+    body_from: usize,
+    body_to: usize,
+}
+
+struct ParsedSecretInfo {
+    v: u32,
+    key_id: String,
+    block_id: String,
+    key_from: usize,
+    key_to: usize,
+}
+
+struct TextLine<'a> {
+    start: usize,
+    content_end: usize,
+    text: &'a str,
+}
+
+fn text_lines(text: &str) -> Vec<TextLine<'_>> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    for part in text.split_inclusive('\n') {
+        let end = start + part.len();
+        let mut content_end = end;
+        if part.ends_with('\n') {
+            content_end = content_end.saturating_sub(1);
+            if content_end > start && text.as_bytes()[content_end - 1] == b'\r' {
+                content_end -= 1;
+            }
+        }
+        out.push(TextLine {
+            start,
+            content_end,
+            text: &text[start..content_end],
+        });
+        start = end;
+    }
+    if text.is_empty() || start < text.len() {
+        out.push(TextLine {
+            start,
+            content_end: text.len(),
+            text: &text[start..],
+        });
+    } else if text.ends_with('\n') {
+        out.push(TextLine {
+            start,
+            content_end: start,
+            text: "",
+        });
+    }
+    out
+}
+
+fn ascii_prefix(value: &str, prefix: &str) -> bool {
+    value
+        .get(..prefix.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(prefix))
+}
+
+fn secret_info_candidate(info: &str) -> bool {
+    let trimmed = info.trim_start();
+    if !ascii_prefix(trimmed, "secret") {
+        return false;
+    }
+    match trimmed["secret".len()..].chars().next() {
+        None => true,
+        Some(c) => c == '{' || c.is_whitespace(),
+    }
+}
+
+/// Inline code named simply `secret` is common in documentation and is not an
+/// encrypted span. Unlike a fence language tag, an inline secret declaration
+/// is only recognizable once its required attribute object begins.
+fn inline_secret_info_candidate(info: &str) -> bool {
+    let trimmed = info.trim_start();
+    if !ascii_prefix(trimmed, "secret") {
+        return false;
+    }
+    let rest = trimmed["secret".len()..].trim_start();
+    if !rest.starts_with('{') {
+        return false;
+    }
+    if let Some(close) = rest.find('}') {
+        let attributes = rest[1..close].trim();
+        // Documentation often uses `secret {...}` or `secret {…}` as a
+        // schematic placeholder. Neither can be emitted by the application,
+        // so they are examples rather than damaged encrypted content.
+        if matches!(attributes, "..." | "…") {
+            return false;
+        }
+    }
+    true
+}
+
+fn trim_bounds(value: &str, start: usize, end: usize) -> (usize, usize) {
+    let slice = &value[start..end];
+    let trimmed_start = slice.trim_start();
+    let left = end - trimmed_start.len();
+    let trimmed = trimmed_start.trim_end();
+    (left, left + trimmed.len())
+}
+
+fn parse_secret_info(info: &str) -> Result<ParsedSecretInfo, ()> {
+    if !secret_info_candidate(info) {
+        return Err(());
+    }
+    let open = info.find('{').ok_or(())?;
+    let close = info.rfind('}').ok_or(())?;
+    if close < open || !info[close + 1..].trim().is_empty() {
+        return Err(());
+    }
+
+    let mut version = None;
+    let mut key = None;
+    let mut block_id = None;
+    let mut entry_start = open + 1;
+    for raw in info[open + 1..close].split(',') {
+        let raw_end = entry_start + raw.len();
+        let (entry_from, entry_to) = trim_bounds(info, entry_start, raw_end);
+        entry_start = raw_end + 1;
+        if entry_from == entry_to {
+            continue;
+        }
+        let entry = &info[entry_from..entry_to];
+        let eq_rel = entry.find('=').ok_or(())?;
+        let eq = entry_from + eq_rel;
+        let (name_from, name_to) = trim_bounds(info, entry_from, eq);
+        let (value_from, value_to) = trim_bounds(info, eq + 1, entry_to);
+        let name = info[name_from..name_to].to_ascii_lowercase();
+        let value = &info[value_from..value_to];
+        match name.as_str() {
+            "v" => {
+                if version.is_some() || value.is_empty() || !value.bytes().all(|b| b.is_ascii_digit()) {
+                    return Err(());
+                }
+                let parsed = value.parse::<u32>().map_err(|_| ())?;
+                if parsed == 0 {
+                    return Err(());
+                }
+                version = Some(parsed);
+            }
+            "key" => {
+                if key.is_some() || !valid_ident(value) {
+                    return Err(());
+                }
+                key = Some((value.to_string(), value_from, value_to));
+            }
+            "id" => {
+                if block_id.is_some() || !valid_ident(value) {
+                    return Err(());
+                }
+                block_id = Some(value.to_string());
+            }
+            _ => {}
+        }
+    }
+    let (key_id, key_from, key_to) = key.ok_or(())?;
+    Ok(ParsedSecretInfo {
+        v: version.ok_or(())?,
+        key_id,
+        block_id: block_id.ok_or(())?,
+        key_from,
+        key_to,
+    })
+}
+
+/// Opening marker, its length, the info string and that string's byte offset
+/// in the line. Mirrors fenceAttrs.ts so examples inside longer fences stay
+/// examples during a rotation too.
+fn opening_fence(line: &str) -> Option<(u8, usize, &str, usize)> {
+    let trimmed = line.trim_start();
+    let lead = line.len() - trimmed.len();
+    let marker = *trimmed.as_bytes().first()?;
+    if marker != b'`' && marker != b'~' {
+        return None;
+    }
+    let length = trimmed.bytes().take_while(|b| *b == marker).count();
+    if length < 3 {
+        return None;
+    }
+    Some((marker, length, &trimmed[length..], lead + length))
+}
+
+fn closes_fence(line: &str, marker: u8, min_length: usize) -> bool {
+    let trimmed = line.trim();
+    trimmed.len() >= min_length && trimmed.bytes().all(|b| b == marker)
+}
+
+fn backtick_run_len(bytes: &[u8], start: usize) -> usize {
+    bytes[start..]
+        .iter()
+        .take_while(|byte| **byte == b'`')
+        .count()
+}
+
+fn matching_backtick_run(bytes: &[u8], from: usize, length: usize) -> Option<usize> {
+    let mut at = from;
+    while at < bytes.len() {
+        let tick = at + bytes[at..].iter().position(|byte| *byte == b'`')?;
+        let run = backtick_run_len(bytes, tick);
+        if run == length {
+            return Some(tick);
+        }
+        at = tick + run;
+    }
+    None
+}
+
+fn scan_inline_line(
+    line: &TextLine<'_>,
+    out: &mut Vec<SecretSpan>,
+) -> Result<(), &'static str> {
+    let bytes = line.text.as_bytes();
+    let mut at = 0;
+    while at < bytes.len() {
+        let Some(open_rel) = bytes[at..].iter().position(|b| *b == b'`') else {
+            break;
+        };
+        let open = at + open_rel;
+        let delimiter_len = backtick_run_len(bytes, open);
+        let Some(close) = matching_backtick_run(bytes, open + delimiter_len, delimiter_len) else {
+            if delimiter_len == 1
+                && inline_secret_info_candidate(&line.text[open + 1..])
+            {
+                return Err("行内加密内容未闭合");
+            }
+            at = open + delimiter_len;
+            continue;
+        };
+        if delimiter_len != 1 {
+            // A longer Markdown code span may intentionally contain literal
+            // single backticks, including documentation examples such as
+            // `` `secret {…} …` ``. Nothing inside it is a live secret.
+            at = close + delimiter_len;
+            continue;
+        }
+        let content = &line.text[open + 1..close];
+        if !inline_secret_info_candidate(content) {
+            at = close + 1;
+            continue;
+        }
+        let brace = content.rfind('}').ok_or("行内加密属性未闭合")?;
+        let info = &content[..=brace];
+        let parsed = parse_secret_info(info).map_err(|_| "行内加密属性无法识别")?;
+        let body_area = &content[brace + 1..];
+        let body = body_area.trim_start_matches([' ', '\t']);
+        if body.is_empty()
+            || body.len() != body.trim_end_matches([' ', '\t']).len()
+            || !body
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+        {
+            return Err("行内加密密文格式无法识别");
+        }
+        let content_abs = line.start + open + 1;
+        let body_from = content_abs + brace + 1 + (body_area.len() - body.len());
+        out.push(SecretSpan {
+            shape: SecretShape::Inline,
+            v: parsed.v,
+            key_id: parsed.key_id,
+            block_id: parsed.block_id,
+            key_from: content_abs + parsed.key_from,
+            key_to: content_abs + parsed.key_to,
+            body_from,
+            body_to: body_from + body.len(),
+        });
+        at = close + delimiter_len;
+    }
+    Ok(())
+}
+
+fn scan_secret_spans(text: &str) -> Result<Vec<SecretSpan>, &'static str> {
+    let lines = text_lines(text);
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < lines.len() {
+        let line = &lines[i];
+        let Some((marker, marker_len, info, info_offset)) = opening_fence(line.text) else {
+            scan_inline_line(line, &mut out)?;
+            i += 1;
+            continue;
+        };
+        let mut close = i + 1;
+        while close < lines.len() && !closes_fence(lines[close].text, marker, marker_len) {
+            close += 1;
+        }
+        if secret_info_candidate(info) {
+            if close >= lines.len() {
+                return Err("围栏加密内容未闭合");
+            }
+            let parsed = parse_secret_info(info).map_err(|_| "围栏加密属性无法识别")?;
+            let (body_from, body_to) = if close > i + 1 {
+                (lines[i + 1].start, lines[close - 1].content_end)
+            } else {
+                (line.content_end, line.content_end)
+            };
+            out.push(SecretSpan {
+                shape: SecretShape::Block,
+                v: parsed.v,
+                key_id: parsed.key_id,
+                block_id: parsed.block_id,
+                key_from: line.start + info_offset + parsed.key_from,
+                key_to: line.start + info_offset + parsed.key_to,
+                body_from,
+                body_to,
+            });
+        }
+        i = if close < lines.len() { close + 1 } else { lines.len() };
+    }
+    Ok(out)
+}
+
+fn wrap_ciphertext(body: &str, newline: &str) -> String {
+    body.as_bytes()
+        .chunks(96)
+        .map(|chunk| std::str::from_utf8(chunk).unwrap_or_default())
+        .collect::<Vec<_>>()
+        .join(newline)
+}
+
+fn rotation_error(path: &Path, detail: &str) -> String {
+    format!("MK 迁移预检失败（{}）：{detail}", path.display())
+}
+
+fn rotate_note_text(
+    path: &Path,
+    text: &str,
+    keys: &HashMap<String, Zeroizing<[u8; KEY_LEN]>>,
+    target_key_id: &str,
+    target_mk: &[u8; KEY_LEN],
+) -> Result<(String, usize), String> {
+    let spans = scan_secret_spans(text).map_err(|detail| {
+        rotation_error(path, &format!("加密内容格式无法识别：{detail}"))
+    })?;
+    let mut edits: Vec<(usize, usize, String)> = Vec::new();
+    let mut changed = 0;
+    for span in spans {
+        if span.v != FORMAT_VERSION {
+            return Err(rotation_error(path, "包含当前版本不支持的加密内容"));
+        }
+        let mk = keys
+            .get(&span.key_id)
+            .ok_or_else(|| rotation_error(path, &format!("找不到密钥 {}", span.key_id)))?;
+        let compact: String = text[span.body_from..span.body_to]
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        let sealed = URL_SAFE_NO_PAD
+            .decode(compact.as_bytes())
+            .map_err(|_| rotation_error(path, "密文编码损坏"))?;
+        let aad = block_aad(span.v, &span.key_id, &span.block_id);
+        let plaintext = Zeroizing::new(
+            open(mk, &sealed, aad.as_bytes())
+                .map_err(|_| rotation_error(path, "密文已损坏、被篡改或密钥不匹配"))?,
+        );
+        if span.key_id == target_key_id {
+            continue;
+        }
+        let target_aad = block_aad(FORMAT_VERSION, target_key_id, &span.block_id);
+        let replacement = URL_SAFE_NO_PAD.encode(seal(
+            target_mk,
+            plaintext.as_slice(),
+            target_aad.as_bytes(),
+        )?);
+        let newline = if span.shape == SecretShape::Block
+            && text[..span.body_from].ends_with("\r\n")
+        {
+            "\r\n"
+        } else {
+            "\n"
+        };
+        let body = if span.shape == SecretShape::Block {
+            wrap_ciphertext(&replacement, newline)
+        } else {
+            replacement
+        };
+        edits.push((span.key_from, span.key_to, target_key_id.to_string()));
+        edits.push((span.body_from, span.body_to, body));
+        changed += 1;
+    }
+    if edits.is_empty() {
+        return Ok((text.to_string(), 0));
+    }
+    edits.sort_by(|a, b| b.0.cmp(&a.0));
+    let mut out = text.to_string();
+    for (from, to, replacement) in edits {
+        out.replace_range(from..to, &replacement);
+    }
+    Ok((out, changed))
+}
+
+fn is_rotation_excluded(name: &str) -> bool {
+    matches!(name, ".git" | ".svn" | ".hg" | ".DS_Store")
+}
+
+fn collect_markdown_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    for entry in fs::read_dir(dir).map_err(|e| format!("读取目录失败（{}）：{e}", dir.display()))? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        if is_rotation_excluded(&name) {
+            continue;
+        }
+        let metadata = fs::symlink_metadata(entry.path()).map_err(|e| e.to_string())?;
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
+        if metadata.is_dir() {
+            collect_markdown_files(&entry.path(), out)?;
+        } else if metadata.is_file() {
+            let lower = name.to_lowercase();
+            if lower.ends_with(".md") || lower.ends_with(".markdown") {
+                out.push(entry.path());
+            }
+        }
+    }
+    Ok(())
+}
+
+struct StagedNote {
+    path: PathBuf,
+    original: Vec<u8>,
+    replacement: Vec<u8>,
+    secrets_changed: usize,
+}
+
+struct RotationBuilt {
+    result: RotationResult,
+    target_mk: Zeroizing<[u8; KEY_LEN]>,
+}
+
+fn rotate_master_key_on_disk(workspace: &str, password: &str) -> Result<RotationBuilt, String> {
+    rotate_master_key_on_disk_with_cost(workspace, password, ARGON_M_COST, ARGON_T_COST)
+}
+
+fn rotate_master_key_on_disk_with_cost(
+    workspace: &str,
+    password: &str,
+    m_cost: u32,
+    t_cost: u32,
+) -> Result<RotationBuilt, String> {
+    let mut file = read_vault(workspace)?.ok_or_else(|| ERR_NOT_INITIALIZED.to_string())?;
+    let mut keys = open_password_keys(&file.slots, password)?;
+    let (target_key_id, target_mk, mut transition) =
+        if let Some(rotation) = file.rotation.clone() {
+            let target_mk = keys
+                .get(&rotation.target_key_id)
+                .ok_or_else(|| ERR_WRONG_SECRET.to_string())?;
+            (
+                rotation.target_key_id.clone(),
+                Zeroizing::new(**target_mk),
+                file.clone(),
+            )
+        } else {
+            if !keys.contains_key(&file.active_key_id) {
+                return Err(ERR_WRONG_SECRET.to_string());
+            }
+            let retired_key_ids: Vec<String> = file
+                .slots
+                .iter()
+                .map(|slot| slot.key_id.clone())
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .collect();
+            let target_key_id = loop {
+                let candidate = random_ident('k');
+                if !retired_key_ids.contains(&candidate) {
+                    break candidate;
+                }
+            };
+            let mut target_mk = Zeroizing::new([0u8; KEY_LEN]);
+            loop {
+                random_bytes(target_mk.as_mut());
+                if keys.values().all(|old| old.as_ref() != target_mk.as_ref()) {
+                    break;
+                }
+            }
+            let password_slot = make_slot_with(
+                &random_ident('s'),
+                "password",
+                "主口令",
+                &target_key_id,
+                password,
+                &target_mk,
+                m_cost,
+                t_cost,
+            )?;
+            file.active_key_id = target_key_id.clone();
+            file.slots.push(password_slot);
+            file.rotation = Some(RotationState {
+                target_key_id: target_key_id.clone(),
+                retired_key_ids: retired_key_ids.clone(),
+                started_at: now_ms(),
+            });
+            (
+                target_key_id,
+                target_mk,
+                file.clone(),
+            )
+        };
+    keys.insert(target_key_id.clone(), Zeroizing::new(*target_mk));
+
+    let mut paths = Vec::new();
+    collect_markdown_files(Path::new(workspace), &mut paths)?;
+    paths.sort();
+    let mut staged = Vec::new();
+    for path in paths {
+        let original = fs::read(&path)
+            .map_err(|e| format!("读取文件失败（{}）：{e}", path.display()))?;
+        let (text, encoding) = crate::encoding::decode(original.clone())
+            .map_err(|e| rotation_error(&path, &e))?;
+        let (replacement_text, secrets_changed) = rotate_note_text(
+            &path,
+            &text,
+            &keys,
+            &target_key_id,
+            &target_mk,
+        )?;
+        if secrets_changed > 0 {
+            let (replacement, lossless) = crate::encoding::encode(&replacement_text, encoding);
+            if !lossless {
+                return Err(rotation_error(&path, "无法保持原文件编码"));
+            }
+            staged.push(StagedNote {
+                path,
+                original,
+                replacement,
+                secrets_changed,
+            });
+        }
+    }
+
+    // The transition is committed before the first note. From here on, any
+    // mixture of old and target ciphertext remains decryptable after a crash.
+    transition.active_key_id = target_key_id.clone();
+    write_vault(workspace, &transition)?;
+
+    for note in &staged {
+        let current = fs::read(&note.path)
+            .map_err(|e| format!("重新读取文件失败（{}）：{e}", note.path.display()))?;
+        if current != note.original {
+            return Err(format!(
+                "MK 迁移已暂停：文件在迁移期间发生变化（{}）",
+                note.path.display()
+            ));
+        }
+        atomic_write(&note.path, &note.replacement)?;
+    }
+
+    let password_slot = transition
+        .slots
+        .iter()
+        .find(|slot| slot.kind == "password" && slot.key_id == target_key_id)
+        .cloned()
+        .ok_or_else(|| ERR_BAD_FORMAT.to_string())?;
+    let (recovery_flat, recovery_code) = new_recovery_code();
+    let recovery_slot = make_slot_with(
+        &random_ident('s'),
+        "recovery",
+        "恢复码",
+        &target_key_id,
+        &recovery_flat,
+        &target_mk,
+        m_cost,
+        t_cost,
+    )?;
+    let final_file = VaultFile {
+        version: transition.version,
+        active_key_id: target_key_id.clone(),
+        slots: vec![password_slot, recovery_slot],
+        rotation: None,
+    };
+    write_vault(workspace, &final_file)?;
+
+    let secrets_changed = staged.iter().map(|note| note.secrets_changed).sum();
+    Ok(RotationBuilt {
+        result: RotationResult {
+            recovery_code,
+            files_changed: staged.len(),
+            secrets_changed,
+            active_key_id: target_key_id,
+        },
+        target_mk,
+    })
+}
+
 /* --------------------------------- payloads ----------------------------- */
 
 #[derive(Serialize)]
@@ -597,6 +1266,7 @@ pub struct VaultStatus {
     /// Seconds left on that timer, so the UI can schedule its own re-check
     /// instead of polling. None while locked or when expiry is off.
     pub expires_in_secs: Option<u64>,
+    pub rotation_pending: bool,
 }
 
 #[derive(Serialize)]
@@ -604,6 +1274,15 @@ pub struct VaultStatus {
 pub struct InitResult {
     /// Shown once. There is no second chance to read it out of anywhere.
     pub recovery_code: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RotationResult {
+    pub recovery_code: String,
+    pub files_changed: usize,
+    pub secrets_changed: usize,
+    pub active_key_id: String,
 }
 
 #[derive(Serialize)]
@@ -653,6 +1332,7 @@ pub fn vault_status(workspace: String, vault: State<'_, Vault>) -> Result<VaultS
             slots: Vec::new(),
             ttl_minutes: state.ttl_minutes,
             expires_in_secs: None,
+            rotation_pending: false,
         });
     };
     Ok(VaultStatus {
@@ -660,6 +1340,7 @@ pub fn vault_status(workspace: String, vault: State<'_, Vault>) -> Result<VaultS
         locked: !state.is_unlocked_for(Path::new(&workspace)),
         ttl_minutes: state.ttl_minutes,
         expires_in_secs: state.expires_in_secs(Path::new(&workspace)),
+        rotation_pending: file.rotation.is_some(),
         active_key_id: file.active_key_id.clone(),
         slots: file
             .slots
@@ -708,6 +1389,7 @@ pub async fn vault_init(
                     make_slot("s1", "password", "主口令", key_id, &password, &mk)?,
                     make_slot("s2", "recovery", "恢复码", key_id, &recovery_flat, &mk)?,
                 ],
+                rotation: None,
             };
             Ok((file, recovery_code, mk))
         },
@@ -756,7 +1438,7 @@ pub async fn vault_unlock(
     .await
     .map_err(|e| e.to_string())??;
 
-    if keys.is_empty() {
+    if !keys.contains_key(&active_key_id) {
         // Which slot came closest is deliberately not reported.
         return Err(ERR_WRONG_SECRET.to_string());
     }
@@ -798,6 +1480,9 @@ pub async fn vault_change_password(
     new_password: String,
 ) -> Result<(), String> {
     let mut file = read_vault(&workspace)?.ok_or_else(|| ERR_NOT_INITIALIZED.to_string())?;
+    if file.rotation.is_some() {
+        return Err(ERR_ROTATION_PENDING.to_string());
+    }
 
     // Rewrap the same MK. No note is touched, so a password change costs one
     // line of diff instead of the whole repository.
@@ -829,6 +1514,9 @@ pub async fn vault_regenerate_recovery(
     secret: String,
 ) -> Result<InitResult, String> {
     let mut file = read_vault(&workspace)?.ok_or_else(|| ERR_NOT_INITIALIZED.to_string())?;
+    if file.rotation.is_some() {
+        return Err(ERR_ROTATION_PENDING.to_string());
+    }
     let key_id = file.active_key_id.clone();
     let index = file
         .slots
@@ -859,6 +1547,63 @@ pub async fn vault_regenerate_recovery(
     file.slots[index] = replacement;
     write_vault(&workspace, &file)?;
     Ok(InitResult { recovery_code })
+}
+
+/// Generate a fresh workspace MK and re-encrypt every Markdown secret under
+/// it. The blocking worker owns all plaintext and key material; only the new
+/// one-time recovery code and migration counts cross IPC.
+#[tauri::command]
+pub async fn vault_rotate_master_key(
+    workspace: String,
+    password: String,
+    operation: String,
+    app: AppHandle,
+    vault: State<'_, Vault>,
+) -> Result<RotationResult, String> {
+    let outcome = async {
+        // The coordinating renderer has already made every editor read-only.
+        // Clear the old session too so a failed/partial rotation can never keep
+        // using an active key id that no longer matches vault.json.
+        {
+            let mut state = vault.lock().map_err(|_| "vault state poisoned")?;
+            state.clear_workspace(Path::new(&workspace));
+        }
+        vault.notify_expiry_changed();
+
+        let worker_workspace = workspace.clone();
+        let built = tauri::async_runtime::spawn_blocking(move || {
+            rotate_master_key_on_disk(&worker_workspace, &password)
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+
+        let RotationBuilt { result, target_mk } = built;
+        let mut keys = HashMap::new();
+        keys.insert(result.active_key_id.clone(), target_mk);
+        let mut state = vault.lock().map_err(|_| "vault state poisoned")?;
+        state.begin_session(
+            PathBuf::from(&workspace),
+            result.active_key_id.clone(),
+            keys,
+        );
+        state.finish_use(Path::new(&workspace));
+        vault.notify_expiry_changed();
+        Ok(result)
+    }
+    .await;
+
+    // The backend owns the fail-safe release. Even if the settings WebView is
+    // closed while Argon2 or the file migration is running, every editor gets
+    // reloaded and unfrozen when the command ends.
+    let _ = app.emit(
+        "vault-rotation:end",
+        serde_json::json!({
+            "operation": operation,
+            "workspace": workspace,
+            "reload": true,
+        }),
+    );
+    outcome
 }
 
 #[tauri::command]
@@ -1078,6 +1823,7 @@ mod tests {
                 make_slot_with("s2", "recovery", "恢复码", "k1", &recovery, &mk, TEST_M, TEST_T)
                     .unwrap(),
             ],
+            rotation: None,
         };
         write_vault(workspace, &written).unwrap();
 
@@ -1127,6 +1873,371 @@ mod tests {
         let sealed = seal(&mk, "银行卡 6222…".as_bytes(), aad.as_bytes()).unwrap();
         let opened = open(&by_recovery, &sealed, aad.as_bytes()).unwrap();
         assert_eq!(opened, "银行卡 6222…".as_bytes());
+    }
+
+    fn encoded_secret(mk: &[u8; KEY_LEN], key_id: &str, block_id: &str, text: &str) -> String {
+        let aad = block_aad(FORMAT_VERSION, key_id, block_id);
+        URL_SAFE_NO_PAD.encode(seal(mk, text.as_bytes(), aad.as_bytes()).unwrap())
+    }
+
+    #[test]
+    fn rotation_rewrites_block_and_inline_secrets_but_not_examples() {
+        let old = test_key();
+        let new = test_key();
+        let block_body = encoded_secret(&old, "k1", "baaa111", "围栏明文");
+        let inline_body = encoded_secret(&old, "k1", "baaa111", "行内明文");
+        let note = format!(
+            "标题\n```secret {{v=1, key=k1, id=baaa111, hint=银行卡}}\n{block_body}\n```\n行内 `secret {{v=1,key=k1,id=baaa111}} {inline_body}`。\n````markdown\n```secret {{v=1, key=k1, id=example}}\nAAAA\n```\n````"
+        );
+        let mut keys = HashMap::new();
+        keys.insert("k1".into(), Zeroizing::new(old));
+        let path = Path::new("note.md");
+        let (rotated, count) = rotate_note_text(path, &note, &keys, "k2", &new).unwrap();
+        assert_eq!(count, 2);
+        assert!(rotated.contains("key=k2, id=baaa111, hint=银行卡"));
+        assert!(rotated.contains("key=k2,id=baaa111"));
+        assert!(rotated.contains("key=k1, id=example"));
+
+        let spans = scan_secret_spans(&rotated).unwrap();
+        assert_eq!(spans.len(), 2);
+        for span in spans {
+            let compact: String = rotated[span.body_from..span.body_to]
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect();
+            let sealed = URL_SAFE_NO_PAD.decode(compact).unwrap();
+            let opened = open(
+                &new,
+                &sealed,
+                block_aad(1, "k2", "baaa111").as_bytes(),
+            )
+            .unwrap();
+            assert!(opened == "围栏明文".as_bytes() || opened == "行内明文".as_bytes());
+        }
+    }
+
+    #[test]
+    fn inline_secret_documentation_examples_are_ignored() {
+        let old = test_key();
+        let new = test_key();
+        let body = encoded_secret(&old, "k1", "baaa111", "真实内容");
+        let note = format!(
+            "| **原始 `` `secret {{…}} …` ``** |\n语言名 `secret`\n扫描说明 `secret {{...}}`\n真实 `secret {{v=1, key=k1, id=baaa111}} {body}`"
+        );
+        let mut keys = HashMap::new();
+        keys.insert("k1".into(), Zeroizing::new(old));
+
+        let (rotated, count) =
+            rotate_note_text(Path::new("documentation.md"), &note, &keys, "k2", &new).unwrap();
+        assert_eq!(count, 1);
+        assert!(rotated.contains("`` `secret {…} …` ``"));
+        assert!(rotated.contains("语言名 `secret`"));
+        assert!(rotated.contains("扫描说明 `secret {...}`"));
+        assert!(rotated.contains("key=k2"));
+    }
+
+    #[test]
+    fn malformed_secret_aborts_before_changing_text() {
+        let old = test_key();
+        let new = test_key();
+        let mut keys = HashMap::new();
+        keys.insert("k1".into(), Zeroizing::new(old));
+        let malformed = "before\n```secret {v=1, key=k1}\nAAAA\n```\nafter";
+        let error = rotate_note_text(Path::new("broken.md"), malformed, &keys, "k2", &new)
+            .unwrap_err();
+        assert!(error.contains("broken.md"));
+        assert!(error.contains("格式无法识别"));
+
+        let malformed_inline = "`secret {v=1, key=k1} AAAA`";
+        let error = rotate_note_text(
+            Path::new("broken-inline.md"),
+            malformed_inline,
+            &keys,
+            "k2",
+            &new,
+        )
+        .unwrap_err();
+        assert!(error.contains("行内加密属性无法识别"));
+    }
+
+    #[test]
+    fn unknown_and_tampered_secrets_fail_strict_preflight() {
+        let old = test_key();
+        let new = test_key();
+        let body = encoded_secret(&old, "k1", "baaa111", "secret");
+        let mut keys = HashMap::new();
+        keys.insert("k1".into(), Zeroizing::new(old));
+
+        let unknown = format!("`secret {{v=1, key=k9, id=baaa111}} {body}`");
+        let content = &unknown[1..unknown.len() - 1];
+        let brace = content.rfind('}').unwrap();
+        assert!(parse_secret_info(&content[..=brace]).is_ok());
+        assert!(content[brace + 1..]
+            .trim_start_matches([' ', '\t'])
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-'));
+        let scanned = scan_secret_spans(&unknown);
+        assert!(scanned.is_ok(), "{:?}", scanned.as_ref().err());
+        let error = rotate_note_text(Path::new("unknown.md"), &unknown, &keys, "k2", &new)
+            .unwrap_err();
+        assert!(error.contains("找不到密钥 k9"), "{error}");
+
+        let mut broken = URL_SAFE_NO_PAD.decode(body.as_bytes()).unwrap();
+        let last = broken.len() - 1;
+        broken[last] ^= 1;
+        let broken = URL_SAFE_NO_PAD.encode(broken);
+        let tampered = format!("`secret {{v=1, key=k1, id=baaa111}} {broken}`");
+        let error = rotate_note_text(Path::new("tampered.md"), &tampered, &keys, "k2", &new)
+            .unwrap_err();
+        assert!(error.contains("已损坏"));
+    }
+
+    #[test]
+    fn rotation_output_round_trips_gbk_and_utf16() {
+        let old = test_key();
+        let new = test_key();
+        let body = encoded_secret(&old, "k1", "baaa111", "编码内容");
+        let note = format!(
+            "{}\n```secret {{v=1, key=k1, id=baaa111}}\n{body}\n```\n",
+            "这是一段用来稳定检测编码的中文笔记。".repeat(8)
+        );
+        let mut keys = HashMap::new();
+        keys.insert("k1".into(), Zeroizing::new(old));
+
+        let (gbk_bytes, _, had_errors) = encoding_rs::GBK.encode(&note);
+        assert!(!had_errors);
+        let (gbk_text, gbk_encoding) = crate::encoding::decode(gbk_bytes.into_owned()).unwrap();
+        let (rotated, _) =
+            rotate_note_text(Path::new("gbk.md"), &gbk_text, &keys, "k2", &new).unwrap();
+        let (gbk_out, lossless) = crate::encoding::encode(&rotated, gbk_encoding);
+        assert!(lossless);
+        assert!(crate::encoding::decode(gbk_out).unwrap().0.contains("key=k2"));
+
+        let (utf16, _) =
+            crate::encoding::encode(&note, crate::encoding::FileEncoding::Utf16Le);
+        let (utf16_text, utf16_encoding) = crate::encoding::decode(utf16).unwrap();
+        let (rotated, _) =
+            rotate_note_text(Path::new("utf16.md"), &utf16_text, &keys, "k2", &new).unwrap();
+        let (utf16_out, lossless) = crate::encoding::encode(&rotated, utf16_encoding);
+        assert!(lossless);
+        assert!(utf16_out.starts_with(&[0xFF, 0xFE]));
+        assert!(crate::encoding::decode(utf16_out).unwrap().0.contains("key=k2"));
+    }
+
+    #[test]
+    fn full_rotation_keeps_password_replaces_recovery_and_preserves_encoding() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().to_str().unwrap();
+        let password = "correct horse";
+        let old_recovery = base32(&[4u8; 15]);
+        let old_mk = test_key();
+        let initial = VaultFile {
+            version: VAULT_VERSION,
+            active_key_id: "k1".into(),
+            slots: vec![
+                make_slot_with(
+                    "s1", "password", "主口令", "k1", password, &old_mk, TEST_M, TEST_T,
+                )
+                .unwrap(),
+                make_slot_with(
+                    "s2", "recovery", "恢复码", "k1", &old_recovery, &old_mk, TEST_M, TEST_T,
+                )
+                .unwrap(),
+            ],
+            rotation: None,
+        };
+        write_vault(workspace, &initial).unwrap();
+
+        let body = encoded_secret(&old_mk, "k1", "baaa111", "迁移后的内容");
+        let note = format!("\u{feff}标题\r\n~~~secret {{v=1, key=k1, id=baaa111, hint=保留}}\r\n{body}\r\n~~~\r\n");
+        let note_path = dir.path().join("note.markdown");
+        fs::write(&note_path, note.as_bytes()).unwrap();
+        let inline_path = dir.path().join("nested").join("inline.md");
+        fs::create_dir_all(inline_path.parent().unwrap()).unwrap();
+        fs::write(
+            &inline_path,
+            format!("重复 ID `secret {{v=1,key=k1,id=baaa111}} {body}`"),
+        )
+        .unwrap();
+        fs::create_dir(dir.path().join(".git")).unwrap();
+        fs::write(
+            dir.path().join(".git/ignored.md"),
+            "```secret {v=1, key=missing}\nbad\n```",
+        )
+        .unwrap();
+
+        let built =
+            rotate_master_key_on_disk_with_cost(workspace, password, TEST_M, TEST_T).unwrap();
+        assert_eq!(built.result.files_changed, 2);
+        assert_eq!(built.result.secrets_changed, 2);
+        assert_ne!(built.result.active_key_id, "k1");
+
+        let final_vault = read_vault(workspace).unwrap().unwrap();
+        assert!(final_vault.rotation.is_none());
+        assert_eq!(final_vault.slots.len(), 2);
+        assert!(final_vault
+            .slots
+            .iter()
+            .all(|slot| slot.key_id == built.result.active_key_id));
+        assert!(open_key_from_slots(
+            &final_vault.slots,
+            password,
+            &built.result.active_key_id
+        )
+        .is_ok());
+        assert_eq!(
+            open_key_from_slots(
+                &final_vault.slots,
+                &old_recovery,
+                &built.result.active_key_id
+            )
+            .unwrap_err(),
+            ERR_WRONG_SECRET
+        );
+        assert!(open_key_from_slots(
+            &final_vault.slots,
+            &built.result.recovery_code,
+            &built.result.active_key_id
+        )
+        .is_ok());
+
+        let bytes = fs::read(note_path).unwrap();
+        assert!(bytes.starts_with(&[0xEF, 0xBB, 0xBF]));
+        let (rotated, encoding) = crate::encoding::decode(bytes).unwrap();
+        assert_eq!(encoding, crate::encoding::FileEncoding::Utf8Bom);
+        assert!(rotated.contains("hint=保留"));
+        assert!(rotated.contains("\r\n"));
+        let span = scan_secret_spans(&rotated).unwrap().remove(0);
+        assert_eq!(span.key_id, built.result.active_key_id);
+        let compact: String = rotated[span.body_from..span.body_to]
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        let sealed = URL_SAFE_NO_PAD.decode(compact).unwrap();
+        let plaintext = open(
+            &built.target_mk,
+            &sealed,
+            block_aad(1, &span.key_id, &span.block_id).as_bytes(),
+        )
+        .unwrap();
+        assert_eq!(plaintext, "迁移后的内容".as_bytes());
+
+        let inline = fs::read_to_string(inline_path).unwrap();
+        let inline_span = scan_secret_spans(&inline).unwrap().remove(0);
+        assert_eq!(inline_span.key_id, built.result.active_key_id);
+        assert_eq!(inline_span.block_id, span.block_id);
+    }
+
+    #[test]
+    fn rotation_preflight_failure_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().to_str().unwrap();
+        let password = "correct horse";
+        let old_mk = test_key();
+        let initial = VaultFile {
+            version: VAULT_VERSION,
+            active_key_id: "k1".into(),
+            slots: vec![make_slot_with(
+                "s1", "password", "主口令", "k1", password, &old_mk, TEST_M, TEST_T,
+            )
+            .unwrap()],
+            rotation: None,
+        };
+        write_vault(workspace, &initial).unwrap();
+        let note_path = dir.path().join("broken.md");
+        fs::write(&note_path, "```secret {v=1, key=k1}\nAAAA\n```\n").unwrap();
+        let vault_before = fs::read(vault_path(workspace)).unwrap();
+        let note_before = fs::read(&note_path).unwrap();
+
+        let error = rotate_master_key_on_disk_with_cost(workspace, password, TEST_M, TEST_T)
+            .err()
+            .unwrap();
+        assert!(error.contains("格式无法识别"));
+        assert_eq!(fs::read(vault_path(workspace)).unwrap(), vault_before);
+        assert_eq!(fs::read(note_path).unwrap(), note_before);
+    }
+
+    #[test]
+    fn wrong_rotation_password_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().to_str().unwrap();
+        let password = "correct horse";
+        let old_mk = test_key();
+        let initial = VaultFile {
+            version: VAULT_VERSION,
+            active_key_id: "k1".into(),
+            slots: vec![make_slot_with(
+                "s1", "password", "主口令", "k1", password, &old_mk, TEST_M, TEST_T,
+            )
+            .unwrap()],
+            rotation: None,
+        };
+        write_vault(workspace, &initial).unwrap();
+        let body = encoded_secret(&old_mk, "k1", "baaa111", "保持不变");
+        let note_path = dir.path().join("note.md");
+        fs::write(
+            &note_path,
+            format!("`secret {{v=1, key=k1, id=baaa111}} {body}`"),
+        )
+        .unwrap();
+        let vault_before = fs::read(vault_path(workspace)).unwrap();
+        let note_before = fs::read(&note_path).unwrap();
+
+        let error = rotate_master_key_on_disk_with_cost(
+            workspace,
+            "definitely wrong",
+            TEST_M,
+            TEST_T,
+        )
+        .err()
+        .unwrap();
+        assert_eq!(error, ERR_WRONG_SECRET);
+        assert_eq!(fs::read(vault_path(workspace)).unwrap(), vault_before);
+        assert_eq!(fs::read(note_path).unwrap(), note_before);
+    }
+
+    #[test]
+    fn pending_rotation_resumes_and_prunes_the_old_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().to_str().unwrap();
+        let password = "correct horse";
+        let old_mk = test_key();
+        let target_mk = test_key();
+        let transition = VaultFile {
+            version: VAULT_VERSION,
+            active_key_id: "k2".into(),
+            slots: vec![
+                make_slot_with(
+                    "s1", "password", "主口令", "k1", password, &old_mk, TEST_M, TEST_T,
+                )
+                .unwrap(),
+                make_slot_with(
+                    "s3", "password", "主口令", "k2", password, &target_mk, TEST_M, TEST_T,
+                )
+                .unwrap(),
+            ],
+            rotation: Some(RotationState {
+                target_key_id: "k2".into(),
+                retired_key_ids: vec!["k1".into()],
+                started_at: now_ms(),
+            }),
+        };
+        write_vault(workspace, &transition).unwrap();
+        let body = encoded_secret(&old_mk, "k1", "baaa111", "等待续跑");
+        fs::write(
+            dir.path().join("resume.md"),
+            format!("`secret {{v=1, key=k1, id=baaa111}} {body}`\n"),
+        )
+        .unwrap();
+
+        let built =
+            rotate_master_key_on_disk_with_cost(workspace, password, TEST_M, TEST_T).unwrap();
+        assert_eq!(built.result.active_key_id, "k2");
+        assert_eq!(built.result.secrets_changed, 1);
+        assert_eq!(built.target_mk.as_ref(), &target_mk);
+        let final_vault = read_vault(workspace).unwrap().unwrap();
+        assert!(final_vault.rotation.is_none());
+        assert!(final_vault.slots.iter().all(|slot| slot.key_id == "k2"));
     }
 
     #[test]

@@ -39,10 +39,20 @@ import {
 } from "../lib/search";
 import { loadModels, saveModels } from "../lib/ai/config";
 import { flushSecretEdits } from "../lib/crypto/secretEdits";
+import { vaultRotationBlockReason } from "../lib/crypto/rotation";
+import { getActiveView } from "../lib/codemirror/activeView";
 import { useRunStore } from "./useRunStore";
 import { useInputStore } from "./useInputStore";
 import { vaultSetTtl } from "../lib/crypto/vault";
-import { useVaultStore } from "./useVaultStore";
+import {
+  hasPendingSecretEdits,
+  useVaultStore,
+  VAULT_ROTATION_ACK,
+  VAULT_ROTATION_END,
+  VAULT_ROTATION_PREPARE,
+  type VaultRotationEnd,
+  type VaultRotationPrepare,
+} from "./useVaultStore";
 import {
   defaultCodeRunConfig,
   loadCodeRunConfig,
@@ -399,6 +409,10 @@ interface AppState {
    *  reading the file; null while loading or for draft/non-text files. */
   diskStat: { mtime: number; size: number } | null;
   saving: boolean;
+  /** A workspace-wide MK migration temporarily makes every matching editor
+   *  read-only so clean buffers cannot diverge from the files being replaced. */
+  vaultRotationBusy: boolean;
+  vaultRotationOperation: string | null;
   theme: Theme;
   appearanceMode: Theme;
   /** Selected theme id (built-in or custom). */
@@ -598,6 +612,7 @@ interface AppState {
   setAiAssistantFontSize: (size: number) => void;
   /** Set how long an unlocked encryption key lives (minutes; 0 = never). */
   setVaultTtlMinutes: (minutes: number) => Promise<void>;
+  setVaultRotationState: (busy: boolean, operation?: string | null) => void;
   setCompactSidebar: (compact: boolean) => void;
   setCompactEditor: (compact: boolean) => void;
   setUiZoom: (zoom: number) => void;
@@ -1507,6 +1522,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   isDirty: false,
   diskStat: null,
   saving: false,
+  vaultRotationBusy: false,
+  vaultRotationOperation: null,
   theme: initialTheme,
   appearanceMode: initialSettings.appearanceMode,
   themeId: initialSettings.themeId,
@@ -2809,6 +2826,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     await useVaultStore.getState().setTtlMinutes(vaultTtlMinutes);
   },
 
+  setVaultRotationState: (busy, operation = null) =>
+    set({ vaultRotationBusy: busy, vaultRotationOperation: busy ? operation : null }),
+
   setAiAssistantFontSize: (size) => {
     const aiAssistantFontSize = Math.min(
       AI_ASSISTANT_FONT_MAX,
@@ -2950,8 +2970,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   syncNow: async () => {
-    const { workspacePath, syncState } = get();
+    const { workspacePath, syncState, vaultRotationBusy } = get();
     if (!workspacePath || syncState === "syncing") return;
+    if (vaultRotationBusy) {
+      get().showToast("MK 正在迁移，完成后再同步。", "error");
+      return;
+    }
 
     const broadcast = () => {
       const { syncState, lastSyncMessage, lastSyncAt } = get();
@@ -3315,6 +3339,78 @@ if (!isSettingsWindow) {
           ...readAttachmentConfig(payload.workspace),
         });
     });
+  }).catch(() => {});
+
+  listen<VaultRotationPrepare>(VAULT_ROTATION_PREPARE, ({ payload }) => {
+    if (!payload.targets.includes(myLabel)) return;
+    const app = useAppStore.getState();
+    const matches = app.workspacePath === payload.workspace;
+    const reason = matches
+      ? vaultRotationBlockReason({
+          isDirty: app.isDirty,
+          saving: app.saving,
+          pendingSecretEdits: hasPendingSecretEdits(),
+        })
+      : null;
+    if (matches && !reason) {
+      app.setVaultRotationState(true, payload.operation);
+      // Close the keystroke-sized gap before React remounts the editor with its
+      // read-only extension. The END path always bumps docKey, so this direct
+      // DOM guard never survives the operation.
+      const view = getActiveView();
+      view?.contentDOM.blur();
+      view?.contentDOM.setAttribute("contenteditable", "false");
+    }
+    emit(VAULT_ROTATION_ACK, {
+      operation: payload.operation,
+      window: myLabel,
+      matches,
+      ready: reason === null,
+      ...(reason ? { reason } : {}),
+    }).catch(() => {});
+  }).catch(() => {});
+
+  listen<VaultRotationEnd>(VAULT_ROTATION_END, ({ payload }) => {
+    const app = useAppStore.getState();
+    if (
+      app.vaultRotationOperation !== payload.operation ||
+      app.workspacePath !== payload.workspace
+    )
+      return;
+    void (async () => {
+      try {
+        const active = useAppStore.getState().activeFilePath;
+        if (payload.reload && active && !isDraftPath(active) && !isImageFile(active)) {
+          try {
+            const content = await readFile(active);
+            if (useAppStore.getState().activeFilePath === active) {
+              useAppStore.setState((s) => ({
+                content,
+                savedContentHash: hashContent(content),
+                isDirty: false,
+                diskStat: null,
+                docKey: s.docKey + 1,
+              }));
+              void captureDiskStat(active);
+            }
+          } catch {
+            // A preflight failure normally changed no file. Keep the clean
+            // in-memory buffer if its disk file cannot be re-read.
+          }
+        }
+        useVaultStore.getState().sealClean();
+        await Promise.all([
+          useAppStore.getState().refreshTree(),
+          useVaultStore.getState().refresh(payload.workspace),
+        ]);
+      } finally {
+        useAppStore.setState((s) => ({
+          vaultRotationBusy: false,
+          vaultRotationOperation: null,
+          docKey: s.docKey + 1,
+        }));
+      }
+    })();
   }).catch(() => {});
 }
 

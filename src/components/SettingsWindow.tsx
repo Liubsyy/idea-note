@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getAllWebviewWindows } from "@tauri-apps/api/webviewWindow";
 import { emit, listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
@@ -32,11 +33,20 @@ import {
   vaultErrorMessage,
   vaultInit,
   vaultRegenerateRecovery,
+  vaultRotateMasterKey,
   vaultStatus,
+  type VaultRotationResult,
   type VaultStatus,
 } from "../lib/crypto/vault";
 import { vaultSetupStage } from "../lib/crypto/setupStage";
-import { VAULT_EVENT, VAULT_LOCK_REQUEST } from "../store/useVaultStore";
+import {
+  VAULT_EVENT,
+  VAULT_LOCK_REQUEST,
+  VAULT_ROTATION_ACK,
+  VAULT_ROTATION_END,
+  VAULT_ROTATION_PREPARE,
+  type VaultRotationAck,
+} from "../store/useVaultStore";
 import {
   VAULT_TTL_OPTIONS,
   useAppStore,
@@ -533,6 +543,54 @@ function readSyncContext(): { ws: string | null; src: string } {
   const params = new URLSearchParams(window.location.search);
   return { ws: params.get("ws"), src: params.get("src") ?? "main" };
 }
+
+/** Ask every main window to either freeze a clean matching workspace or report
+ * why it cannot. The settings window calls the backend only after every live
+ * window has acknowledged, so another clean buffer cannot later overwrite the
+ * migrated ciphertext. */
+async function prepareVaultRotation(workspace: string, operation: string) {
+  const targets = (await getAllWebviewWindows())
+    .map((window) => window.label)
+    .filter((label) => label !== "settings");
+  if (targets.length === 0) throw "找不到主窗口，请重新打开工作区后再试。";
+
+  const expected = new Set(targets);
+  const acknowledgements = new Map<string, VaultRotationAck>();
+  let unlisten: (() => void) | undefined;
+  let timer: number | undefined;
+  const all = new Promise<VaultRotationAck[]>((resolve, reject) => {
+    void listen<VaultRotationAck>(VAULT_ROTATION_ACK, ({ payload }) => {
+      if (payload.operation !== operation || !expected.has(payload.window)) return;
+      acknowledgements.set(payload.window, payload);
+      if (acknowledgements.size === expected.size) {
+        window.clearTimeout(timer);
+        unlisten?.();
+        resolve([...acknowledgements.values()]);
+      }
+    }).then((stop) => {
+      unlisten = stop;
+      timer = window.setTimeout(() => {
+        stop();
+        reject("有主窗口未响应，请关闭多余窗口后重试。");
+      }, 5000);
+      void emit(VAULT_ROTATION_PREPARE, { operation, workspace, targets });
+    });
+  });
+
+  try {
+    const replies = await all;
+    const matching = replies.filter((reply) => reply.matches);
+    if (matching.length === 0) throw "没有打开该工作区的主窗口。";
+    const blocked = matching.find((reply) => !reply.ready);
+    if (blocked) throw `无法重置 MK：${blocked.reason ?? "存在未保存内容"}。请先保存后重试。`;
+  } catch (error) {
+    await emit(VAULT_ROTATION_END, { operation, workspace, reload: false });
+    throw error;
+  }
+}
+
+const finishVaultRotation = (workspace: string, operation: string, reload: boolean) =>
+  emit(VAULT_ROTATION_END, { operation, workspace, reload });
 
 const SYNC_STATE_LABEL: Record<SyncState, string> = {
   idle: "尚未同步",
@@ -2220,11 +2278,13 @@ function TextButton({
   children,
   onClick,
   primary,
+  danger,
   disabled,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   primary?: boolean;
+  danger?: boolean;
   disabled?: boolean;
 }) {
   return (
@@ -2233,9 +2293,13 @@ function TextButton({
       disabled={disabled}
       className="rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors disabled:opacity-40"
       style={{
-        background: primary ? "var(--accent)" : "transparent",
-        color: primary ? "#fff" : "var(--text-soft)",
-        border: primary ? "none" : "1px solid var(--border)",
+        background: primary
+          ? "var(--accent)"
+          : danger
+            ? "var(--danger, #ef4444)"
+            : "transparent",
+        color: primary || danger ? "#fff" : "var(--text-soft)",
+        border: primary || danger ? "none" : "1px solid var(--border)",
       }}
     >
       {children}
@@ -2281,8 +2345,11 @@ function SecurityTab() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [oldPassword, setOldPassword] = useState("");
   const [recoverySecret, setRecoverySecret] = useState("");
+  const [rotationPassword, setRotationPassword] = useState("");
   const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
   const [replacingRecovery, setReplacingRecovery] = useState(false);
+  const [rotationSummary, setRotationSummary] = useState<VaultRotationResult | null>(null);
+  const [confirmRotation, setConfirmRotation] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
 
   // A one-time recovery code belongs to exactly one workspace. Never leave it
@@ -2293,7 +2360,10 @@ function SecurityTab() {
     setNewPassword("");
     setConfirmPassword("");
     setRecoverySecret("");
+    setRotationPassword("");
     setReplacingRecovery(false);
+    setRotationSummary(null);
+    setConfirmRotation(false);
   }, [ws]);
 
   const reload = useCallback(async () => {
@@ -2361,13 +2431,46 @@ function SecurityTab() {
     }
   };
 
+  const rotateMasterKey = async () => {
+    if (busy || !rotationPassword) return;
+    const operation = uid();
+    let prepared = false;
+    let invoked = false;
+    setBusy(true);
+    setError(null);
+    setDone(null);
+    try {
+      await prepareVaultRotation(ws, operation);
+      prepared = true;
+      invoked = true;
+      const result = await vaultRotateMasterKey(ws, rotationPassword, operation);
+      setRotationPassword("");
+      setConfirmRotation(false);
+      setRotationSummary(result);
+      setReplacingRecovery(true);
+      setRecoveryCode(result.recoveryCode);
+      setAcknowledged(false);
+      await reload();
+      emit(VAULT_EVENT, { workspace: ws }).catch(() => {});
+    } catch (e) {
+      setError(vaultErrorMessage(e));
+      await reload();
+    } finally {
+      if (prepared)
+        await finishVaultRotation(ws, operation, invoked).catch(() => {});
+      setBusy(false);
+    }
+  };
+
   /* The one-time code takes precedence over initialized status. */
   if (setupStage === "recovery") {
     return (
       <div className="space-y-4">
         <Notice>
           {replacingRecovery
-            ? "新恢复码已生效，旧恢复码已失效。这串新码只显示一次，请立即保存。"
+            ? rotationSummary
+              ? `MK 已重置，${rotationSummary.filesChanged} 个文件中的 ${rotationSummary.secretsChanged} 处加密内容已迁移。旧恢复码已失效，这串新码只显示一次。`
+              : "新恢复码已生效，旧恢复码已失效。这串新码只显示一次，请立即保存。"
             : "这串恢复码只显示这一次。抄到密码管理器或纸上——忘记口令时，它是唯一的入口。"}
         </Notice>
         <div
@@ -2404,10 +2507,13 @@ function SecurityTab() {
               setAcknowledged(false);
               setDone(
                 replacingRecovery
-                  ? "新恢复码已保存，旧恢复码已失效。"
+                  ? rotationSummary
+                    ? "MK 重置已完成，新恢复码已保存。"
+                    : "新恢复码已保存，旧恢复码已失效。"
                   : "加密口令已设置。现在可以在笔记里加密选中的内容了。",
               );
               setReplacingRecovery(false);
+              setRotationSummary(null);
             }}
           >
             我已保存
@@ -2471,6 +2577,11 @@ function SecurityTab() {
   /* --- already set up --- */
   return (
     <div className="space-y-4">
+      {status.rotationPending && (
+        <Notice tone="danger">
+          上次 MK 重置在写入过程中中断。当前新旧 MK 会共同保留，已有内容仍可解密；请输入当前主口令继续完成迁移。
+        </Notice>
+      )}
       <Card>
         <Row
           title={status.locked ? "已上锁" : "已解锁"}
@@ -2557,12 +2668,13 @@ function SecurityTab() {
           <div className="flex justify-end">
             <TextButton
               primary
-              disabled={busy || !recoverySecret}
+              disabled={busy || !recoverySecret || status.rotationPending}
               onClick={() =>
                 void run(async () => {
                   const { recoveryCode: code } = await vaultRegenerateRecovery(ws, recoverySecret);
                   setRecoverySecret("");
                   setReplacingRecovery(true);
+                  setRotationSummary(null);
                   setRecoveryCode(code);
                 })
               }
@@ -2590,7 +2702,7 @@ function SecurityTab() {
           <div className="flex justify-end">
             <TextButton
               primary
-              disabled={busy || !oldPassword || !newPassword}
+              disabled={busy || !oldPassword || !newPassword || status.rotationPending}
               onClick={() =>
                 void run(async () => {
                   if (newPassword !== confirmPassword) throw "两次输入的新口令不一致。";
@@ -2605,6 +2717,50 @@ function SecurityTab() {
               {busy ? "正在重设密钥…" : "修改口令"}
             </TextButton>
           </div>
+        </div>
+      </Card>
+
+      <Card>
+        <div className="space-y-3 px-4 py-4">
+          <div>
+            <div className="text-[13px] font-medium" style={{ color: "var(--danger, #ef4444)" }}>
+              {status.rotationPending ? "继续完成 MK 重置" : "重置 MK"}
+            </div>
+            <div className="mt-1 text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+              生成全新的主密钥，并重新加密工作区内所有 Markdown 加密内容。主口令保持不变，但所有相关笔记和 vault.json 都会产生 Git 改动，旧恢复码将在完成后失效。
+            </div>
+          </div>
+          <Field label="当前主口令（不能使用恢复码）">
+            <Input
+              password
+              value={rotationPassword}
+              onChange={setRotationPassword}
+              placeholder="用于验证并包裹新 MK"
+            />
+          </Field>
+          {confirmRotation ? (
+            <Notice tone="danger">
+              请确认所有编辑窗口都已保存。迁移开始后，打开该工作区的编辑器会暂时变为只读；遇到任何损坏或未知密钥内容将严格中止。
+              <div className="mt-3 flex justify-end gap-2">
+                <TextButton disabled={busy} onClick={() => setConfirmRotation(false)}>
+                  取消
+                </TextButton>
+                <TextButton danger disabled={busy || !rotationPassword} onClick={() => void rotateMasterKey()}>
+                  {busy ? "正在重置 MK…" : status.rotationPending ? "继续迁移" : "确认重置"}
+                </TextButton>
+              </div>
+            </Notice>
+          ) : (
+            <div className="flex justify-end">
+              <TextButton
+                danger
+                disabled={busy || !rotationPassword}
+                onClick={() => setConfirmRotation(true)}
+              >
+                {status.rotationPending ? "继续完成" : "重置 MK"}
+              </TextButton>
+            </div>
+          )}
         </div>
       </Card>
 
