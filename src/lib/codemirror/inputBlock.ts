@@ -220,8 +220,87 @@ function buildControl(
   }
 
   if (isMoment(field.type)) {
+    if (field.type === "datetime") {
+      const date = document.createElement("input");
+      date.type = "date";
+      date.setAttribute("aria-label", `${field.label}：日期`);
+
+      const timePart = (label: string, count: number) => {
+        const select = document.createElement("select");
+        select.setAttribute("aria-label", `${field.label}：${label}`);
+        const empty = document.createElement("option");
+        empty.value = "";
+        empty.textContent = "--";
+        select.append(empty);
+        for (let i = 0; i < count; i += 1) {
+          const value = String(i).padStart(2, "0");
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = value;
+          select.append(option);
+        }
+        return select;
+      };
+      const hour = timePart("小时", 24);
+      const minute = timePart("分钟", 60);
+      const second = timePart("秒", 60);
+
+      const applyBounds = () => {
+        const min = typeof field.min === "string" ? field.min.split("T") : [];
+        const max = typeof field.max === "string" ? field.max.split("T") : [];
+        date.min = min[0] ?? "";
+        date.max = max[0] ?? "";
+      };
+      const setParts = (next: InputValue) => {
+        const [nextDate = "", nextTime = ""] = String(next).split("T");
+        const [nextHour = "", nextMinute = "", nextSecond = ""] =
+          nextTime.split(":");
+        date.value = nextDate;
+        hour.value = nextHour;
+        minute.value = nextMinute;
+        second.value = nextSecond || (nextTime ? "00" : "");
+        applyBounds();
+      };
+      const commit = () => {
+        applyBounds();
+        const complete = date.value && hour.value && minute.value && second.value;
+        const time = complete
+          ? `${hour.value}:${minute.value}:${second.value}`
+          : "";
+        const next = complete ? `${date.value}T${time}` : "";
+        onChange(coerce(field, next));
+      };
+
+      setParts(value);
+      date.addEventListener("input", commit);
+      hour.addEventListener("change", commit);
+      minute.addEventListener("change", commit);
+      second.addEventListener("change", commit);
+
+      const timeGroup = el("div", "cm-md-time-parts");
+      const separator = () => {
+        const colon = el("span", "cm-md-time-separator");
+        colon.textContent = ":";
+        return colon;
+      };
+      timeGroup.append(hour, separator(), minute, separator(), second);
+
+      const group = el("div", "cm-md-datetime");
+      group.append(date, timeGroup);
+      row.append(group);
+      return {
+        node: row,
+        handle: {
+          sync: (v) => {
+            const controls = [date, hour, minute, second];
+            if (controls.every(idle)) setParts(v);
+          },
+        },
+      };
+    }
+
     const picker = document.createElement("input");
-    picker.type = field.type === "datetime" ? "datetime-local" : field.type;
+    picker.type = field.type;
     picker.value = String(value);
     if (field.min !== null) picker.min = String(field.min);
     if (field.max !== null) picker.max = String(field.max);

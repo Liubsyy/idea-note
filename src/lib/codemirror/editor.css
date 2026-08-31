@@ -1186,11 +1186,34 @@
   flex: 1;
   min-width: 6em;
 }
+.cm-md-datetime {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5em;
+  min-width: 0;
+}
+.cm-md-datetime input[type="date"] {
+  width: 10.5em;
+}
+.cm-md-time-parts {
+  display: flex;
+  align-items: center;
+  gap: 0.15em;
+}
+.cm-md-time-parts select {
+  width: 4.25em;
+  padding-left: 0.35em;
+  padding-right: 0.2em;
+  font-variant-numeric: tabular-nums;
+}
+.cm-md-time-separator {
+  color: var(--text-muted);
+}
 .cm-md-input-control input[type="number"],
 .cm-md-input-control input[type="text"],
 .cm-md-input-control input[type="date"],
 .cm-md-input-control input[type="time"],
-.cm-md-input-control input[type="datetime-local"],
 .cm-md-input-control select {
   padding: 0.2em 0.45em;
   color: var(--text);
@@ -1208,17 +1231,14 @@
   accent-color: var(--accent);
 }
 
-/* Date/time inputs draw their own calendar icon and popup, and WebKit picks
-   those colours from color-scheme rather than from ours — without this the
-   affordances stay light-on-light inside a dark theme. */
+/* WebKit draws the native date/time affordances itself and takes their colours
+   from color-scheme; without this they stay light-on-light in a dark theme. */
 .cm-md-input-control input[type="date"],
-.cm-md-input-control input[type="time"],
-.cm-md-input-control input[type="datetime-local"] {
+.cm-md-input-control input[type="time"] {
   color-scheme: light;
 }
 .dark .cm-md-input-control input[type="date"],
-.dark .cm-md-input-control input[type="time"],
-.dark .cm-md-input-control input[type="datetime-local"] {
+.dark .cm-md-input-control input[type="time"] {
   color-scheme: dark;
 }
 
