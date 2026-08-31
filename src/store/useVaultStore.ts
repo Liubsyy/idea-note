@@ -46,10 +46,9 @@ export interface UnlockRequest {
   resolve: (unlocked: boolean) => void;
 }
 
-/** Broadcast when the vault is created, unlocked, locked or re-keyed. The
- *  settings window is a separate webview with its own copy of this store, but
- *  both talk to one Rust process — without this, locking from settings would
- *  leave the main window still showing decrypted blocks. */
+/** Broadcast when one workspace's vault is created, unlocked, locked or
+ *  re-keyed. Every webview has its own copy of this store, while Rust keeps
+ *  independent sessions keyed by workspace. */
 export const VAULT_EVENT = "vault-changed";
 
 /** Asks the main window to lock. Locking has to happen *there* because pending
@@ -98,10 +97,9 @@ interface VaultStoreState {
 }
 
 // One pending re-check, scheduled for the moment the key is due to expire.
-// Rust is what actually enforces the TTL — it drops the key at the point of use
-// whether or not anything here fires. This timer exists only so the UI stops
-// showing an unlocked padlock the instant the key is gone, instead of the next
-// time the user touches a block.
+// Rust owns an independent expiry worker and drops the key at the deadline
+// whether or not anything here fires. This timer exists only so the UI notices
+// promptly and stops showing an unlocked padlock.
 let expiryTimer: number | undefined;
 
 /** Keep only the entries holding text that has not been encrypted yet. Used by
@@ -188,11 +186,12 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
 
   lock: async () => {
     window.clearTimeout(expiryTimer);
-    await vaultLock();
+    const { workspace } = get();
+    if (!workspace) return;
+    await vaultLock(workspace);
     // Callers flush first, but the user may have declined the password prompt.
     // Their text stays.
     set((s) => ({ entries: keepUnsaved(s.entries), rev: s.rev + 1 }));
-    const { workspace } = get();
     if (workspace) await get().refresh(workspace);
     emit(VAULT_EVENT, { workspace }).catch(() => {});
   },
@@ -258,9 +257,12 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
 
 // Re-read the status whenever any window changes it (the sender receives its
 // own event too — a harmless extra read, same as the other config broadcasts).
-listen(VAULT_EVENT, () => {
+listen<{ workspace?: string }>(VAULT_EVENT, ({ payload }) => {
   const { workspace, refresh } = useVaultStore.getState();
-  if (workspace) void refresh(workspace);
+  // An event from another project window must not perturb this window's
+  // session or UI. Missing payload remains a compatibility-wide refresh.
+  if (workspace && (!payload.workspace || payload.workspace === workspace))
+    void refresh(workspace);
 }).catch(() => {});
 
 /** Whether the vault is open right now — for render paths that can't await. */

@@ -13,6 +13,21 @@ use std::sync::Mutex;
 
 use encoding_rs::{Encoding, GB18030, GBK, UTF_16BE, UTF_8};
 
+/// How much of a file the binary check looks at.
+///
+/// A NUL byte is the signal — no text codepage produces one — but scanning the
+/// whole file makes it answer a different question than "is this a text
+/// file?": one stray NUL deep inside an otherwise perfectly readable source
+/// file used to make it unopenable, while every editor that samples a prefix
+/// opens it without complaint. Real binaries put NULs in their header (PNG at
+/// offset 8, JPEG at 4, gzip at 3, zip at 5), so a prefix catches them just as
+/// reliably. 512 bytes is what VS Code samples.
+///
+/// This is the whole rule, deliberately encoding-agnostic: keying it on "does
+/// it decode as UTF-8" would hold legacy-encoded text — the very files this
+/// module exists to open — to a stricter standard than UTF-8 ones.
+pub const BINARY_SNIFF_BYTES: usize = 512;
+
 /// How a file's bytes were encoded on disk.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum FileEncoding {
@@ -43,8 +58,10 @@ pub fn decode(bytes: Vec<u8>) -> Result<(String, FileEncoding), String> {
         return Ok((text.into_owned(), stored));
     }
 
-    // No text codepage produces NUL; without a BOM that means binary.
-    if bytes.contains(&0) {
+    // No text codepage produces NUL; without a BOM, one in the leading
+    // BINARY_SNIFF_BYTES means binary. Past that the file is taken as text —
+    // see the constant for why the tail is not scanned.
+    if bytes.iter().take(BINARY_SNIFF_BYTES).any(|&b| b == 0) {
         return Err("二进制文件".to_string());
     }
 
@@ -232,6 +249,39 @@ mod tests {
     #[test]
     fn binary_is_rejected() {
         assert!(decode(vec![0x00, 0x01, 0xFF, 0x00]).is_err());
+    }
+
+    #[test]
+    fn nul_anywhere_in_the_sniffed_prefix_is_binary() {
+        let mut bytes = b"// looks like source\n".repeat(4);
+        assert!(bytes.len() < BINARY_SNIFF_BYTES);
+        bytes.push(0);
+        bytes.extend_from_slice(b"more text");
+        assert!(decode(bytes).is_err());
+    }
+
+    #[test]
+    fn stray_nul_past_the_prefix_still_opens_as_text() {
+        // The case this rule exists for: a source file carrying one NUL well
+        // past the header, which every prefix-sampling editor opens fine.
+        let mut bytes = b"const sep = `${a}".repeat(64);
+        assert!(bytes.len() > BINARY_SNIFF_BYTES);
+        bytes.push(0);
+        bytes.extend_from_slice(b"${b}`;\n");
+        let (text, enc) = decode(bytes).unwrap();
+        assert_eq!(enc, FileEncoding::Utf8);
+        assert!(text.contains('\0'));
+        assert!(text.ends_with("${b}`;\n"));
+    }
+
+    #[test]
+    fn bomless_utf16_is_still_binary() {
+        // Its NULs start at offset 1, so the prefix check keeps catching it.
+        let mut bytes = Vec::new();
+        for unit in "note".repeat(200).encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        assert!(decode(bytes).is_err());
     }
 
     #[test]

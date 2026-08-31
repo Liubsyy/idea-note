@@ -4,6 +4,7 @@ import {
   isCloseFenceFor,
   type FenceMarker,
 } from "./codeRun/fenceAttrs.ts";
+import { redactInlineSecrets } from "./crypto/secretBlock.ts";
 
 export interface OutlineItem {
   /** Heading depth, 1-6. */
@@ -16,7 +17,9 @@ export interface OutlineItem {
 
 /** Strip inline markdown (links, emphasis, code) down to readable text. */
 function plainText(raw: string): string {
-  return raw
+  return (
+    redactInlineSecrets(raw) // 🔒 rather than a heading full of base64
+  )
     .replace(/\s+#+\s*$/, "") // trailing closing hashes of ATX headings
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1") // images
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1") // links

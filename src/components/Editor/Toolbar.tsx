@@ -53,6 +53,7 @@ import {
   parseHighlightColor,
   type HighlightColor,
 } from "../../lib/highlightBlock";
+import { insertSecretBlock } from "../../lib/crypto/commands";
 
 // GFM cells support inline content only. Running a block command such as a
 // heading or list against a cell would rewrite the table row's prefix and break
@@ -829,9 +830,8 @@ export function Toolbar() {
         onPrimary={() => runCommand("markdownHighlightBlock")}
         onPick={applyHighlightColor}
       />
-      {/* Code block: the icon inserts a plain fence (unchanged), the chevron
-          offers the parameterised component, whose fence attributes nobody
-          should have to remember. */}
+      {/* Code block: the icon inserts a plain fence (unchanged), while the
+          chevron also exposes the parameterised and encrypted block forms. */}
       <Dropdown
         title="代码块"
         primaryTitle={shortcut("代码块", "markdownCodeBlock")}
@@ -855,6 +855,22 @@ export function Toolbar() {
               onClick={() => {
                 close();
                 setComponentOpen(true);
+              }}
+            />
+            <MenuItem
+              label="加密内容块"
+              title="插入新的加密内容块"
+              onClick={() => {
+                close();
+                const view = getActiveView();
+                if (!view || view.state.readOnly) return;
+                if (hasActiveTableCell(view)) {
+                  useAppStore
+                    .getState()
+                    .showToast("表格单元格仅支持行内格式", "error");
+                  return;
+                }
+                void insertSecretBlock(view);
               }}
             />
           </>

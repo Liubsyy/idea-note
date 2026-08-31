@@ -1431,14 +1431,21 @@
   border-radius: 8px;
   background: var(--code-bg);
 }
-/* Unlocked blocks read as ordinary prose with a marked edge, so an open note
-   doesn't look like a wall of alert boxes. */
-.cm-md-secret-card.is-ready {
-  border-left: 3px solid var(--accent, var(--text-muted));
-}
 .cm-md-secret-card.is-error,
 .cm-md-secret-card.is-unsupported {
   border-color: var(--text-muted);
+}
+/* Armed: the next Backspace / Delete removes this whole block. The ring is the
+   only thing on screen saying so — the text caret is hidden at the same time
+   (.cm-content.cm-secret-armed), because for that one keystroke the selection
+   is this card rather than a place to type. Wins over the state borders above. */
+.cm-md-secret-card.is-armed {
+  border-color: var(--ansi-red, #cf222e);
+  border-left-color: var(--ansi-red, #cf222e);
+  box-shadow: 0 0 0 1px var(--ansi-red, #cf222e);
+}
+.cm-content.cm-secret-armed {
+  caret-color: transparent;
 }
 
 .cm-md-secret-head {
@@ -1449,24 +1456,36 @@
 
 .cm-md-secret-title {
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
   color: var(--text-muted);
   font-size: 0.85em;
   letter-spacing: 0.04em;
 }
 
-.cm-md-secret-btn {
-  padding: 0.15em 0.6em;
-  color: var(--text-soft);
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  font-size: 0.8em;
+.cm-md-secret-icon {
+  flex: none;
+  padding: 0.12em;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  font: inherit;
+  line-height: 1;
+}
+
+button.cm-md-secret-icon {
   cursor: pointer;
 }
-.cm-md-secret-btn:hover {
-  color: var(--text);
+
+button.cm-md-secret-icon:hover {
   background: var(--hover);
-  border-color: var(--text-muted);
+}
+
+button.cm-md-secret-icon:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .cm-md-secret-hint {
@@ -1524,6 +1543,7 @@
 .cm-md-secret-card {
   transition:
     border-color 160ms ease,
+    box-shadow 160ms ease,
     background-color 160ms ease;
 }
 
@@ -1540,4 +1560,92 @@
   .cm-md-secret-spinner { animation-duration: 2s; }
   .cm-md-secret-card { transition: none; }
   .cm-md-secret-body { animation: none; }
+  .cm-md-secret-chip { transition: none; }
+}
+
+/* ---------------------------- inline secrets ---------------------------- */
+
+/* The chip carries the same weight as inline code and no more. A phone number
+   in the middle of a sentence must not turn that sentence into a card, which
+   is the whole reason this shape exists — so: no border box of its own beyond
+   a rounded tint, no title row, no hint paragraphs. What the card says in a
+   line of small text, the chip says in its tooltip. */
+.cm-md-secret-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3em;
+  max-width: 100%;
+  padding: 0.05em 0.4em;
+  border-radius: 5px;
+  background: var(--code-bg);
+  box-shadow: inset 0 0 0 1px var(--border);
+  vertical-align: baseline;
+  transition:
+    box-shadow 160ms ease,
+    background-color 160ms ease;
+}
+/* Changed, with the key already expired: writing this back will ask for the
+   password. The card gets a sentence about it; a chip has room for a colour. */
+.cm-md-secret-chip.is-stale {
+  box-shadow: inset 0 0 0 1px var(--text-muted);
+}
+.cm-md-secret-chip.is-error,
+.cm-md-secret-chip.is-unsupported {
+  box-shadow: inset 0 0 0 1px var(--text-muted);
+}
+.cm-md-secret-chip.is-locked,
+.cm-md-secret-chip.is-error {
+  cursor: pointer;
+}
+.cm-md-secret-chip.is-locked:hover,
+.cm-md-secret-chip.is-error:hover {
+  background: var(--hover);
+  box-shadow: inset 0 0 0 1px var(--text-muted);
+}
+
+/* The padlock is the seal control on an open chip — a real button would be
+   wider than the text it guards. */
+.cm-md-secret-chip-lock {
+  flex: none;
+  padding: 0;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  font-size: 0.8em;
+  line-height: 1;
+  cursor: inherit;
+}
+button.cm-md-secret-chip-lock {
+  cursor: pointer;
+}
+
+.cm-md-secret-chip-label {
+  color: var(--text-soft);
+  font-size: 0.85em;
+  letter-spacing: 0.12em;
+}
+.cm-md-secret-chip.is-error .cm-md-secret-chip-label,
+.cm-md-secret-chip.is-unsupported .cm-md-secret-chip-label {
+  letter-spacing: normal;
+}
+
+/* The nested plaintext editor, stripped to a run of text. min-width keeps an
+   empty secret clickable instead of collapsing to nothing. */
+.cm-md-secret-chip-body {
+  min-width: 1.5em;
+  max-width: 100%;
+}
+.cm-md-secret-chip-body .cm-editor,
+.cm-md-secret-chip-body .cm-scroller {
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+.cm-md-secret-chip-body .cm-content {
+  padding: 0;
+  min-height: 0;
+}
+.cm-md-secret-chip-body .cm-line {
+  padding: 0;
 }

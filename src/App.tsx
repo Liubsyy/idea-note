@@ -78,7 +78,10 @@ function App() {
   // editor, and lockNow encrypts it back into the document before the keys are
   // dropped. Locking anywhere else would throw that writing away.
   useEffect(() => {
-    const un = listen(VAULT_LOCK_REQUEST, () => {
+    const un = listen<{ workspace?: string }>(VAULT_LOCK_REQUEST, ({ payload }) => {
+      const workspace = useAppStore.getState().workspacePath;
+      if (!workspace || (payload.workspace && payload.workspace !== workspace))
+        return;
       void lockNow(getActiveView() ?? undefined);
     });
     return () => {

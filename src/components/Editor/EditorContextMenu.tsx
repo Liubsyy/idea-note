@@ -6,6 +6,7 @@ import { selectAll } from "@codemirror/commands";
 import { openSearchPanel } from "@codemirror/search";
 import type { EditorView } from "@codemirror/view";
 
+import { SubMenuItem } from "../ContextSubMenu";
 import { getActiveView } from "../../lib/codemirror/activeView";
 import { openSearchWithReplace } from "../../lib/codemirror/searchPanel";
 import { copyText, readClipboardText } from "../../lib/clipboard";
@@ -13,8 +14,7 @@ import { codeBlockAt } from "../../lib/codeRun/document";
 import { runInTerminal } from "../../lib/codeRun/run";
 
 import {
-  decryptSelectedBlock,
-  decryptableBlockAt,
+  encryptInlineSelection,
   encryptSelection,
   lockNow,
 } from "../../lib/crypto/commands";
@@ -50,13 +50,28 @@ export function EditorContextMenu({
   // selection head tells us whether the click landed in a code block.
   const view = getActiveView();
   const block = view ? codeBlockAt(view, view.state.selection.main.head) : null;
-  const canDecrypt = view ? decryptableBlockAt(view) : false;
+  // An inline span cannot cross a line break, so the option is only offered
+  // for a selection that already sits on one line.
+  const selection = view?.state.selection.main;
+  const canEncryptInline =
+    menu.hasSelection &&
+    !!view &&
+    !!selection &&
+    view.state.doc.lineAt(selection.from).number ===
+      view.state.doc.lineAt(selection.to).number;
   const vaultOpen = useVaultStore((s) => !!s.status && !s.status.locked);
 
   // Dismiss on any click outside the menu, Escape, or window blur.
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      if (!panelRef.current?.contains(e.target as Node)) onClose();
+      const target = e.target;
+      if (panelRef.current?.contains(target as Node)) return;
+      // A submenu panel is portaled to <body>, so it is outside panelRef even
+      // though it is part of this menu. Closing on its mousedown would unmount
+      // the row before its own click could fire.
+      if (target instanceof Element && target.closest("[data-menu-panel='true']"))
+        return;
+      onClose();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -99,7 +114,11 @@ export function EditorContextMenu({
       className="fixed z-50 w-44 rounded-lg py-1 text-sm shadow-lg"
       style={{
         left: Math.min(menu.x, window.innerWidth - 184),
-        top: Math.min(menu.y, window.innerHeight - (block ? 254 : 218)),
+        // Seven rows at 32px, two dividers, and the panel's own padding —
+        // measured, not guessed. Fixed now that the encryption entries are one
+        // submenu row instead of two to four rows that came and went with the
+        // vault's state. 在终端运行 adds a row and a divider.
+        top: Math.min(menu.y, window.innerHeight - (block ? 294 : 252)),
         background: "var(--bg-elev)",
         border: "1px solid var(--border)",
         boxShadow: "0 8px 24px var(--shadow)",
@@ -126,20 +145,27 @@ export function EditorContextMenu({
         替换
       </Item>
       <div className="my-1" style={{ borderTop: "1px solid var(--border)" }} />
-      <Item
-        disabled={!menu.hasSelection}
-        onClick={() => run((v) => void encryptSelection(v))}
-      >
-        加密选中内容
-      </Item>
-      {canDecrypt && (
-        <Item onClick={() => run((v) => void decryptSelectedBlock(v))}>
-          解密这个块
+      {/* One row for the whole feature. The encryption entries laid out inline
+          would outweigh cut/copy/paste in a menu that is mostly about the
+          clipboard. */}
+      <SubMenuItem label="加密">
+        <Item
+          disabled={!menu.hasSelection}
+          onClick={() => run((v) => void encryptSelection(v))}
+        >
+          整块加密
         </Item>
-      )}
-      {vaultOpen && (
-        <Item onClick={() => run((v) => void lockNow(v))}>立即上锁</Item>
-      )}
+        <Item
+          disabled={!canEncryptInline}
+          onClick={() => run((v) => void encryptInlineSelection(v))}
+        >
+          行内加密
+        </Item>
+        <div className="my-1" style={{ borderTop: "1px solid var(--border)" }} />
+        <Item disabled={!vaultOpen} onClick={() => run((v) => void lockNow(v))}>
+          立即上锁
+        </Item>
+      </SubMenuItem>
       {block && (
         <>
           <div className="my-1" style={{ borderTop: "1px solid var(--border)" }} />

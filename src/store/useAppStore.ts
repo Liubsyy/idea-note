@@ -132,7 +132,7 @@ interface AppSettings {
   editorMaxTabs: number;
   aiAssistantFontSize: number;
   /** How long an unlocked encryption key may sit in memory: -1 = drop it as
-   *  soon as the work needing it is done, 0 = never, >0 = minutes of disuse.
+   *  soon as the work needing it is done, 0 = never, >0 = minutes from unlock.
    *  Enforced in Rust; persisted here so it survives a restart. */
   vaultTtlMinutes: number;
   compactSidebar: boolean;
@@ -227,7 +227,7 @@ const SIDEBAR_FONT_DEFAULT = 14;
 /** Must match DEFAULT_TTL_MINUTES in src-tauri/src/crypto.rs. */
 const VAULT_TTL_DEFAULT = 15;
 /** Offered key lifetimes: -1 = drop it as soon as the work needing it is
- *  done, 0 = never expire, >0 = minutes of disuse. */
+ *  done, 0 = never expire, >0 = minutes from successful unlock. */
 export const VAULT_TTL_OPTIONS = [-1, 1, 5, 15, 30, 60, 0];
 
 const AI_ASSISTANT_FONT_MIN = 11;
@@ -597,7 +597,7 @@ interface AppState {
   resetEditorKeybindings: () => void;
   setAiAssistantFontSize: (size: number) => void;
   /** Set how long an unlocked encryption key lives (minutes; 0 = never). */
-  setVaultTtlMinutes: (minutes: number) => void;
+  setVaultTtlMinutes: (minutes: number) => Promise<void>;
   setCompactSidebar: (compact: boolean) => void;
   setCompactEditor: (compact: boolean) => void;
   setUiZoom: (zoom: number) => void;
@@ -1570,11 +1570,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ recentWorkspaces: dropRecent(path) });
       return;
     }
+    const previousWorkspace = get().workspacePath;
+    if (previousWorkspace && previousWorkspace !== path)
+      await useVaultStore.getState().lock();
     localStorage.setItem(WORKSPACE_KEY, path);
     await ensureSyncConfigsLoaded();
-    // Keys belong to one workspace; opening another drops them (crypto.rs
-    // clears its own state on the same check).
-    void useVaultStore.getState().refresh(path);
+    // This window leaves its previous vault session behind explicitly, while
+    // sessions owned by other project windows remain available in Rust.
+    await useVaultStore.getState().refresh(path);
     set((s) => ({
       workspacePath: path,
       tree,
@@ -1697,7 +1700,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const tree = await listDir(saved);
       await ensureSyncConfigsLoaded();
-      void useVaultStore.getState().refresh(saved);
+      await useVaultStore.getState().refresh(saved);
       set({
         workspacePath: saved,
         tree,
@@ -2795,7 +2798,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({ editorMaxTabs, openTabs: trimTabs(s.openTabs, editorMaxTabs, s.activeFilePath) }));
   },
 
-  setVaultTtlMinutes: (minutes) => {
+  setVaultTtlMinutes: async (minutes) => {
     const vaultTtlMinutes = VAULT_TTL_OPTIONS.includes(minutes)
       ? minutes
       : VAULT_TTL_DEFAULT;
@@ -2803,7 +2806,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     commitSettings(snapshotSettings(get));
     // Rust holds the key and enforces the timer; this is only where the number
     // is remembered across restarts.
-    void useVaultStore.getState().setTtlMinutes(vaultTtlMinutes);
+    await useVaultStore.getState().setTtlMinutes(vaultTtlMinutes);
   },
 
   setAiAssistantFontSize: (size) => {

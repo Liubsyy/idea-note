@@ -28,8 +28,12 @@ import { htmlPreview } from "../../lib/codemirror/htmlPreview";
 import { inlineMath, mathBlock } from "../../lib/codemirror/math";
 import { mermaidBlock } from "../../lib/codemirror/diagram";
 import { inputBlock } from "../../lib/codemirror/inputBlock";
-import { secretBlock } from "../../lib/codemirror/secretBlock";
+import {
+  secretBlock,
+  secretBoundaryKeys,
+} from "../../lib/codemirror/secretBlock";
 import { flushSecretEdits } from "../../lib/crypto/secretEdits";
+import { vaultErrorMessage } from "../../lib/crypto/vault";
 import { useVaultStore } from "../../store/useVaultStore";
 import { resultBlock } from "../../lib/codemirror/resultBlock";
 import { autoRuns } from "../../lib/codemirror/autoRuns";
@@ -183,6 +187,12 @@ export function CodeMirrorEditor() {
 
     const extensions = isMd
       ? [
+          // Above markdownParagraphEnter (both are Prec.highest, so order is
+          // what decides): with the caret against an encrypted card, Enter has
+          // to open a blank line beside it rather than run the paragraph rule,
+          // and Backspace/Delete have to arm the card rather than delete into
+          // it.
+          secretBoundaryKeys,
           // Highest precedence so a paragraph Enter inserts a blank line before
           // the stock keymap's Enter can fire; it defers (returns false) inside
           // lists/code/quotes/tables.
@@ -290,17 +300,34 @@ export function CodeMirrorEditor() {
     if (!view) return;
     const path = useAppStore.getState().activeFilePath;
     if (!path || (!isMarkdownFile(path) && !isDraftPath(path))) return;
-    // Encrypt anything still pending in a nested block editor before the
-    // reconfigure tears those editors down. In source mode the user is about to
-    // see (and may edit) the raw ciphertext, so it had better be the ciphertext
-    // that matches what they just typed.
-    void flushSecretEdits(path, view, { prompt: true }).then(() => {
+    const applyMode = () => {
       if (getActiveView() !== view) return;
       view.dispatch({
         effects: previewCompartment.current.reconfigure(
           modeExtensions(mdViewMode, editorLineNumbers),
         ),
       });
+    };
+    // Encrypt anything still pending in a nested block editor before the
+    // reconfigure tears those editors down. In source mode the user is about to
+    // see (and may edit) the raw ciphertext, so it had better be the ciphertext
+    // that matches what they just typed.
+    //
+    // The switch itself does not depend on that succeeding. A flush that throws
+    // used to leave the reconfigure unreached and the editor stuck in whichever
+    // mode it was already in, with nothing on screen to say why — the tab said
+    // one thing and the document showed another. Declining the password dialog
+    // already resolves normally and switches anyway; a failure is reported the
+    // same way and then gets out of the way. The plaintext is not lost either
+    // way: it stays in the vault store until a later flush writes it.
+    //
+    // Two-argument `then` rather than a trailing `.catch`, so a throw from
+    // applyMode itself isn't caught here and answered with a second call.
+    void flushSecretEdits(path, view, { prompt: true }).then(applyMode, (error) => {
+      useAppStore
+        .getState()
+        .showToast(`加密块的改动暂时没能写回：${vaultErrorMessage(error)}`, "error");
+      applyMode();
     });
     // Reconfiguring doesn't fire a selection/doc change, so sync the toolbar's
     // active-format highlight to the new mode: cleared in read-only, otherwise

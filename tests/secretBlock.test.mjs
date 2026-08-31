@@ -4,11 +4,13 @@ import test from "node:test";
 import {
   canonicalAad,
   docFromString,
+  formatInlineSecret,
   formatSecretAttrs,
   formatSecretBlock,
   newBlockId,
   parseSecretAttrs,
   scanSecretBlocks,
+  scanSecrets,
   wrapBody,
 } from "../src/lib/crypto/secretBlock.ts";
 
@@ -193,7 +195,132 @@ test("scans several blocks in one note", () => {
 test("generated ids satisfy the fence-attribute ident rule", () => {
   for (let i = 0; i < 200; i++) {
     const id = newBlockId();
-    assert.match(id, /^b[0-9a-f]{6}$/);
+    assert.match(id, /^b[0-9a-f]{16}$/);
     assert.equal(parseSecretAttrs(`secret {v=1, key=k1, id=${id}}`).id, id);
   }
+});
+
+/* ------------------------------ inline spans ---------------------------- */
+
+test("an inline span round-trips through the same attribute parser", () => {
+  const meta = { v: 1, keyId: "k1", id: "b7c1f2a", extras: [] };
+  const span = formatInlineSecret(meta, "sT3nQ_-Ab");
+  assert.equal(span, "`secret {v=1, key=k1, id=b7c1f2a} sT3nQ_-Ab`");
+  const [found] = scanSecrets(docFromString(span));
+  assert.equal(found.kind, "inline");
+  assert.deepEqual(found.meta, meta);
+  assert.equal(found.body, "sT3nQ_-Ab");
+});
+
+test("the two shapes produce the same AAD", () => {
+  // Same key, same block id, same payload: an inline span and a fenced block
+  // are one format in two presentations, so moving ciphertext between them is
+  // a text edit rather than a re-encryption.
+  const meta = { v: 1, keyId: "k1", id: "b7c1f2a", extras: [] };
+  const inline = scanSecrets(docFromString(formatInlineSecret(meta, "QUJD")))[0];
+  const block = scanSecrets(docFromString(formatSecretBlock(meta, "QUJD")))[0];
+  assert.equal(canonicalAad(inline.meta), canonicalAad(block.meta));
+});
+
+test("inline ciphertext is never wrapped", () => {
+  const body = "A".repeat(400);
+  const span = formatInlineSecret(
+    { v: 1, keyId: "k1", id: "b7c1f2a", extras: [] },
+    body,
+  );
+  assert.equal(span.includes("\n"), false);
+  assert.equal(scanSecrets(docFromString(span))[0].body, body);
+});
+
+test("finds several spans on one line with exact ranges", () => {
+  const text =
+    "卡号 `secret {v=1, key=k1, id=baaa111} QQ` 与密码 `secret {v=1, key=k2, id=bbbb222} Ug` 完。";
+  const found = scanSecrets(docFromString(text));
+  assert.deepEqual(
+    found.map((s) => s.meta.id),
+    ["baaa111", "bbbb222"],
+  );
+  for (const span of found) {
+    assert.equal(text.slice(span.bodyFrom, span.bodyTo), span.body);
+    assert.equal(
+      text.slice(span.from, span.to),
+      formatInlineSecret(span.meta, span.body),
+    );
+  }
+});
+
+test("blocks and spans come back in document order", () => {
+  const doc = docFromString(
+    [
+      "前 `secret {v=1, key=k1, id=baaa111} QQ` 中",
+      "```secret {v=1, key=k1, id=bbbb222}",
+      "Ug",
+      "```",
+      "后 `secret {v=1, key=k1, id=bccc333} Vw`",
+    ].join("\n"),
+  );
+  assert.deepEqual(
+    scanSecrets(doc).map((s) => [s.kind, s.meta.id]),
+    [
+      ["inline", "baaa111"],
+      ["block", "bbbb222"],
+      ["inline", "bccc333"],
+    ],
+  );
+  // The block-only view is unchanged for every existing caller.
+  assert.deepEqual(
+    scanSecretBlocks(doc).map((b) => b.meta.id),
+    ["bbbb222"],
+  );
+});
+
+test("a span written inside a fence is an example, not a secret", () => {
+  // Same protection the block scanner already gives a nested ```secret: the
+  // fence owns its lines, so documentation about the format is just text.
+  const doc = docFromString(
+    [
+      "```markdown",
+      "`secret {v=1, key=k1, id=baaa111} QQ`",
+      "```",
+      "```secret {v=1, key=k1, id=bbbb222}",
+      "`secret {v=1, key=k1, id=bccc333} Ug`",
+      "```",
+    ].join("\n"),
+  );
+  assert.deepEqual(
+    scanSecrets(doc).map((s) => [s.kind, s.meta.id]),
+    [["block", "bbbb222"]],
+  );
+});
+
+test("a double-backtick span is left alone", () => {
+  // ``…`` is delimited by two backticks, so a single-backtick match inside one
+  // is a slice of something larger — treating it as a secret would replace
+  // text the user wrote as literal source.
+  const doc = docFromString("``secret {v=1, key=k1, id=baaa111} QQ``");
+  assert.deepEqual(scanSecrets(doc), []);
+});
+
+test("malformed spans stay ordinary inline code", () => {
+  const bad = [
+    "`secret {v=1, key=k1} QQ`", // no id
+    "`secret {v=1, key=k1, id=9aaa111} QQ`", // id must start with a letter
+    "`secret {v=1, key=k1, id=baaa111} QQ+/=`", // not base64url
+    "`secret {v=1, key=k1, id=baaa111}`", // no body
+    "`secret {v=1, key=k1, id=baaa111} QQ", // unterminated span
+    "`python {v=1, key=k1, id=baaa111} QQ`", // not a secret
+  ];
+  for (const text of bad) {
+    assert.deepEqual(scanSecrets(docFromString(text)), [], text);
+  }
+});
+
+test("unknown attributes survive an inline round-trip", () => {
+  const doc = docFromString("`secret {v=1, key=k1, id=baaa111, hint=卡} QQ`");
+  const [found] = scanSecrets(doc);
+  assert.deepEqual(found.meta.extras, ["hint=卡"]);
+  assert.equal(
+    formatInlineSecret(found.meta, found.body),
+    "`secret {v=1, key=k1, id=baaa111, hint=卡} QQ`",
+  );
 });

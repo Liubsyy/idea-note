@@ -231,7 +231,7 @@ export function VaultModal() {
               <div className="vault-progress h-full w-1/3 rounded-full" />
             </div>
             <div className="mt-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
-              正在派生密钥…这一步故意设计得慢，是它让别人难以暴力猜测口令。
+              正在派生密钥…整个过程依赖内存和计算，难以暴力破解
             </div>
           </div>
         )}

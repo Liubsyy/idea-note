@@ -2271,6 +2271,7 @@ function SecurityTab() {
   const setVaultTtlMinutes = useAppStore((s) => s.setVaultTtlMinutes);
 
   const [status, setStatus] = useState<VaultStatus | null>(null);
+  const [expiresInSecs, setExpiresInSecs] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -2307,6 +2308,34 @@ function SecurityTab() {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // Keep this window in sync when the main editor unlocks or locks the vault.
+  useEffect(() => {
+    const un = listen<{ workspace?: string }>(VAULT_EVENT, ({ payload }) => {
+      if (!payload.workspace || payload.workspace === ws) void reload();
+    });
+    return () => {
+      un.then((fn) => fn());
+    };
+  }, [reload, ws]);
+
+  // Rust supplies a snapshot of the fixed session deadline. Count it down locally and
+  // re-read just after it reaches zero so Rust remains the source of truth.
+  useEffect(() => {
+    const initial = status && !status.locked ? status.expiresInSecs : null;
+    setExpiresInSecs(initial);
+    if (initial === null) return;
+
+    const deadline = Date.now() + initial * 1000;
+    const tick = () =>
+      setExpiresInSecs(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
+    const interval = window.setInterval(tick, 1000);
+    const expiry = window.setTimeout(() => void reload(), (initial + 1) * 1000);
+    return () => {
+      window.clearInterval(interval);
+      window.clearTimeout(expiry);
+    };
+  }, [status, reload]);
 
   if (!ws) {
     return <Notice>加密口令按工程分别保存。请先在主窗口打开一个工程，再回到这里配置。</Notice>;
@@ -2436,6 +2465,9 @@ function SecurityTab() {
   // The stage can only be "ready" here, which requires a loaded status.
   if (!status) return null;
 
+  const expiresInMinutes =
+    expiresInSecs === null ? null : Math.max(1, Math.ceil(expiresInSecs / 60));
+
   /* --- already set up --- */
   return (
     <div className="space-y-4">
@@ -2454,7 +2486,7 @@ function SecurityTab() {
               void run(async () => {
                 // The main window owns the editor holding any un-encrypted
                 // edits, so it does the locking; we only ask.
-                await emit(VAULT_LOCK_REQUEST, {});
+                await emit(VAULT_LOCK_REQUEST, { workspace: ws });
               })
             }
           >
@@ -2463,17 +2495,32 @@ function SecurityTab() {
         </Row>
         <Row
           title="口令有效期"
-          desc="输入口令后空闲多长时间无需输入口令，如选择立即过期则每次都需要输入口令。"
+          desc="从输入口令开始，多长时间内无需再次输入；期间加密、解密或保存不会续期。"
         >
-          <div className="w-32">
-            <Select
-              value={String(vaultTtlMinutes)}
-              options={VAULT_TTL_OPTIONS.map((m) => ({
-                value: String(m),
-                label: m < 0 ? "立即过期" : m === 0 ? "从不过期" : `${m} 分钟`,
-              }))}
-              onChange={(v) => setVaultTtlMinutes(Number(v))}
-            />
+          <div className="flex flex-col items-end gap-1">
+            <div className="w-32">
+              <Select
+                value={String(vaultTtlMinutes)}
+                options={VAULT_TTL_OPTIONS.map((m) => ({
+                  value: String(m),
+                  label: m < 0 ? "立即过期" : m === 0 ? "从不过期" : `${m} 分钟`,
+                }))}
+                onChange={(v) => {
+                  setError(null);
+                  void setVaultTtlMinutes(Number(v))
+                    .then(reload)
+                    .catch((e) => setError(vaultErrorMessage(e)));
+                }}
+              />
+            </div>
+            {expiresInMinutes !== null && (
+              <span
+                className="whitespace-nowrap text-[11px] leading-none"
+                style={{ color: "var(--text-muted)" }}
+              >
+                距离口令失效还有 {expiresInMinutes} 分钟
+              </span>
+            )}
           </div>
         </Row>
         {status.slots.map((slot) => (

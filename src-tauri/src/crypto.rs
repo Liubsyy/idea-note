@@ -21,7 +21,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use argon2::{Algorithm, Argon2, Params, Version};
@@ -65,14 +65,14 @@ const ARGON_M_COST: u32 = 65536; // KiB
 const ARGON_T_COST: u32 = 3;
 const ARGON_P_COST: u32 = 1;
 
-/// How long the master key may sit in memory after it was last used. Sliding,
-/// not absolute: working inside encrypted blocks keeps it alive, walking away
-/// lets it expire.
+/// How long the master key may sit in memory after the user enters a valid
+/// password or recovery code. This is an absolute session lifetime: using the
+/// key does not extend it.
 ///
 /// Encoding, shared with the frontend setting:
 ///   -1 = drop the key the moment the operation that needed it finishes
 ///    0 = never expire
-///   >0 = minutes of disuse
+///   >0 = minutes from successful unlock
 const DEFAULT_TTL_MINUTES: i64 = 15;
 
 /* ------------------------------ on-disk shape --------------------------- */
@@ -113,46 +113,43 @@ struct VaultFile {
 
 /* ------------------------------ session state --------------------------- */
 
-pub struct VaultState {
-    /// Which workspace the loaded keys belong to. Opening another workspace
-    /// drops them rather than silently decrypting with the wrong vault.
-    workspace: Option<PathBuf>,
+struct WorkspaceSession {
     keys: HashMap<String, Zeroizing<[u8; KEY_LEN]>>,
     active_key_id: String,
-    /// -1 = immediate, 0 = never, >0 = minutes of disuse.
-    ttl_minutes: i64,
-    /// When a key was last actually used. `None` while locked.
-    last_used: Option<Instant>,
+    /// When this workspace was unlocked. `None` is only used while clearing a
+    /// session; locked workspaces have no entry in `VaultState::sessions`.
+    unlocked_at: Option<Instant>,
 }
 
-impl Default for VaultState {
-    fn default() -> Self {
-        Self {
-            workspace: None,
-            keys: HashMap::new(),
-            active_key_id: String::new(),
-            ttl_minutes: DEFAULT_TTL_MINUTES,
-            last_used: None,
-        }
-    }
-}
-
-impl VaultState {
-    /// Drop the key material. The TTL setting survives — it is configuration,
-    /// not session state.
+impl WorkspaceSession {
     fn clear_keys(&mut self) {
         for (_, mut key) in self.keys.drain() {
             key.zeroize();
         }
         self.active_key_id.clear();
-        self.last_used = None;
+        self.unlocked_at = None;
     }
+}
 
-    fn clear(&mut self) {
-        self.clear_keys();
-        self.workspace = None;
+pub struct VaultState {
+    /// One independent in-memory key session per workspace. All application
+    /// windows share this state, so the workspace path is part of the lookup —
+    /// no command is allowed to use whichever MK happened to run last.
+    sessions: HashMap<PathBuf, WorkspaceSession>,
+    /// -1 = immediate, 0 = never, >0 = minutes from successful unlock.
+    ttl_minutes: i64,
+}
+
+impl Default for VaultState {
+    fn default() -> Self {
+        Self {
+            sessions: HashMap::new(),
+            ttl_minutes: DEFAULT_TTL_MINUTES,
+        }
     }
+}
 
+impl VaultState {
     /// True when the key must not outlive the operation that needed it.
     fn expires_immediately(&self) -> bool {
         self.ttl_minutes < 0
@@ -162,55 +159,160 @@ impl VaultState {
         (self.ttl_minutes > 0).then(|| Duration::from_secs(self.ttl_minutes as u64 * 60))
     }
 
-    /// Drop the keys if they have gone unused for longer than the TTL.
-    ///
-    /// Enforced here, at every point of use, rather than by a timer in the UI:
-    /// a timer can be missed, paused by a sleeping renderer, or simply never
-    /// fire, and "the key expired" has to be true of the key, not of a clock
-    /// someone else is watching.
+    /// Drop the keys if they have gone unused for longer than the TTL. The Rust
+    /// watchdog calls this at the deadline; commands call it too as a
+    /// defense-in-depth check before touching key material.
     fn enforce_ttl(&mut self) {
         // Immediate expiry is not enforced here. This runs *before* the key is
-        // used, so a zero-length idle window would drop it between unlocking
+        // used, so a zero-length lifetime would drop it between unlocking
         // and the very first decrypt — the key would never be usable at all.
         // `finish_use` is what drops it, once the work is actually done.
-        let (Some(ttl), Some(last)) = (self.ttl(), self.last_used) else {
+        let Some(ttl) = self.ttl() else {
             return;
         };
-        if last.elapsed() >= ttl {
-            self.clear_keys();
+        self.sessions.retain(|_, session| {
+            let expired = session
+                .unlocked_at
+                .is_some_and(|unlocked_at| unlocked_at.elapsed() >= ttl);
+            if expired {
+                session.clear_keys();
+                false
+            } else {
+                true
+            }
+        });
+    }
+
+    fn begin_session(
+        &mut self,
+        workspace: PathBuf,
+        active_key_id: String,
+        keys: HashMap<String, Zeroizing<[u8; KEY_LEN]>>,
+    ) {
+        if let Some(mut old) = self.sessions.remove(&workspace) {
+            old.clear_keys();
         }
+        self.sessions.insert(
+            workspace,
+            WorkspaceSession {
+                keys,
+                active_key_id,
+                unlocked_at: Some(Instant::now()),
+            },
+        );
     }
 
-    fn touch(&mut self) {
-        self.last_used = Some(Instant::now());
-    }
-
-    /// Called after a command has finished with the key: under immediate expiry
-    /// the key goes away right now, otherwise the idle timer simply restarts.
+    /// Called after a command has finished with the key. Only immediate expiry
+    /// changes state here; a normal session keeps its original unlock deadline.
     ///
     /// Commands that need the key more than once (a save re-encrypting several
     /// blocks) must do all of it before calling this, which is why encryption
     /// is batched into one command rather than one call per block.
-    fn finish_use(&mut self) {
+    fn finish_use(&mut self, workspace: &Path) {
         if self.expires_immediately() {
-            self.clear_keys();
-        } else {
-            self.touch();
+            self.clear_workspace(workspace);
         }
     }
 
-    /// Seconds until the keys expire, for the UI's countdown.
-    fn expires_in_secs(&self) -> Option<u64> {
-        let (ttl, last) = (self.ttl()?, self.last_used?);
-        Some(ttl.saturating_sub(last.elapsed()).as_secs())
+    fn clear_workspace(&mut self, workspace: &Path) {
+        if let Some(mut session) = self.sessions.remove(workspace) {
+            session.clear_keys();
+        }
+    }
+
+    /// Seconds until one workspace's keys expire, for that window's countdown.
+    fn expires_in_secs(&self, workspace: &Path) -> Option<u64> {
+        let ttl = self.ttl()?;
+        let unlocked_at = self.sessions.get(workspace)?.unlocked_at?;
+        Some(ttl.saturating_sub(unlocked_at.elapsed()).as_secs())
     }
 
     fn is_unlocked_for(&self, workspace: &Path) -> bool {
-        self.workspace.as_deref() == Some(workspace) && !self.keys.is_empty()
+        self.sessions
+            .get(workspace)
+            .is_some_and(|session| !session.keys.is_empty())
+    }
+
+    /// Earliest remaining session lifetime. The single watchdog sleeps until
+    /// this deadline, expires every due workspace, then recalculates.
+    fn next_expiry_in(&self) -> Option<Duration> {
+        let ttl = self.ttl()?;
+        self.sessions
+            .values()
+            .filter_map(|session| {
+                session
+                    .unlocked_at
+                    .map(|at| ttl.saturating_sub(at.elapsed()))
+            })
+            .min()
     }
 }
 
-pub type Vault = Mutex<VaultState>;
+/// Process-wide vault plus a single Rust-side expiry worker. The condition
+/// variable lets the worker sleep until the current deadline without polling;
+/// every operation that changes that deadline wakes it to recalculate.
+pub struct VaultInner {
+    state: Mutex<VaultState>,
+    expiry_changed: Condvar,
+}
+
+impl Default for VaultInner {
+    fn default() -> Self {
+        Self {
+            state: Mutex::new(VaultState::default()),
+            expiry_changed: Condvar::new(),
+        }
+    }
+}
+
+impl VaultInner {
+    fn lock(&self) -> std::sync::LockResult<MutexGuard<'_, VaultState>> {
+        self.state.lock()
+    }
+
+    fn notify_expiry_changed(&self) {
+        self.expiry_changed.notify_one();
+    }
+
+    /// Start exactly one backend worker for the app lifetime. It owns no key
+    /// copy: it only locks VaultState at the deadline and clears the canonical
+    /// Zeroizing buffers there.
+    pub fn start_expiry_watchdog(self: &Arc<Self>) {
+        let vault = Arc::clone(self);
+        std::thread::Builder::new()
+            .name("vault-expiry".into())
+            .spawn(move || vault.expiry_watchdog())
+            .expect("failed to start vault expiry watchdog");
+    }
+
+    fn expiry_watchdog(&self) {
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+
+        loop {
+            // A command normally already did this after taking the same lock,
+            // but the timeout path reaches it without any frontend activity.
+            state.enforce_ttl();
+
+            state = match state.next_expiry_in() {
+                Some(remaining) => {
+                    match self.expiry_changed.wait_timeout(state, remaining) {
+                        Ok((state, _)) => state,
+                        Err(poisoned) => poisoned.into_inner().0,
+                    }
+                }
+                None => match self.expiry_changed.wait(state) {
+                    Ok(state) => state,
+                    Err(poisoned) => poisoned.into_inner(),
+                },
+            };
+        }
+    }
+}
+
+pub type Vault = Arc<VaultInner>;
 
 /* --------------------------------- helpers ------------------------------ */
 
@@ -490,7 +592,7 @@ pub struct VaultStatus {
     pub locked: bool,
     pub active_key_id: String,
     pub slots: Vec<SlotInfo>,
-    /// -1 = immediate, 0 = never, >0 = minutes of disuse.
+    /// -1 = immediate, 0 = never, >0 = minutes from successful unlock.
     pub ttl_minutes: i64,
     /// Seconds left on that timer, so the UI can schedule its own re-check
     /// instead of polling. None while locked or when expiry is off.
@@ -542,13 +644,7 @@ pub fn vault_status(workspace: String, vault: State<'_, Vault>) -> Result<VaultS
     let file = read_vault(&workspace)?;
     let mut state = vault.lock().map_err(|_| "vault state poisoned")?;
     state.enforce_ttl();
-    // Switching workspaces drops the keys instead of leaving them available to
-    // a vault they don't belong to.
-    if let Some(loaded) = state.workspace.clone() {
-        if loaded != Path::new(&workspace) {
-            state.clear();
-        }
-    }
+    vault.notify_expiry_changed();
     let Some(file) = file else {
         return Ok(VaultStatus {
             initialized: false,
@@ -563,7 +659,7 @@ pub fn vault_status(workspace: String, vault: State<'_, Vault>) -> Result<VaultS
         initialized: true,
         locked: !state.is_unlocked_for(Path::new(&workspace)),
         ttl_minutes: state.ttl_minutes,
-        expires_in_secs: state.expires_in_secs(),
+        expires_in_secs: state.expires_in_secs(Path::new(&workspace)),
         active_key_id: file.active_key_id.clone(),
         slots: file
             .slots
@@ -624,12 +720,11 @@ pub async fn vault_init(
 
     // Initializing leaves the vault open — the user is right there, and making
     // them retype the password they just chose is pure friction.
+    let mut keys = HashMap::new();
+    keys.insert(key_id.into(), mk);
     let mut state = vault.lock().map_err(|_| "vault state poisoned")?;
-    state.clear();
-    state.workspace = Some(PathBuf::from(&workspace));
-    state.active_key_id = key_id.into();
-    state.keys.insert(key_id.into(), mk);
-    state.touch();
+    state.begin_session(PathBuf::from(&workspace), key_id.into(), keys);
+    vault.notify_expiry_changed();
 
     Ok(InitResult { recovery_code })
 }
@@ -666,27 +761,30 @@ pub async fn vault_unlock(
         return Err(ERR_WRONG_SECRET.to_string());
     }
     let mut state = vault.lock().map_err(|_| "vault state poisoned")?;
-    state.clear();
-    state.workspace = Some(PathBuf::from(&workspace));
-    state.active_key_id = active_key_id;
-    state.keys = keys;
-    state.touch();
+    state.begin_session(PathBuf::from(&workspace), active_key_id, keys);
+    vault.notify_expiry_changed();
     Ok(())
 }
 
 /// Change how long the key may linger. Takes effect immediately: shortening it
-/// below the current idle time expires the key on the next use.
+/// below the current session age clears the key now; otherwise the Rust watchdog
+/// is moved to the new deadline.
 #[tauri::command]
 pub fn vault_set_ttl(minutes: i64, vault: State<'_, Vault>) -> Result<(), String> {
     let mut state = vault.lock().map_err(|_| "vault state poisoned")?;
     state.ttl_minutes = minutes;
     state.enforce_ttl();
+    vault.notify_expiry_changed();
     Ok(())
 }
 
 #[tauri::command]
-pub fn vault_lock(vault: State<'_, Vault>) -> Result<(), String> {
-    vault.lock().map_err(|_| "vault state poisoned")?.clear();
+pub fn vault_lock(workspace: String, vault: State<'_, Vault>) -> Result<(), String> {
+    vault
+        .lock()
+        .map_err(|_| "vault state poisoned")?
+        .clear_workspace(Path::new(&workspace));
+    vault.notify_expiry_changed();
     Ok(())
 }
 
@@ -765,6 +863,7 @@ pub async fn vault_regenerate_recovery(
 
 #[tauri::command]
 pub fn secret_encrypt(
+    workspace: String,
     block_id: String,
     plaintext: String,
     vault: State<'_, Vault>,
@@ -774,12 +873,16 @@ pub fn secret_encrypt(
     }
     let mut state = vault.lock().map_err(|_| "vault state poisoned")?;
     state.enforce_ttl();
-    let key_id = state.active_key_id.clone();
-    let mk = state.keys.get(&key_id).ok_or(ERR_LOCKED)?;
-
-    let aad = block_aad(FORMAT_VERSION, &key_id, &block_id);
-    let sealed = seal(mk, plaintext.as_bytes(), aad.as_bytes())?;
-    state.finish_use();
+    let workspace_path = Path::new(&workspace);
+    let (key_id, sealed) = {
+        let session = state.sessions.get(workspace_path).ok_or(ERR_LOCKED)?;
+        let key_id = session.active_key_id.clone();
+        let mk = session.keys.get(&key_id).ok_or(ERR_LOCKED)?;
+        let aad = block_aad(FORMAT_VERSION, &key_id, &block_id);
+        let sealed = seal(mk, plaintext.as_bytes(), aad.as_bytes())?;
+        (key_id, sealed)
+    };
+    state.finish_use(workspace_path);
 
     Ok(EncryptResult {
         body: URL_SAFE_NO_PAD.encode(sealed),
@@ -799,6 +902,7 @@ pub fn secret_encrypt(
 /// the note half-rewritten with no way to tell which half.
 #[tauri::command]
 pub fn secret_encrypt_batch(
+    workspace: String,
     blocks: Vec<EncryptRequest>,
     vault: State<'_, Vault>,
 ) -> Result<Vec<EncryptedBlock>, String> {
@@ -809,26 +913,32 @@ pub fn secret_encrypt_batch(
     }
     let mut state = vault.lock().map_err(|_| "vault state poisoned")?;
     state.enforce_ttl();
-    let key_id = state.active_key_id.clone();
-    let mk = state.keys.get(&key_id).ok_or(ERR_LOCKED)?;
+    let workspace_path = Path::new(&workspace);
+    let out = {
+        let session = state.sessions.get(workspace_path).ok_or(ERR_LOCKED)?;
+        let key_id = session.active_key_id.clone();
+        let mk = session.keys.get(&key_id).ok_or(ERR_LOCKED)?;
 
-    let mut out = Vec::with_capacity(blocks.len());
-    for block in &blocks {
-        let aad = block_aad(FORMAT_VERSION, &key_id, &block.block_id);
-        let sealed = seal(mk, block.plaintext.as_bytes(), aad.as_bytes())?;
-        out.push(EncryptedBlock {
-            block_id: block.block_id.clone(),
-            body: URL_SAFE_NO_PAD.encode(sealed),
-            key_id: key_id.clone(),
-            v: FORMAT_VERSION,
-        });
-    }
-    state.finish_use();
+        let mut out = Vec::with_capacity(blocks.len());
+        for block in &blocks {
+            let aad = block_aad(FORMAT_VERSION, &key_id, &block.block_id);
+            let sealed = seal(mk, block.plaintext.as_bytes(), aad.as_bytes())?;
+            out.push(EncryptedBlock {
+                block_id: block.block_id.clone(),
+                body: URL_SAFE_NO_PAD.encode(sealed),
+                key_id: key_id.clone(),
+                v: FORMAT_VERSION,
+            });
+        }
+        out
+    };
+    state.finish_use(workspace_path);
     Ok(out)
 }
 
 #[tauri::command]
 pub fn secret_decrypt(
+    workspace: String,
     v: u32,
     key_id: String,
     block_id: String,
@@ -840,28 +950,29 @@ pub fn secret_decrypt(
     }
     let mut state = vault.lock().map_err(|_| "vault state poisoned")?;
     state.enforce_ttl();
-    if state.keys.is_empty() {
-        return Err(ERR_LOCKED.to_string());
-    }
-    // A block written before a key rotation names the older key; missing it is
-    // a different failure from a bad password, and the UI says so.
-    let mk = state
-        .keys
-        .get(&key_id)
-        .ok_or_else(|| ERR_UNKNOWN_KEY.to_string())?;
+    let workspace_path = Path::new(&workspace);
+    let plaintext = {
+        let session = state.sessions.get(workspace_path).ok_or(ERR_LOCKED)?;
+        // A block written before a key rotation names the older key; missing it
+        // is a different failure from a bad password, and the UI says so.
+        let mk = session
+            .keys
+            .get(&key_id)
+            .ok_or_else(|| ERR_UNKNOWN_KEY.to_string())?;
 
-    // Whitespace inside the fence body is layout (the editor wraps long
-    // ciphertext), so it is stripped before decoding rather than treated as
-    // corruption.
-    let compact: String = body.chars().filter(|c| !c.is_whitespace()).collect();
-    let sealed = URL_SAFE_NO_PAD
-        .decode(compact.as_bytes())
-        .map_err(|_| ERR_BAD_FORMAT.to_string())?;
+        // Whitespace inside the fence body is layout (the editor wraps long
+        // ciphertext), so it is stripped before decoding rather than treated
+        // as corruption.
+        let compact: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+        let sealed = URL_SAFE_NO_PAD
+            .decode(compact.as_bytes())
+            .map_err(|_| ERR_BAD_FORMAT.to_string())?;
 
-    let aad = block_aad(v, &key_id, &block_id);
-    let plaintext = open(mk, &sealed, aad.as_bytes())?;
+        let aad = block_aad(v, &key_id, &block_id);
+        open(mk, &sealed, aad.as_bytes())?
+    };
     let text = String::from_utf8(plaintext).map_err(|_| ERR_BAD_FORMAT.to_string())?;
-    state.finish_use();
+    state.finish_use(workspace_path);
 
     Ok(DecryptResult { plaintext: text })
 }
@@ -1061,18 +1172,37 @@ mod tests {
         assert_eq!(base32(&[0u8; 15]).len(), 24);
     }
 
-    /// Build an unlocked state whose key was last used `ago` in the past.
+    const TEST_WORKSPACE_A: &str = "/workspace/a";
+    const TEST_WORKSPACE_B: &str = "/workspace/b";
+
+    fn insert_test_session(
+        state: &mut VaultState,
+        workspace: &str,
+        key_byte: u8,
+        unlocked_at: Instant,
+    ) {
+        let mut keys = HashMap::new();
+        keys.insert("k1".into(), Zeroizing::new([key_byte; KEY_LEN]));
+        state.sessions.insert(
+            PathBuf::from(workspace),
+            WorkspaceSession {
+                keys,
+                active_key_id: "k1".into(),
+                unlocked_at: Some(unlocked_at),
+            },
+        );
+    }
+
+    /// Build a state whose A-workspace session was unlocked `ago` in the past.
     /// Returns None on a machine that has been up for less than `ago`, where
     /// the subtraction has nothing to land on.
     fn unlocked_since(ttl_minutes: i64, ago: Duration) -> Option<VaultState> {
         let last = Instant::now().checked_sub(ago)?;
         let mut state = VaultState {
             ttl_minutes,
-            last_used: Some(last),
             ..Default::default()
         };
-        state.active_key_id = "k1".into();
-        state.keys.insert("k1".into(), Zeroizing::new([7u8; KEY_LEN]));
+        insert_test_session(&mut state, TEST_WORKSPACE_A, 7, last);
         Some(state)
     }
 
@@ -1082,8 +1212,11 @@ mod tests {
             return;
         };
         state.enforce_ttl();
-        assert!(!state.keys.is_empty());
-        assert!(state.expires_in_secs().unwrap() <= 60);
+        assert!(state.is_unlocked_for(Path::new(TEST_WORKSPACE_A)));
+        assert!(state
+            .expires_in_secs(Path::new(TEST_WORKSPACE_A))
+            .unwrap()
+            <= 60);
     }
 
     #[test]
@@ -1092,24 +1225,67 @@ mod tests {
             return;
         };
         state.enforce_ttl();
-        assert!(state.keys.is_empty());
-        assert!(state.active_key_id.is_empty());
-        assert_eq!(state.expires_in_secs(), None);
+        assert!(!state.is_unlocked_for(Path::new(TEST_WORKSPACE_A)));
+        assert_eq!(state.expires_in_secs(Path::new(TEST_WORKSPACE_A)), None);
         // The TTL is configuration, not session state — it must outlive the key.
         assert_eq!(state.ttl_minutes, 15);
     }
 
     #[test]
-    fn using_a_key_pushes_the_expiry_back() {
-        // The timer slides: working inside encrypted blocks keeps the key
-        // alive, walking away is what lets it go.
+    fn watchdog_drops_an_expired_key_without_any_command() {
+        let Some(mut state) = unlocked_since(0, Duration::ZERO) else {
+            return;
+        };
+        let Some(expired_at) = Instant::now().checked_sub(Duration::from_secs(61)) else {
+            return;
+        };
+
+        // Start with expiry disabled so the worker is sleeping without a
+        // deadline, then give it an already-expired deadline and wake it. No
+        // status/encrypt/decrypt command performs the cleanup for this test.
+        state.ttl_minutes = 0;
+        let vault = Arc::new(VaultInner {
+            state: Mutex::new(state),
+            expiry_changed: Condvar::new(),
+        });
+        vault.start_expiry_watchdog();
+
+        {
+            let mut state = vault.lock().unwrap();
+            state.ttl_minutes = 1;
+            state
+                .sessions
+                .get_mut(Path::new(TEST_WORKSPACE_A))
+                .unwrap()
+                .unlocked_at = Some(expired_at);
+        }
+        vault.notify_expiry_changed();
+
+        let give_up = Instant::now() + Duration::from_secs(1);
+        loop {
+            if !vault
+                .lock()
+                .unwrap()
+                .is_unlocked_for(Path::new(TEST_WORKSPACE_A))
+            {
+                break;
+            }
+            assert!(Instant::now() < give_up, "watchdog did not clear the MK");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn using_a_key_does_not_push_the_expiry_back() {
         let Some(mut state) = unlocked_since(15, Duration::from_secs(14 * 60)) else {
             return;
         };
-        state.touch();
-        state.enforce_ttl();
-        assert!(!state.keys.is_empty());
-        assert!(state.expires_in_secs().unwrap() > 14 * 60);
+        let before = state.next_expiry_in().unwrap();
+        state.finish_use(Path::new(TEST_WORKSPACE_A));
+        let after = state.next_expiry_in().unwrap();
+        assert!(state.is_unlocked_for(Path::new(TEST_WORKSPACE_A)));
+        assert!(after <= before, "using the MK must not extend its deadline");
+        assert!(after <= Duration::from_secs(60));
     }
 
     #[test]
@@ -1118,8 +1294,8 @@ mod tests {
             return;
         };
         state.enforce_ttl();
-        assert!(!state.keys.is_empty());
-        assert_eq!(state.expires_in_secs(), None);
+        assert!(state.is_unlocked_for(Path::new(TEST_WORKSPACE_A)));
+        assert_eq!(state.expires_in_secs(Path::new(TEST_WORKSPACE_A)), None);
     }
 
     #[test]
@@ -1131,23 +1307,31 @@ mod tests {
             return;
         };
         state.enforce_ttl();
-        assert!(!state.keys.is_empty(), "key must survive until it has been used");
+        assert!(
+            state.is_unlocked_for(Path::new(TEST_WORKSPACE_A)),
+            "key must survive until it has been used"
+        );
 
-        state.finish_use();
-        assert!(state.keys.is_empty(), "key must be gone once the work is done");
-        assert!(state.active_key_id.is_empty());
+        state.finish_use(Path::new(TEST_WORKSPACE_A));
+        assert!(
+            !state.is_unlocked_for(Path::new(TEST_WORKSPACE_A)),
+            "key must be gone once the work is done"
+        );
         // Still configuration, not session state.
         assert_eq!(state.ttl_minutes, -1);
     }
 
     #[test]
-    fn a_normal_ttl_restarts_the_timer_instead_of_dropping_the_key() {
+    fn a_normal_ttl_keeps_the_original_unlock_deadline() {
         let Some(mut state) = unlocked_since(15, Duration::from_secs(14 * 60)) else {
             return;
         };
-        state.finish_use();
-        assert!(!state.keys.is_empty());
-        assert!(state.expires_in_secs().unwrap() > 14 * 60);
+        state.finish_use(Path::new(TEST_WORKSPACE_A));
+        assert!(state.is_unlocked_for(Path::new(TEST_WORKSPACE_A)));
+        assert!(state
+            .expires_in_secs(Path::new(TEST_WORKSPACE_A))
+            .unwrap()
+            <= 60);
     }
 
     #[test]
@@ -1156,8 +1340,72 @@ mod tests {
             return;
         };
         // There is no deadline to count down to; the UI must not schedule one.
-        assert_eq!(state.expires_in_secs(), None);
+        assert_eq!(state.expires_in_secs(Path::new(TEST_WORKSPACE_A)), None);
         assert!(state.expires_immediately());
+    }
+
+    #[test]
+    fn workspaces_keep_independent_master_keys() {
+        let now = Instant::now();
+        let mut state = VaultState::default();
+        insert_test_session(&mut state, TEST_WORKSPACE_A, 7, now);
+        insert_test_session(&mut state, TEST_WORKSPACE_B, 9, now);
+
+        let a = state.sessions.get(Path::new(TEST_WORKSPACE_A)).unwrap();
+        let b = state.sessions.get(Path::new(TEST_WORKSPACE_B)).unwrap();
+        // Both vaults normally call their first key "k1". The workspace path,
+        // not key-id uniqueness, is what must keep these MKs apart.
+        assert_eq!(a.active_key_id, b.active_key_id);
+        assert_eq!(a.keys["k1"].as_ref(), &[7u8; KEY_LEN]);
+        assert_eq!(b.keys["k1"].as_ref(), &[9u8; KEY_LEN]);
+    }
+
+    #[test]
+    fn locking_one_workspace_keeps_the_other_unlocked() {
+        let now = Instant::now();
+        let mut state = VaultState::default();
+        insert_test_session(&mut state, TEST_WORKSPACE_A, 7, now);
+        insert_test_session(&mut state, TEST_WORKSPACE_B, 9, now);
+
+        state.clear_workspace(Path::new(TEST_WORKSPACE_A));
+        assert!(!state.is_unlocked_for(Path::new(TEST_WORKSPACE_A)));
+        assert!(state.is_unlocked_for(Path::new(TEST_WORKSPACE_B)));
+        assert_eq!(
+            state.sessions[Path::new(TEST_WORKSPACE_B)].keys["k1"].as_ref(),
+            &[9u8; KEY_LEN]
+        );
+    }
+
+    #[test]
+    fn expiry_is_enforced_per_workspace() {
+        let Some(expired_at) = Instant::now().checked_sub(Duration::from_secs(61)) else {
+            return;
+        };
+        let mut state = VaultState {
+            ttl_minutes: 1,
+            ..Default::default()
+        };
+        insert_test_session(&mut state, TEST_WORKSPACE_A, 7, expired_at);
+        insert_test_session(&mut state, TEST_WORKSPACE_B, 9, Instant::now());
+
+        state.enforce_ttl();
+        assert!(!state.is_unlocked_for(Path::new(TEST_WORKSPACE_A)));
+        assert!(state.is_unlocked_for(Path::new(TEST_WORKSPACE_B)));
+    }
+
+    #[test]
+    fn immediate_expiry_finishes_only_the_workspace_that_was_used() {
+        let now = Instant::now();
+        let mut state = VaultState {
+            ttl_minutes: -1,
+            ..Default::default()
+        };
+        insert_test_session(&mut state, TEST_WORKSPACE_A, 7, now);
+        insert_test_session(&mut state, TEST_WORKSPACE_B, 9, now);
+
+        state.finish_use(Path::new(TEST_WORKSPACE_A));
+        assert!(!state.is_unlocked_for(Path::new(TEST_WORKSPACE_A)));
+        assert!(state.is_unlocked_for(Path::new(TEST_WORKSPACE_B)));
     }
 
     #[test]

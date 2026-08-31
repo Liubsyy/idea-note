@@ -96,11 +96,17 @@ pub fn run() {
         set_big_window_icon(&webview.window());
     });
 
+    // The MK lifetime is enforced inside Rust, independently of renderer
+    // timers. One sleeping worker wakes only when a deadline changes or the
+    // next workspace key actually expires.
+    let vault = Vault::default();
+    vault.start_expiry_watchdog();
+
     builder
         .manage(TerminalState::default())
         .manage(CodeRunState::default())
         .manage(encoding::EncodingState::default())
-        .manage(Vault::default())
+        .manage(vault)
         .manage(pending)
         .invoke_handler(tauri::generate_handler![
             open_with::take_pending_open_files,

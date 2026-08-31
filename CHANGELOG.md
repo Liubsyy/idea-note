@@ -1,4 +1,8 @@
 # Changelog
+## 1.2.0
+
+- 密码功能：可对markdown部分内容进行加密和解密
+
 
 ## 1.1.2
 - Windows 新增内置 Batch/CMD 代码块运行器，支持 `bat`、`cmd` 和 `batch` 围栏标识

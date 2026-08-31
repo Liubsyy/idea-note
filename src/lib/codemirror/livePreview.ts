@@ -40,6 +40,7 @@ import {
   openingFenceOf,
   parseFenceInfo,
 } from "../codeRun/fenceAttrs";
+import { isInlineSecret } from "../crypto/secretBlock.ts";
 import { MathWidget } from "./math";
 import { MERMAID_FENCE } from "./diagram";
 import {
@@ -653,10 +654,23 @@ function buildDecorations(view: EditorView): DecorationSet {
             break;
           case "EmphasisMark":
           case "StrikethroughMark":
-          case "CodeMark":
           case "QuoteMark":
             hideMark(nFrom, nTo, name === "QuoteMark");
             break;
+          case "CodeMark": {
+            // An inline secret is replaced whole — backticks included — by the
+            // secret renderer. Hiding its markers here would put a second
+            // replace decoration over the same characters, and what that
+            // draws is anyone's guess.
+            const code = node.node.parent;
+            if (
+              code?.name === "InlineCode" &&
+              isInlineSecret(state.doc.sliceString(code.from, code.to))
+            )
+              break;
+            hideMark(nFrom, nTo);
+            break;
+          }
           case "LinkMark":
             hideMark(nFrom, nTo);
             break;
@@ -964,7 +978,15 @@ function buildDecorations(view: EditorView): DecorationSet {
       to,
       enter: (node) => {
         const cls = INLINE_CLASS[node.name];
-        if (cls) ranges.push(Decoration.mark({ class: cls }).range(node.from, node.to));
+        if (!cls) return;
+        // Same reason as CodeMark above: a secret span is not inline code as
+        // far as the rendering is concerned, it is a chip of its own.
+        if (
+          node.name === "InlineCode" &&
+          isInlineSecret(state.doc.sliceString(node.from, node.to))
+        )
+          return;
+        ranges.push(Decoration.mark({ class: cls }).range(node.from, node.to));
       },
     });
   }

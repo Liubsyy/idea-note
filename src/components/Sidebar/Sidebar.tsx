@@ -17,11 +17,11 @@ import {
   Printer,
   Download,
   FileDown,
-  ChevronRight,
   ChevronDown,
 } from "lucide-react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { getVersion } from "@tauri-apps/api/app";
+import { SubMenuItem } from "../ContextSubMenu";
 import { useAppStore, type SidebarMode } from "../../store/useAppStore";
 import {
   basename,
@@ -1021,69 +1021,6 @@ function SegmentButton({
     >
       {children}
     </button>
-  );
-}
-
-/** Menu row that reveals a nested panel to the right while hovered. */
-function SubMenuItem({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  // The panel is portaled to <body> with fixed coordinates — rendered in
-  // place it would be clipped by the sidebar's overflow and sit under the
-  // sidebar/editor divider. A short close delay keeps it open while the
-  // pointer crosses the 2px overlap between the row and the panel.
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-  const rowRef = useRef<HTMLDivElement>(null);
-  const closeTimer = useRef<number | undefined>(undefined);
-  const show = () => {
-    window.clearTimeout(closeTimer.current);
-    const r = rowRef.current?.getBoundingClientRect();
-    if (r) {
-      setPos({ top: r.top, left: Math.min(r.right - 2, window.innerWidth - 150) });
-    }
-  };
-  const hide = () => {
-    closeTimer.current = window.setTimeout(() => setPos(null), 120);
-  };
-  useEffect(() => () => window.clearTimeout(closeTimer.current), []);
-
-  return (
-    <div ref={rowRef} onMouseEnter={show} onMouseLeave={hide}>
-      <button
-        className="flex w-full items-center justify-between px-3 py-1.5 text-left transition-colors"
-        style={{
-          color: "var(--text)",
-          background: pos ? "var(--hover)" : "transparent",
-        }}
-      >
-        {label}
-        <ChevronRight size={13} style={{ color: "var(--text-muted)" }} />
-      </button>
-      {pos &&
-        createPortal(
-          <div
-            data-menu-panel="true"
-            className="fixed z-[70] w-36 overflow-y-auto overscroll-contain rounded-lg py-1 text-sm shadow-lg"
-            style={{
-              top: pos.top,
-              left: pos.left,
-              maxHeight: `calc(100vh - ${pos.top + 8}px)`,
-              background: "var(--bg-elev)",
-              border: "1px solid var(--border)",
-              boxShadow: "0 8px 24px var(--shadow)",
-            }}
-            onMouseEnter={show}
-            onMouseLeave={hide}
-          >
-            {children}
-          </div>,
-          document.body,
-        )}
-    </div>
   );
 }
 

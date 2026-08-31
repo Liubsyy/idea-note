@@ -15,10 +15,12 @@ import type { EditorView } from "@codemirror/view";
 
 import { getActiveView } from "../codemirror/activeView";
 import {
+  formatInlineSecret,
   formatSecretBlock,
-  scanSecretBlocks,
+  scanSecrets,
   wrapBody,
-  type SecretBlockInfo,
+  type SecretInfo,
+  type SecretMeta,
 } from "./secretBlock.ts";
 import { secretEncryptBatch, vaultErrorCode } from "./vault";
 import { secretKey, useVaultStore } from "../../store/useVaultStore";
@@ -39,21 +41,39 @@ export const unregisterNestedView = (key: string, view: EditorView) => {
   if (nested.get(key) === view) nested.delete(key);
 };
 
+/** Focus an already mounted plaintext editor. Newly inserted secret blocks
+ *  use this to put the user straight into the empty encrypted area. */
+export const focusSecretEditor = (key: string): boolean => {
+  const view = nested.get(key);
+  if (!view) return false;
+  view.focus();
+  return true;
+};
+
 /** Body text compared the way the document stores it, so re-wrapping alone
  *  never counts as a change. */
 const sameBody = (a: string, b: string) => wrapBody(a) === wrapBody(b);
 
-/** The block an entry belongs to: same id *and* same ciphertext, because a
- *  copied block shares its id with the original. */
-function findBlock(
-  blocks: SecretBlockInfo[],
+/** The secret an entry belongs to: same id *and* same ciphertext, because a
+ *  copied one shares its id with the original. Blocks and inline spans are
+ *  looked up the same way — the entry never knew which shape it came from. */
+function findSecret(
+  secrets: SecretInfo[],
   blockId: string,
   body: string,
-): SecretBlockInfo | null {
+): SecretInfo | null {
   return (
-    blocks.find((b) => b.meta?.id === blockId && sameBody(b.body, body)) ?? null
+    secrets.find((s) => s.meta?.id === blockId && sameBody(s.body, body)) ?? null
   );
 }
+
+/** Put a secret back in the shape it was written in. Re-encrypting must never
+ *  turn a chip into a card or the other way round: the shape is the author's
+ *  choice, not the cipher's. */
+const serialise = (secret: SecretInfo, meta: SecretMeta, body: string): string =>
+  secret.kind === "inline"
+    ? formatInlineSecret(meta, body)
+    : formatSecretBlock(meta, body);
 
 /** What a flush did. `blocked` counts edits still waiting for a key. */
 export interface FlushResult {
@@ -86,21 +106,22 @@ export async function flushSecretEdits(
 ): Promise<FlushResult> {
   const none: FlushResult = { written: 0, blocked: 0 };
   if (!view || !filePath) return none;
-  const { entries } = useVaultStore.getState();
+  const { entries, workspace } = useVaultStore.getState();
+  if (!workspace) return none;
   const prefix = `${filePath} `;
   const dirty = Object.entries(entries).filter(
     ([key, entry]) => key.startsWith(prefix) && entry.draft !== entry.saved,
   );
   if (dirty.length === 0) return none;
 
-  const blocks = scanSecretBlocks(view.state.doc);
-  const pending: { key: string; blockId: string; plaintext: string; block: SecretBlockInfo }[] =
+  const secrets = scanSecrets(view.state.doc);
+  const pending: { key: string; blockId: string; plaintext: string; block: SecretInfo }[] =
     [];
 
   for (const [key, entry] of dirty) {
     const blockId = key.slice(prefix.length);
-    const block = findBlock(blocks, blockId, entry.body);
-    // The block is gone (the user deleted it) — drop the edit rather than
+    const block = findSecret(secrets, blockId, entry.body);
+    // The secret is gone (the user deleted it) — drop the edit rather than
     // resurrecting text they removed.
     if (!block?.meta) continue;
     pending.push({ key, blockId, plaintext: entry.draft, block });
@@ -110,6 +131,7 @@ export async function flushSecretEdits(
   let encrypted;
   try {
     encrypted = await secretEncryptBatch(
+      workspace,
       pending.map(({ blockId, plaintext }) => ({ blockId, plaintext })),
     );
   } catch (error) {
@@ -118,10 +140,10 @@ export async function flushSecretEdits(
     // caller said it may; otherwise leave the edits dirty — they are still in
     // the store, and the next deliberate flush will offer to encrypt them.
     if (!prompt) return { written: 0, blocked: pending.length };
-    const workspace = useVaultStore.getState().workspace;
     const unlocked = await useVaultStore.getState().ensureUnlocked(workspace);
     if (!unlocked) return { written: 0, blocked: pending.length };
     encrypted = await secretEncryptBatch(
+      workspace,
       pending.map(({ blockId, plaintext }) => ({ blockId, plaintext })),
     );
   }
@@ -135,7 +157,8 @@ export async function flushSecretEdits(
     changes.push({
       from: block.from,
       to: block.to,
-      insert: formatSecretBlock(
+      insert: serialise(
+        block,
         { ...block.meta, v: result.v, keyId: result.keyId },
         result.body,
       ),

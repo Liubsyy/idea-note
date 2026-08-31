@@ -72,7 +72,7 @@ export interface VaultStatus {
   activeKeyId: string;
   slots: SlotInfo[];
   /** -1 = drop the key as soon as the work needing it is done, 0 = never,
-   *  >0 = minutes of disuse. */
+   *  >0 = minutes from successful unlock. */
   ttlMinutes: number;
   /** Seconds left on that timer, so the UI can schedule one re-check instead
    *  of polling. Null while locked or when expiry is off. */
@@ -104,7 +104,8 @@ export const vaultInit = (workspace: string, password: string) =>
 export const vaultUnlock = (workspace: string, secret: string) =>
   invoke<void>("vault_unlock", { workspace, secret });
 
-export const vaultLock = () => invoke<void>("vault_lock");
+export const vaultLock = (workspace: string) =>
+  invoke<void>("vault_lock", { workspace });
 
 /** Change how long the key may sit in memory. -1 = immediate, 0 = never. */
 export const vaultSetTtl = (minutes: number) =>
@@ -121,22 +122,26 @@ export const vaultChangePassword = (
 export const vaultRegenerateRecovery = (workspace: string, secret: string) =>
   invoke<{ recoveryCode: string }>("vault_regenerate_recovery", { workspace, secret });
 
-export const secretEncrypt = (blockId: string, plaintext: string) =>
-  invoke<EncryptResult>("secret_encrypt", { blockId, plaintext });
+export const secretEncrypt = (
+  workspace: string,
+  blockId: string,
+  plaintext: string,
+) => invoke<EncryptResult>("secret_encrypt", { workspace, blockId, plaintext });
 
 /** Encrypt several blocks in one command. A save is one operation to the user
  *  and has to be one operation to the key as well: with "立即过期" the key is
  *  dropped when a command finishes, so per-block calls would mean one password
  *  prompt per block for a single Ctrl+S. */
 export const secretEncryptBatch = (
+  workspace: string,
   blocks: { blockId: string; plaintext: string }[],
-) => invoke<EncryptedBlock[]>("secret_encrypt_batch", { blocks });
+) => invoke<EncryptedBlock[]>("secret_encrypt_batch", { workspace, blocks });
 
 /** Fields are passed structurally, not as markdown: the Rust side rebuilds the
  *  AAD from these three values and never sees a fence line. */
-export const secretDecrypt = (args: {
+export const secretDecrypt = (workspace: string, args: {
   v: number;
   keyId: string;
   blockId: string;
   body: string;
-}) => invoke<DecryptResult>("secret_decrypt", args);
+}) => invoke<DecryptResult>("secret_decrypt", { workspace, ...args });

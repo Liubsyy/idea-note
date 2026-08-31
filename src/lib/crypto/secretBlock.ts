@@ -1,8 +1,15 @@
-// Parsing and serialising ```secret blocks.
+// Parsing and serialising secret content, in both of its shapes.
 //
 //     ```secret {v=1, key=k1, id=b9f3a2c}
 //     <base64url(nonce ‖ ciphertext ‖ tag), wrapped at 96 columns>
 //     ```
+//
+//     …and inline: `secret {v=1, key=k1, id=b7c1f2a} <base64url, one line>`
+//
+// The two shapes share everything that matters — the attributes, the AAD, the
+// payload — and differ only in how they sit in the text. That is deliberate:
+// the same ciphertext decrypts in either shape, so moving one to the other is
+// a text edit rather than a re-encryption.
 //
 // Everything here is pure so it can be tested without CodeMirror or Tauri.
 //
@@ -46,6 +53,9 @@ export interface SecretMeta {
   extras: string[];
 }
 
+/** Which of the two shapes a piece of secret content is written in. */
+export type SecretKind = "block" | "inline";
+
 export interface SecretBlockInfo {
   /** Whole block, both fence lines included. */
   from: number;
@@ -57,6 +67,12 @@ export interface SecretBlockInfo {
   body: string;
   bodyFrom: number;
   bodyTo: number;
+}
+
+/** A block or an inline span. The extra field is what tells the renderers and
+ *  the flush path which serialiser to use on the way back out. */
+export interface SecretInfo extends SecretBlockInfo {
+  kind: SecretKind;
 }
 
 /** The subset of CodeMirror's `Text` this module needs. Declared structurally
@@ -160,27 +176,115 @@ export function formatSecretBlock(meta: SecretMeta, body: string): string {
   return `\`\`\`${formatSecretAttrs(meta)}\n${wrapBody(body)}\n\`\`\``;
 }
 
-/** A fresh block id: a letter (IDENT requires one) plus 3 random bytes. */
+/**
+ * A complete inline span, ready to splice into a document.
+ *
+ * Deliberately unwrapped. An inline replace decoration may not cross a line
+ * break, and the 96-column wrapping exists for Git's line-level diff on a
+ * fenced block — an inline span has neither need.
+ */
+export function formatInlineSecret(meta: SecretMeta, body: string): string {
+  return `\`${formatSecretAttrs(meta)} ${body.replace(/\s+/g, "")}\``;
+}
+
+/** A fresh block id: a letter (IDENT requires one) plus 8 random bytes. */
 export function newBlockId(): string {
-  const bytes = new Uint8Array(3);
+  const bytes = new Uint8Array(8);
   crypto.getRandomValues(bytes);
   return `b${Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")}`;
 }
 
 /**
- * Every secret block in the document, in order.
+ * One inline secret span: `secret {v=1, key=k1, id=b7c1f2a} sT3n…`.
+ *
+ * The body alphabet is base64url without padding, which contains no backtick,
+ * so the ciphertext can never cut its own span short. The attribute part
+ * excludes backticks and braces for the same reason.
+ */
+const INLINE_SECRET = /`secret[ \t]*\{[^`{}\n]*\}[ \t]*([A-Za-z0-9_-]+)`/g;
+
+/** The inline spans on one line, at absolute document offsets. */
+function scanInlineOnLine(text: string, offset: number): SecretInfo[] {
+  const found: SecretInfo[] = [];
+  INLINE_SECRET.lastIndex = 0;
+  for (let m = INLINE_SECRET.exec(text); m; m = INLINE_SECRET.exec(text)) {
+    const start = m.index;
+    const end = start + m[0].length;
+    // A ``…`` code span is delimited by two backticks; the run matched here is
+    // one, so a backtick on either side means this is a slice of something
+    // larger rather than a secret of its own.
+    if (text[start - 1] === "`" || text[end] === "`") continue;
+    // Everything up to and including the closing brace is exactly the info
+    // string `parseSecretAttrs` already understands — one parser, one AAD.
+    const meta = parseSecretAttrs(m[0].slice(1, m[0].lastIndexOf("}") + 1));
+    // Unparseable attributes fall through to the ordinary inline-code
+    // rendering, so the user can see and repair the raw text.
+    if (!meta) continue;
+    const bodyFrom = offset + end - 1 - m[1].length;
+    found.push({
+      kind: "inline",
+      from: offset + start,
+      to: offset + end,
+      meta,
+      body: m[1],
+      bodyFrom,
+      bodyTo: bodyFrom + m[1].length,
+    });
+  }
+  return found;
+}
+
+/**
+ * Replace every inline secret in a run of text with a placeholder.
+ *
+ * For the read-only paths that show note text somewhere other than the editor —
+ * the outline, for one. They cannot decrypt and have no business trying; what
+ * they must not do is print a wall of base64 where a phrase used to be.
+ *
+ * Fence awareness is the caller's, same as it is for the outline scanner: this
+ * sees the text it is handed and nothing about where it came from.
+ */
+export function redactInlineSecrets(text: string, placeholder = "🔒"): string {
+  const spans = scanInlineOnLine(text, 0);
+  if (spans.length === 0) return text;
+  let out = "";
+  let at = 0;
+  for (const span of spans) {
+    out += text.slice(at, span.from) + placeholder;
+    at = span.to;
+  }
+  return out + text.slice(at);
+}
+
+/**
+ * Whether an entire inline code span — backticks included — is a secret.
+ *
+ * livePreview.ts asks this so it can leave such a span's markers and styling
+ * alone: the span is replaced whole by the secret renderer, and two replace
+ * decorations over the same characters is not a defined thing.
+ */
+export function isInlineSecret(source: string): boolean {
+  const [span] = scanInlineOnLine(source, 0);
+  return span !== undefined && span.from === 0 && span.to === source.length;
+}
+
+/**
+ * Every secret in the document, both shapes, in order.
  *
  * The fence walk mirrors `scanInputBlocks`: it steps over *every* fenced block,
  * not just the ones it wants, so a ```secret written inside a documentation
- * fence isn't mistaken for a real one.
+ * fence isn't mistaken for a real one. Inline spans ride on the same walk and
+ * get the same protection for free — a line inside any fence is never visited
+ * by the inline scan, so an example written in a code block stays an example.
  */
-export function scanSecretBlocks(doc: DocLike): SecretBlockInfo[] {
-  const blocks: SecretBlockInfo[] = [];
+export function scanSecrets(doc: DocLike): SecretInfo[] {
+  const found: SecretInfo[] = [];
   let i = 1;
   while (i <= doc.lines) {
     const line = doc.line(i);
     const opening: FenceMarker | null = openingFenceOf(line.text);
     if (!opening) {
+      found.push(...scanInlineOnLine(line.text, line.from));
       i++;
       continue;
     }
@@ -194,7 +298,8 @@ export function scanSecretBlocks(doc: DocLike): SecretBlockInfo[] {
     const hasBody = j > i + 1;
     const bodyFrom = hasBody ? doc.line(i + 1).from : line.to;
     const bodyTo = hasBody ? doc.line(j - 1).to : line.to;
-    blocks.push({
+    found.push({
+      kind: "block",
       from: line.from,
       to: doc.line(closeLine).to,
       meta: parseSecretAttrs(opening.info),
@@ -204,7 +309,12 @@ export function scanSecretBlocks(doc: DocLike): SecretBlockInfo[] {
     });
     i = closeLine + 1;
   }
-  return blocks;
+  return found;
+}
+
+/** Just the fenced blocks, for the callers that only ever deal in those. */
+export function scanSecretBlocks(doc: DocLike): SecretBlockInfo[] {
+  return scanSecrets(doc).filter((s) => s.kind === "block");
 }
 
 /** Build a `DocLike` from a plain string — used by tests and by any caller
