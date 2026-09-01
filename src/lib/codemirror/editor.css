@@ -10,6 +10,22 @@
   font-size: var(--editor-font-size);
 }
 
+/* Immersive current-file presentation keeps the same EditorView mounted, but
+   gives its content room below the transient controls and removes editor-only
+   cursor-line affordances. The surrounding App overrides --editor-font-size. */
+.presentation-active .cm-host .cm-content {
+  padding-top: 88px;
+}
+.presentation-active .cm-host .cm-activeLine,
+.presentation-active .cm-host .cm-activeLineGutter {
+  background: transparent;
+}
+.presentation-active .cm-host .cm-lineNumbers .cm-gutterElement.cm-activeLineGutter {
+  color: var(--text-muted);
+  opacity: 0.5;
+  font-weight: inherit;
+}
+
 /* Compact editor — toggled by the `html.editor-compact` class that the editor
    settings flip. Tightens the vertical rhythm: line spacing scales down from
    the user's chosen line-height (so the stepper still has relative effect), and

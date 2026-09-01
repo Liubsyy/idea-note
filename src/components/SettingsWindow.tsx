@@ -2469,7 +2469,7 @@ function SecurityTab() {
         <Notice>
           {replacingRecovery
             ? rotationSummary
-              ? `MK 已重置，${rotationSummary.filesChanged} 个文件中的 ${rotationSummary.secretsChanged} 处加密内容已迁移。旧恢复码已失效，这串新码只显示一次。`
+              ? `MK 已重置，${rotationSummary.filesChanged} 个文件中的 ${rotationSummary.secretsChanged} 处加密内容已迁移。工作区已锁定，旧恢复码已失效，这串新码只显示一次。`
               : "新恢复码已生效，旧恢复码已失效。这串新码只显示一次，请立即保存。"
             : "这串恢复码只显示这一次。抄到密码管理器或纸上——忘记口令时，它是唯一的入口。"}
         </Notice>
@@ -2508,7 +2508,7 @@ function SecurityTab() {
               setDone(
                 replacingRecovery
                   ? rotationSummary
-                    ? "MK 重置已完成，新恢复码已保存。"
+                    ? "MK 重置已完成，新恢复码已保存。工作区已锁定，再次查看密文时需要输入口令。"
                     : "新恢复码已保存，旧恢复码已失效。"
                   : "加密口令已设置。现在可以在笔记里加密选中的内容了。",
               );
@@ -2727,7 +2727,7 @@ function SecurityTab() {
               {status.rotationPending ? "继续完成 MK 重置" : "重置 MK"}
             </div>
             <div className="mt-1 text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
-              生成全新的主密钥，并重新加密工作区内所有 Markdown 加密内容。主口令保持不变，但所有相关笔记和 vault.json 都会产生 Git 改动，旧恢复码将在完成后失效。
+              生成全新的主密钥，并重新加密工作区内所有 Markdown 加密内容。主口令保持不变，但所有相关笔记和 vault.json 都会产生 Git 改动，旧恢复码将在完成后失效。重置完成后会立即清理内存中的 MK 并锁定工作区，再次查看密文时需要输入口令。
             </div>
           </div>
           <Field label="当前主口令（不能使用恢复码）">

@@ -1087,6 +1087,19 @@ struct RotationBuilt {
     target_mk: Zeroizing<[u8; KEY_LEN]>,
 }
 
+/// A master-key reset is a privileged maintenance operation, not an unlock.
+/// Erase the worker's last copy of the new MK and leave the workspace locked,
+/// regardless of the configured session TTL. The next secret operation must
+/// therefore authenticate against the newly written vault.json.
+fn lock_after_master_key_rotation(
+    state: &mut VaultState,
+    workspace: &Path,
+    target_mk: &mut Zeroizing<[u8; KEY_LEN]>,
+) {
+    target_mk.zeroize();
+    state.clear_workspace(workspace);
+}
+
 fn rotate_master_key_on_disk(workspace: &str, password: &str) -> Result<RotationBuilt, String> {
     rotate_master_key_on_disk_with_cost(workspace, password, ARGON_M_COST, ARGON_T_COST)
 }
@@ -1577,16 +1590,12 @@ pub async fn vault_rotate_master_key(
         .await
         .map_err(|e| e.to_string())??;
 
-        let RotationBuilt { result, target_mk } = built;
-        let mut keys = HashMap::new();
-        keys.insert(result.active_key_id.clone(), target_mk);
+        let RotationBuilt {
+            result,
+            mut target_mk,
+        } = built;
         let mut state = vault.lock().map_err(|_| "vault state poisoned")?;
-        state.begin_session(
-            PathBuf::from(&workspace),
-            result.active_key_id.clone(),
-            keys,
-        );
-        state.finish_use(Path::new(&workspace));
+        lock_after_master_key_rotation(&mut state, Path::new(&workspace), &mut target_mk);
         vault.notify_expiry_changed();
         Ok(result)
     }
@@ -2517,6 +2526,28 @@ mod tests {
         state.finish_use(Path::new(TEST_WORKSPACE_A));
         assert!(!state.is_unlocked_for(Path::new(TEST_WORKSPACE_A)));
         assert!(state.is_unlocked_for(Path::new(TEST_WORKSPACE_B)));
+    }
+
+    #[test]
+    fn master_key_rotation_always_ends_locked_regardless_of_ttl() {
+        for ttl_minutes in [-1, 0, 15] {
+            let mut state = VaultState {
+                ttl_minutes,
+                ..Default::default()
+            };
+            insert_test_session(&mut state, TEST_WORKSPACE_A, 7, Instant::now());
+            let mut target_mk = Zeroizing::new([9u8; KEY_LEN]);
+
+            lock_after_master_key_rotation(
+                &mut state,
+                Path::new(TEST_WORKSPACE_A),
+                &mut target_mk,
+            );
+
+            assert!(!state.is_unlocked_for(Path::new(TEST_WORKSPACE_A)));
+            assert_eq!(target_mk.as_ref(), &[0u8; KEY_LEN]);
+            assert_eq!(state.ttl_minutes, ttl_minutes);
+        }
     }
 
     #[test]

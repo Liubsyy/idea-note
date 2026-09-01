@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  type CSSProperties,
+} from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
@@ -15,6 +21,7 @@ import {
 } from "./components/Editor/CodeMirrorEditor";
 import { ImageView } from "./components/Editor/ImageView";
 import { FolderView } from "./components/Editor/FolderView";
+import { PresentationControls } from "./components/Editor/PresentationControls";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { BottomPanel } from "./components/Panels/BottomPanel";
 import { RightPanel } from "./components/Panels/RightPanel";
@@ -24,7 +31,12 @@ import { PromptModal } from "./components/PromptModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { VaultModal } from "./components/VaultModal";
 import { HistoryModal } from "./components/HistoryModal";
-import { isDraftPath, useAppStore } from "./store/useAppStore";
+import {
+  isDraftPath,
+  PRESENTATION_SCALE_DEFAULT,
+  PRESENTATION_SCALE_STEP,
+  useAppStore,
+} from "./store/useAppStore";
 import {
   basename,
   isImageFile,
@@ -63,6 +75,9 @@ function App() {
   const runPanelWidth = useAppStore((s) => s.runPanelWidth);
   const setRunPanelWidth = useAppStore((s) => s.setRunPanelWidth);
   const docKey = useAppStore((s) => s.docKey);
+  const presentationActive = useAppStore((s) => s.presentationActive);
+  const presentationScale = useAppStore((s) => s.presentationScale);
+  const editorFontSize = useAppStore((s) => s.editorFontSize);
 
   // The terminal panel stays mounted once opened so toggling it just hides the
   // panel (shells keep running); it's torn down only when its last tab closes.
@@ -140,6 +155,97 @@ function App() {
     };
   }, []);
 
+  // Presentation is tied to the file that was active at entry. An external
+  // "Open With" event (or any other programmatic switch) ends it instead of
+  // silently presenting a different file.
+  const presentedPathRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!presentationActive) {
+      presentedPathRef.current = null;
+      return;
+    }
+    if (presentedPathRef.current === null) {
+      presentedPathRef.current = activeFilePath;
+      if (!activeFilePath) useAppStore.getState().exitPresentation();
+      return;
+    }
+    if (activeFilePath !== presentedPathRef.current)
+      useAppStore.getState().exitPresentation();
+  }, [activeFilePath, presentationActive]);
+
+  // Enter native fullscreen where available, but keep the in-window immersive
+  // layout as a fallback (plain-browser development and denied native calls).
+  // Only undo fullscreen on exit when presentation itself turned it on.
+  useEffect(() => {
+    if (!presentationActive) return;
+    let win: ReturnType<typeof getCurrentWindow>;
+    try {
+      win = getCurrentWindow();
+    } catch {
+      useAppStore
+        .getState()
+        .showToast("无法进入系统全屏，已使用窗口内演示", "error");
+      return;
+    }
+
+    let disposed = false;
+    let ownsFullscreen = false;
+    let expectFullscreen = false;
+    let unlistenResize: (() => void) | undefined;
+    let enterFullscreen: Promise<void> | null = null;
+
+    void (async () => {
+      try {
+        const alreadyFullscreen = await win.isFullscreen();
+        if (disposed) return;
+        ownsFullscreen = !alreadyFullscreen;
+        if (!alreadyFullscreen) {
+          enterFullscreen = win.setFullscreen(true);
+          await enterFullscreen;
+        }
+        if (disposed) return;
+        expectFullscreen = true;
+      } catch {
+        ownsFullscreen = false;
+        if (!disposed)
+          useAppStore
+            .getState()
+            .showToast("无法进入系统全屏，已使用窗口内演示", "error");
+        return;
+      }
+
+      try {
+        unlistenResize = await win.onResized(() => {
+          if (disposed || !expectFullscreen) return;
+          void win
+            .isFullscreen()
+            .then((fullscreen) => {
+              if (!disposed && !fullscreen)
+                useAppStore.getState().exitPresentation();
+            })
+            .catch(() => {});
+        });
+      } catch {
+        // Fullscreen still works; only native-exit detection is unavailable.
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      expectFullscreen = false;
+      unlistenResize?.();
+      if (ownsFullscreen)
+        void (async () => {
+          try {
+            await enterFullscreen;
+          } catch {
+            return;
+          }
+          await win.setFullscreen(false).catch(() => {});
+        })();
+    };
+  }, [presentationActive]);
+
   // Timed auto-sync (configured per workspace in 设置 → 远程同步). syncNow
   // already guards against re-entry and saves dirty edits first. A repo
   // without a remote still auto-syncs: each tick is a local commit snapshot.
@@ -160,6 +266,82 @@ function App() {
   const narrow = viewportWidth < 768;
   const [isDragging, setIsDragging] = useState(false);
   const dragging = useRef(false);
+
+  // F5 enters presentation from anywhere in the editor. While presenting, a
+  // capture-phase handler owns Escape/zoom/page navigation so CodeMirror or an
+  // open search panel cannot consume those keys first.
+  useEffect(() => {
+    const onPresentationKey = (e: KeyboardEvent) => {
+      const state = useAppStore.getState();
+      if (!state.presentationActive) {
+        if (e.key !== "F5") return;
+        const modalOpen =
+          !!state.prompt ||
+          !!state.confirm ||
+          !!state.gitCredentialPrompt ||
+          !!state.history;
+        if (modalOpen) return;
+        e.preventDefault();
+        state.enterPresentation();
+        return;
+      }
+
+      const stop = () => {
+        e.preventDefault();
+        e.stopPropagation();
+      };
+      if (e.key === "Escape" || e.key === "F5") {
+        stop();
+        state.exitPresentation();
+        return;
+      }
+      if (e.metaKey || e.ctrlKey) {
+        if (e.key === "+" || e.key === "=") {
+          stop();
+          state.setPresentationScale(
+            state.presentationScale + PRESENTATION_SCALE_STEP,
+          );
+          return;
+        }
+        if (e.key === "-" || e.key === "_") {
+          stop();
+          state.setPresentationScale(
+            state.presentationScale - PRESENTATION_SCALE_STEP,
+          );
+          return;
+        }
+        if (e.key === "0") {
+          stop();
+          state.setPresentationScale(PRESENTATION_SCALE_DEFAULT);
+          return;
+        }
+        // Editing/search/global-new shortcuts must not mutate or replace the
+        // file hidden behind the read-only presentation surface.
+        if (["n", "s", "f"].includes(e.key.toLowerCase())) {
+          stop();
+          return;
+        }
+      }
+
+      if (["PageUp", "PageDown", "Home", "End"].includes(e.key)) {
+        const scroller =
+          getActiveView()?.scrollDOM ??
+          document.querySelector<HTMLElement>("[data-presentation-scroll]");
+        if (!scroller) return;
+        stop();
+        if (e.key === "Home") scroller.scrollTo({ top: 0, behavior: "smooth" });
+        else if (e.key === "End")
+          scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
+        else
+          scroller.scrollBy({
+            top: (e.key === "PageDown" ? 1 : -1) * scroller.clientHeight * 0.85,
+            behavior: "smooth",
+          });
+      }
+    };
+    window.addEventListener("keydown", onPresentationKey, true);
+    return () => window.removeEventListener("keydown", onPresentationKey, true);
+  }, []);
 
   // Global Ctrl/Cmd+N creates an untitled draft and Ctrl/Cmd+S saves;
   // Ctrl/Cmd+F (⌥ for replace) opens editor search even when focus is elsewhere
@@ -390,36 +572,49 @@ function App() {
   );
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden">
+    <div
+      className={`flex h-screen w-screen flex-col overflow-hidden ${
+        presentationActive ? "presentation-active" : ""
+      }`}
+      style={
+        presentationActive
+          ? ({
+              "--editor-font-size": `${editorFontSize * presentationScale}px`,
+            } as CSSProperties)
+          : undefined
+      }
+    >
       {/* Custom draggable title bar (native title is hidden). */}
-      <TitleBar leftWidth={leftWidth} />
+      {!presentationActive && <TitleBar leftWidth={leftWidth} />}
 
       <div className="relative flex min-h-0 flex-1">
       {/* Sidebar. Desktop: width collapses to 0 so the editor reclaims the
           space; the inner wrapper keeps a fixed width so content doesn't reflow
           mid-animation. Narrow: slides in/out as an overlay drawer. */}
-      <div
-        className={
-          narrow
-            ? "absolute z-40 h-full shadow-2xl transition-transform"
-            : `relative shrink-0 overflow-hidden ${isDragging ? "" : "transition-[width] duration-200 ease-out"}`
-        }
-        style={{
-          width: narrow ? width : sidebarOpen ? width : 0,
-          transform: narrow
-            ? `translateX(${sidebarOpen ? 0 : -width}px)`
-            : undefined,
-        }}
-      >
-        <div style={{ width }} className="h-full">
-          <Sidebar />
+      {!presentationActive && (
+        <div
+          className={
+            narrow
+              ? "absolute z-40 h-full shadow-2xl transition-transform"
+              : `relative shrink-0 overflow-hidden ${isDragging ? "" : "transition-[width] duration-200 ease-out"}`
+          }
+          style={{
+            width: narrow ? width : sidebarOpen ? width : 0,
+            transform: narrow
+              ? `translateX(${sidebarOpen ? 0 : -width}px)`
+              : undefined,
+          }}
+        >
+          <div style={{ width }} className="h-full">
+            <Sidebar />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Resize handle (desktop only): an invisible grab zone floated on the
           seam as an overlay, so the two panes stay flush — their bottom borders
           meet as one continuous line and the bg-color seam runs top to bottom. */}
-      {!narrow && sidebarOpen && (
+      {!presentationActive && !narrow && sidebarOpen && (
         <div
           onMouseDown={onMouseDown}
           className="absolute bottom-0 top-0 z-20 w-[6px] -translate-x-1/2 cursor-col-resize"
@@ -429,7 +624,7 @@ function App() {
       )}
 
       {/* Backdrop for mobile drawer */}
-      {narrow && sidebarOpen && (
+      {!presentationActive && narrow && sidebarOpen && (
         <div
           className="absolute inset-0 z-30 bg-black/30"
           onClick={toggleSidebar}
@@ -438,7 +633,7 @@ function App() {
 
       {/* Main editor pane */}
       <div className="relative flex min-w-0 flex-1 flex-col" style={{ background: "var(--bg)" }}>
-        {dropHover && (
+        {!presentationActive && dropHover && (
           <div
             className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center"
             style={{ background: "color-mix(in srgb, var(--accent) 8%, transparent)" }}
@@ -456,7 +651,7 @@ function App() {
           </div>
         )}
         <div data-editor-pane className="relative flex min-h-0 flex-1 flex-col">
-        <EditorTabs />
+        {!presentationActive && <EditorTabs />}
         {folderViewPath ? (
           <>
             <div
@@ -479,7 +674,8 @@ function App() {
             {/* Only markdown gets a header row (formatting toolbar + preview
                 toggle). Other files rely on the tab strip for their name, so the
                 editor/image fills the pane right under the tabs. */}
-            {(isMarkdownFile(activeFilePath) || isDraftPath(activeFilePath)) && (
+            {!presentationActive &&
+              (isMarkdownFile(activeFilePath) || isDraftPath(activeFilePath)) && (
               <div
                 className="flex h-11 items-center backdrop-blur"
                 style={{
@@ -497,7 +693,12 @@ function App() {
             )}
             <div className="min-h-0 flex-1 overflow-hidden">
               {isImageFile(activeFilePath) ? (
-                <ImageView path={activeFilePath} />
+                <ImageView
+                  path={activeFilePath}
+                  presentationScale={
+                    presentationActive ? presentationScale : undefined
+                  }
+                />
               ) : (
                 // key forces a clean remount when switching files
                 <ErrorBoundary resetKey={docKey}>
@@ -517,7 +718,7 @@ function App() {
         </div>
         {bottomPanelMounted && (
           <BottomPanel
-            visible={bottomPanelOpen}
+            visible={bottomPanelOpen && !presentationActive}
             onAllClosed={() => {
               setBottomPanelMounted(false);
               if (bottomPanelOpen) toggleBottomPanel();
@@ -525,7 +726,7 @@ function App() {
           />
         )}
       </div>
-      {runPanelOpen && (
+      {!presentationActive && runPanelOpen && (
         <div className="relative h-full shrink-0" style={{ width: runPanelWidth }}>
           <div
             onMouseDown={startRunPanelResize}
@@ -535,7 +736,7 @@ function App() {
           <RunPanel />
         </div>
       )}
-      {rightPanelOpen && (
+      {!presentationActive && rightPanelOpen && (
         <div className="relative h-full shrink-0" style={{ width: rightPanelWidth }}>
           <div
             onMouseDown={startRightPanelResize}
@@ -546,6 +747,8 @@ function App() {
         </div>
       )}
       </div>
+
+      {presentationActive && <PresentationControls />}
 
       <PromptModal />
       <ConfirmModal />

@@ -116,11 +116,16 @@ export function CodeMirrorEditor() {
   const editorLineNumbers = useAppStore((s) => s.editorLineNumbers);
   const editorKeybindings = useAppStore((s) => s.editorKeybindings);
   const mdViewMode = useAppStore((s) => s.mdViewMode);
+  const presentationActive = useAppStore((s) => s.presentationActive);
   const codeRunConfig = useAppStore((s) => s.codeRunConfig);
   const vaultRotationBusy = useAppStore((s) => s.vaultRotationBusy);
   // Compartment holding the view-mode extensions for markdown files, so switching
   // mode reconfigures them in place (no remount, cursor/scroll/edits kept).
   const previewCompartment = useRef(new Compartment());
+  // Applied to every file type. Markdown also switches its preview compartment
+  // to readonly so rendered widgets stay visible; this compartment makes the
+  // same lock apply to ordinary text/code files.
+  const presentationCompartment = useRef(new Compartment());
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -170,6 +175,11 @@ export function CodeMirrorEditor() {
       // bindings for everything it doesn't manage.
       buildEditorKeymap(editorKeybindings, isMd),
       updateListener,
+      presentationCompartment.current.of(
+        useAppStore.getState().presentationActive
+          ? [EditorState.readOnly.of(true), EditorView.editable.of(false)]
+          : [],
+      ),
       ...(vaultRotationBusy
         ? [EditorState.readOnly.of(true), EditorView.editable.of(false)]
         : []),
@@ -218,7 +228,9 @@ export function CodeMirrorEditor() {
           markdownLinkClick,
           previewCompartment.current.of(
             modeExtensions(
-              useAppStore.getState().mdViewMode,
+              useAppStore.getState().presentationActive
+                ? "readonly"
+                : useAppStore.getState().mdViewMode,
               editorLineNumbers,
             ),
           ),
@@ -314,7 +326,10 @@ export function CodeMirrorEditor() {
       if (getActiveView() !== view) return;
       view.dispatch({
         effects: previewCompartment.current.reconfigure(
-          modeExtensions(mdViewMode, editorLineNumbers),
+          modeExtensions(
+            presentationActive ? "readonly" : mdViewMode,
+            editorLineNumbers,
+          ),
         ),
       });
     };
@@ -343,11 +358,26 @@ export function CodeMirrorEditor() {
     // active-format highlight to the new mode: cleared in read-only, otherwise
     // recomputed for the current selection.
     setActiveFormats(
-      mdViewMode === "readonly"
+      presentationActive || mdViewMode === "readonly"
         ? emptyFormats
         : computeActiveFormats(view.state),
     );
-  }, [mdViewMode, editorLineNumbers, setActiveFormats]);
+  }, [mdViewMode, presentationActive, editorLineNumbers, setActiveFormats]);
+
+  // Lock/unlock the underlying editor without remounting it. This preserves
+  // the current buffer, cursor, history and scroll position across presentation.
+  useEffect(() => {
+    const view = getActiveView();
+    if (!view) return;
+    view.dispatch({
+      effects: presentationCompartment.current.reconfigure(
+        presentationActive
+          ? [EditorState.readOnly.of(true), EditorView.editable.of(false)]
+          : [],
+      ),
+    });
+    if (presentationActive) setMenu(null);
+  }, [presentationActive]);
 
   // Enabling a language in settings (a different window) must make its run
   // buttons appear without reopening the file. Decorations only rebuild on
@@ -361,6 +391,7 @@ export function CodeMirrorEditor() {
   // clipboard menu.
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
+    if (presentationActive) return;
     const view = getActiveView();
     if (!view) return;
     const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });

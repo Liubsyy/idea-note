@@ -243,6 +243,10 @@ export const VAULT_TTL_OPTIONS = [-1, 1, 5, 15, 30, 60, 0];
 const AI_ASSISTANT_FONT_MIN = 11;
 const AI_ASSISTANT_FONT_MAX = 18;
 const AI_ASSISTANT_FONT_DEFAULT = 13;
+export const PRESENTATION_SCALE_MIN = 0.8;
+export const PRESENTATION_SCALE_MAX = 2;
+export const PRESENTATION_SCALE_DEFAULT = 1.25;
+export const PRESENTATION_SCALE_STEP = 0.05;
 const IMAGE_DIR_DEFAULT = "assets/images";
 const ATTACHMENT_DIR_DEFAULT = "assets/files";
 
@@ -445,6 +449,10 @@ interface AppState {
   sidebarOpen: boolean;
   /** Markdown editor view mode (Typora preview / raw source / read-only preview). */
   mdViewMode: MdViewMode;
+  /** Immersive, read-only presentation of the current file. Session-only. */
+  presentationActive: boolean;
+  /** Presentation content zoom (0.8–2.0). Session-only. */
+  presentationScale: number;
   /** Bottom panel hosting the integrated terminal(s). */
   bottomPanelOpen: boolean;
   /** Bottom panel height in px (drag the top border to resize). */
@@ -625,6 +633,10 @@ interface AppState {
   toggleTheme: () => void;
   toggleSidebar: () => void;
   setMdViewMode: (mode: MdViewMode) => void;
+  /** Present the current file without saving or replacing its editor buffer. */
+  enterPresentation: () => void;
+  exitPresentation: () => void;
+  setPresentationScale: (scale: number) => void;
   toggleBottomPanel: () => void;
   setBottomPanelHeight: (height: number) => void;
   toggleRightPanel: () => void;
@@ -1550,6 +1562,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   ...DEFAULT_ATTACHMENT_CONFIG,
   sidebarOpen: true,
   mdViewMode: "live",
+  presentationActive: false,
+  presentationScale: PRESENTATION_SCALE_DEFAULT,
   bottomPanelOpen: false,
   bottomPanelHeight: 260,
   rightPanelOpen: false,
@@ -2852,6 +2866,36 @@ export const useAppStore = create<AppState>((set, get) => ({
     const uiZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom));
     commitSettings({ ...snapshotSettings(get), uiZoom });
     set({ uiZoom });
+  },
+
+  enterPresentation: () => {
+    if (!get().activeFilePath || get().folderViewPath) {
+      get().showToast("请先打开一个文件再开始演示", "error");
+      return;
+    }
+    set({
+      presentationActive: true,
+      presentationScale: PRESENTATION_SCALE_DEFAULT,
+    });
+  },
+
+  exitPresentation: () => set({ presentationActive: false }),
+
+  setPresentationScale: (scale) => {
+    if (!Number.isFinite(scale)) return;
+    const clamped = Math.min(
+      PRESENTATION_SCALE_MAX,
+      Math.max(PRESENTATION_SCALE_MIN, scale),
+    );
+    // Keep button/shortcut increments on a stable 5% grid.
+    set({
+      presentationScale:
+        Math.round(
+          Math.round(clamped / PRESENTATION_SCALE_STEP) *
+            PRESENTATION_SCALE_STEP *
+            100,
+        ) / 100,
+    });
   },
 
   setSidebarFontSize: (mode, size) => {
