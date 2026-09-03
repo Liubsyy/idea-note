@@ -34,9 +34,12 @@ export async function readClipboardText(): Promise<string> {
   }
 }
 
-/** Put the file itself on the system clipboard (pasteable in Finder/Explorer). */
-export const copyFileToClipboard = (path: string) =>
-  invoke<void>("copy_file_to_clipboard", { path });
+/** Put files themselves on the system clipboard (pasteable in Finder/Explorer). */
+export const copyFilesToClipboard = (paths: string[]) =>
+  invoke<void>("copy_files_to_clipboard", { paths });
+
+/** Single-file convenience wrapper used outside the multi-select file tree. */
+export const copyFileToClipboard = (path: string) => copyFilesToClipboard([path]);
 
 /** Copy the clipboard's files into `targetDir`; resolves to the created paths. */
 export const pasteFromClipboard = (targetDir: string) =>

@@ -7,12 +7,11 @@ const DURATION = { success: 2600, error: 5000 } as const;
 const EXIT_MS = 220;
 
 /**
- * Sync-result bubble anchored under the title-bar sync button — render it
- * inside a `position: relative` wrapper around the button. Drops down on
- * entry, fades back up on exit; auto-dismisses, and a click dismisses early.
+ * App-wide notification anchored to the top-right of the window. Drops down
+ * on entry, fades back up on exit; auto-dismisses, and a click dismisses early.
  * Keyed by `toast.id` so a re-trigger while visible restarts animation+timer.
  */
-export function SyncToast() {
+export function AppToast() {
   const toast = useAppStore((s) => s.toast);
   const dismissToast = useAppStore((s) => s.dismissToast);
   const [leaving, setLeaving] = useState(false);
@@ -38,7 +37,7 @@ export function SyncToast() {
   return (
     <div
       key={toast.id}
-      className={`absolute right-0 top-full z-50 mt-1.5 ${leaving ? "toast-out" : "toast-in"}`}
+      className={`fixed right-3 top-11 z-[80] ${leaving ? "toast-out" : "toast-in"}`}
     >
       <div
         onClick={() => setLeaving(true)}

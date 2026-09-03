@@ -11,7 +11,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppStore } from "../store/useAppStore";
 import { isImageFile } from "../lib/fs";
 import { isWindows } from "../lib/platform";
-import { SyncToast } from "./Toast";
 import { ChatHeaderActions } from "./Panels/RightPanel";
 
 /** Count words: CJK characters count individually, latin runs as words. */
@@ -176,19 +175,14 @@ export function TitleBar({ leftWidth }: { leftWidth: number }) {
             )}
           {/* A local repo without a remote can still sync (local commits). */}
           {showSyncBtn && workspacePath && gitInfo?.isRepo && (
-            /* relative wrapper: the sync-result bubble anchors right under
-               the button. */
-            <div className="relative flex items-center gap-1">
-              <SyncButton
-                syncState={syncState}
-                lastSyncMessage={lastSyncMessage}
-                lastSyncAt={lastSyncAt}
-                showTime={showSyncTime}
-                hasRemote={!!gitInfo.remoteUrl}
-                onClick={() => void syncNow()}
-              />
-              <SyncToast />
-            </div>
+            <SyncButton
+              syncState={syncState}
+              lastSyncMessage={lastSyncMessage}
+              lastSyncAt={lastSyncAt}
+              showTime={showSyncTime}
+              hasRemote={!!gitInfo.remoteUrl}
+              onClick={() => void syncNow()}
+            />
           )}
           {showTerminalBtn && (
             <PanelToggle

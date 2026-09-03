@@ -31,6 +31,7 @@ import { PromptModal } from "./components/PromptModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { VaultModal } from "./components/VaultModal";
 import { HistoryModal } from "./components/HistoryModal";
+import { AppToast } from "./components/Toast";
 import {
   isDraftPath,
   PRESENTATION_SCALE_DEFAULT,
@@ -586,6 +587,7 @@ function App() {
     >
       {/* Custom draggable title bar (native title is hidden). */}
       {!presentationActive && <TitleBar leftWidth={leftWidth} />}
+      <AppToast />
 
       <div className="relative flex min-h-0 flex-1">
       {/* Sidebar. Desktop: width collapses to 0 so the editor reclaims the

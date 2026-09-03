@@ -34,7 +34,7 @@ import {
 } from "../../lib/fs";
 import {
   copyText,
-  copyFileToClipboard,
+  copyFilesToClipboard,
   pasteFromClipboard,
   relativePath,
 } from "../../lib/clipboard";
@@ -62,6 +62,9 @@ interface MenuState {
   y: number;
   /** The right-clicked node, or null for the blank area (workspace root). */
   node: FileNode | null;
+  /** Path used by the selectable row. This differs from `node.path` for a
+   *  visually folded folder chain in notes mode. */
+  selectionPath: string | null;
 }
 
 const MENU_EDGE_PADDING = 8;
@@ -119,12 +122,14 @@ export function Sidebar() {
   const openGlobalSearch = useAppStore((s) => s.openGlobalSearch);
   const refreshTree = useAppStore((s) => s.refreshTree);
   const selectedPath = useAppStore((s) => s.selectedPath);
+  const selectedPaths = useAppStore((s) => s.selectedPaths);
+  const setSelection = useAppStore((s) => s.setSelection);
   const clearSelection = useAppStore((s) => s.clearSelection);
   const requestNewFile = useAppStore((s) => s.requestNewFile);
   const requestNewRawFile = useAppStore((s) => s.requestNewRawFile);
   const requestNewFolder = useAppStore((s) => s.requestNewFolder);
   const requestRename = useAppStore((s) => s.requestRename);
-  const remove = useAppStore((s) => s.remove);
+  const removeMany = useAppStore((s) => s.removeMany);
   const openSettings = useAppStore((s) => s.openSettings);
   const openNewWindow = useAppStore((s) => s.openNewWindow);
   const compactSidebar = useAppStore((s) => s.compactSidebar);
@@ -164,6 +169,20 @@ export function Sidebar() {
   const recents = recentWorkspaces.filter((p) => p !== workspacePath);
   // Const alias so TypeScript keeps the null-narrowing inside menu callbacks.
   const menuNode = menu?.node ?? null;
+  // A context menu opened on a member of the multi-selection acts on the whole
+  // selection. Opening it elsewhere first collapses back to that one row.
+  const menuBelongsToSelection = !!(
+    menuNode &&
+    selectedPaths.length > 1 &&
+    (selectedPaths.includes(menuNode.path) ||
+      (!!menu?.selectionPath && selectedPaths.includes(menu.selectionPath)))
+  );
+  const menuPaths = menuNode
+    ? menuBelongsToSelection
+      ? selectedPaths
+      : [menuNode.path]
+    : [];
+  const menuHasMultiple = menuPaths.length > 1;
   const searchActive = sidebarMode === "search";
   const menuPos = menu
     ? clampMenuPosition(
@@ -229,7 +248,14 @@ export function Sidebar() {
   const openContextMenu = (e: React.MouseEvent, node: FileNode) => {
     e.preventDefault();
     e.stopPropagation();
-    setMenu({ x: e.clientX, y: e.clientY, node });
+    const selectionPath =
+      (e.currentTarget as HTMLElement).dataset.treePath ?? node.path;
+    const belongsToSelection =
+      selectedPaths.includes(node.path) || selectedPaths.includes(selectionPath);
+    if (selectedPaths.length > 1 && !belongsToSelection) {
+      setSelection([], selectionPath);
+    }
+    setMenu({ x: e.clientX, y: e.clientY, node, selectionPath });
   };
 
   // Blank area of the list = the workspace root (rows stopPropagation).
@@ -237,11 +263,11 @@ export function Sidebar() {
     e.preventDefault();
     // File operations don't apply to the search results list.
     if (!workspacePath || sidebarMode === "search") return;
-    setMenu({ x: e.clientX, y: e.clientY, node: null });
+    setMenu({ x: e.clientX, y: e.clientY, node: null, selectionPath: null });
   };
 
-  const copyNodeToClipboard = (path: string) => {
-    copyFileToClipboard(path).catch((err) => {
+  const copyNodesToClipboard = (paths: string[]) => {
+    copyFilesToClipboard(paths).catch((err) => {
       window.alert(`复制失败：${err}`);
     });
   };
@@ -264,13 +290,30 @@ export function Sidebar() {
     return dirname(selectedPath);
   };
 
-  // ⌘C / ⌘V on the file list (the list container takes focus when clicked).
+  // File-list shortcuts (the list container takes focus when clicked).
   const onListKeyDown = (e: React.KeyboardEvent) => {
+    const selection = selectedPaths.length
+      ? selectedPaths
+      : selectedPath
+        ? [selectedPath]
+        : [];
+    // Both keys are accepted because the forward-delete key is reported as
+    // "Delete", while the main delete key on a Mac is reported as "Backspace".
+    if (
+      (sidebarMode === "files" || sidebarMode === "notes") &&
+      (e.key === "Delete" || e.key === "Backspace") &&
+      selection.length &&
+      !e.repeat
+    ) {
+      e.preventDefault();
+      void removeMany(selection);
+      return;
+    }
     if (!(e.metaKey || e.ctrlKey)) return;
     const key = e.key.toLowerCase();
-    if (key === "c" && selectedPath) {
+    if (key === "c" && selection.length) {
       e.preventDefault();
-      copyNodeToClipboard(selectedPath);
+      copyNodesToClipboard(selection);
     } else if (key === "v") {
       const dir = pasteTarget();
       if (dir) {
@@ -607,13 +650,17 @@ export function Sidebar() {
                 <MenuItem
                   hint="⌘C"
                   onClick={() => {
-                    copyNodeToClipboard(menuNode.path);
+                    copyNodesToClipboard(menuPaths);
                     setMenu(null);
                   }}
                 >
-                  {menuNode.is_dir ? "复制文件夹" : "复制文件"}
+                  {menuHasMultiple
+                    ? `复制 ${menuPaths.length} 个项目`
+                    : menuNode.is_dir
+                      ? "复制文件夹"
+                      : "复制文件"}
                 </MenuItem>
-                <SubMenuItem label="复制路径">
+                <SubMenuItem label="复制路径" disabled={menuHasMultiple}>
                   <MenuItem
                     onClick={() => {
                       void copyText(menuNode.path);
@@ -632,6 +679,7 @@ export function Sidebar() {
                   </MenuItem>
                 </SubMenuItem>
                 <MenuItem
+                  disabled={menuHasMultiple}
                   onClick={() => {
                     void copyText(basename(menuNode.path));
                     setMenu(null);
@@ -689,12 +737,13 @@ export function Sidebar() {
               </MenuItem>
               <MenuItem
                 danger
+                hint={isMac ? "⌫" : "Delete"}
                 onClick={() => {
-                  remove(menuNode.path);
+                  removeMany(menuPaths);
                   setMenu(null);
                 }}
               >
-                删除
+                {menuHasMultiple ? `删除 ${menuPaths.length} 个项目` : "删除"}
               </MenuItem>
             </>
           ) : (
@@ -1030,6 +1079,7 @@ function MenuItem({
   danger,
   title,
   hint,
+  disabled = false,
 }: {
   onClick: () => void;
   children: React.ReactNode;
@@ -1037,14 +1087,18 @@ function MenuItem({
   title?: string;
   /** Right-aligned shortcut hint, e.g. "⌘C". */
   hint?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       title={title}
-      className="flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left transition-colors"
-      style={{ color: danger ? "#e5484d" : "var(--text)" }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
+      className="flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left transition-colors disabled:cursor-default"
+      style={{ color: danger ? "#e5484d" : "var(--text)", opacity: disabled ? 0.4 : 1 }}
+      onMouseEnter={(e) => {
+        if (!disabled) e.currentTarget.style.background = "var(--hover)";
+      }}
       onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
     >
       <span className="min-w-0 flex-1 truncate">{children}</span>

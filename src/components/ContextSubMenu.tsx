@@ -12,9 +12,11 @@ import { ChevronRight } from "lucide-react";
 export function SubMenuItem({
   label,
   children,
+  disabled = false,
 }: {
   label: string;
   children: React.ReactNode;
+  disabled?: boolean;
 }) {
   // The panel is portaled to <body> with fixed coordinates — rendered in
   // place it would be clipped by the sidebar's overflow and sit under the
@@ -24,6 +26,7 @@ export function SubMenuItem({
   const rowRef = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<number | undefined>(undefined);
   const show = () => {
+    if (disabled) return;
     window.clearTimeout(closeTimer.current);
     const r = rowRef.current?.getBoundingClientRect();
     if (r) {
@@ -38,10 +41,13 @@ export function SubMenuItem({
   return (
     <div ref={rowRef} onMouseEnter={show} onMouseLeave={hide}>
       <button
+        disabled={disabled}
         className="flex w-full items-center justify-between px-3 py-1.5 text-left transition-colors"
         style={{
           color: "var(--text)",
           background: pos ? "var(--hover)" : "transparent",
+          opacity: disabled ? 0.4 : 1,
+          cursor: disabled ? "default" : undefined,
         }}
       >
         {label}

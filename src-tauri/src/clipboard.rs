@@ -16,16 +16,19 @@ fn clipboard() -> Result<Clipboard, String> {
     Clipboard::new().map_err(|e| format!("剪贴板不可用: {e}"))
 }
 
-/// Put the file itself (not its path) on the system clipboard so it can be
-/// pasted in Finder / Explorer / the Linux file manager.
+/// Put files themselves (not their paths as text) on the system clipboard so
+/// they can be pasted in Finder / Explorer / the Linux file manager.
 #[tauri::command]
-pub fn copy_file_to_clipboard(path: String) -> Result<(), String> {
-    if !Path::new(&path).exists() {
+pub fn copy_files_to_clipboard(paths: Vec<String>) -> Result<(), String> {
+    if paths.is_empty() {
+        return Err("没有可复制的文件".to_string());
+    }
+    if let Some(path) = paths.iter().find(|path| !Path::new(path).exists()) {
         return Err(format!("not found: {path}"));
     }
     clipboard()?
         .set()
-        .file_list(&[&path])
+        .file_list(&paths)
         .map_err(|e| format!("复制文件失败: {e}"))
 }
 
@@ -42,7 +45,7 @@ pub fn read_clipboard_text() -> Result<String, String> {
 }
 
 /// File paths currently on the system clipboard (set by Finder/Explorer or
-/// our own `copy_file_to_clipboard`); empty when the clipboard holds none.
+/// our own `copy_files_to_clipboard`); empty when the clipboard holds none.
 fn clipboard_file_paths() -> Result<Vec<String>, String> {
     match clipboard()?.get().file_list() {
         Ok(paths) => Ok(paths

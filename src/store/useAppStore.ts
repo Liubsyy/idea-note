@@ -561,7 +561,11 @@ interface AppState {
   clearSelection: () => void;
   /** Delete immediately (no dialog) — callers handle their own confirmation. */
   removeNow: (path: string) => Promise<void>;
+  /** Delete several paths immediately, refreshing and repairing UI state once. */
+  removeManyNow: (paths: string[]) => Promise<void>;
   remove: (path: string) => Promise<void>;
+  /** Ask once before deleting several selected paths. */
+  removeMany: (paths: string[]) => Promise<void>;
   // In-app prompt: open with a request, the modal calls onSubmit / closePrompt.
   openPrompt: (req: PromptRequest) => void;
   requestGitCredential: GitCredentialProvider;
@@ -1937,7 +1941,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       content = await readFile(path);
     } catch {
       // Other non-text files (PDFs, binaries, …) can't be read as UTF-8.
-      window.alert(`无法以文本方式打开「${basename(path)}」（可能是二进制文件）。`);
+      get().showToast(
+        `无法以文本方式打开「${basename(path)}」（可能是二进制文件）。`,
+        "error",
+      );
       return;
     }
     set((s) => ({
@@ -2497,20 +2504,66 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   clearSelection: () => set({ selectedPaths: [] }),
 
-  removeNow: async (path) => {
-    await deletePath(path);
-    const { activeFilePath, selectedPath, folderViewPath, openTabs, refreshTree } = get();
+  removeNow: async (path) => get().removeManyNow([path]),
+
+  removeManyNow: async (paths) => {
+    // A selected folder already deletes everything below it. De-duplicate and
+    // omit selected descendants so the backend never tries to delete them a
+    // second time after their parent is gone.
+    const unique = [...new Set(paths)];
+    const roots = unique.filter(
+      (path) =>
+        !unique.some(
+          (other) =>
+            other !== path &&
+            (path.startsWith(other + "/") || path.startsWith(other + "\\")),
+        ),
+    );
+    if (!roots.length) return;
+
+    const deleted: string[] = [];
+    const failed: string[] = [];
+    for (const path of roots) {
+      try {
+        await deletePath(path);
+        deleted.push(path);
+      } catch {
+        failed.push(basename(path));
+      }
+    }
+    if (!deleted.length) {
+      throw new Error(
+        failed.length === 1 ? `无法删除「${failed[0]}」` : `有 ${failed.length} 个项目删除失败`,
+      );
+    }
+
+    const {
+      activeFilePath,
+      selectedPath,
+      selectedPaths,
+      folderViewPath,
+      openTabs,
+      refreshTree,
+    } = get();
     await refreshTree();
-    const under = (p: string | null) => p === path || (!!p && p.startsWith(path + "/"));
+    const underDeleted = (path: string | null) =>
+      !!path &&
+      deleted.some(
+        (root) =>
+          path === root || path.startsWith(root + "/") || path.startsWith(root + "\\"),
+      );
 
-    // Drop every open tab that lived under the deleted path.
-    const remaining = openTabs.filter((p) => !under(p));
-    if (remaining.length !== openTabs.length) set({ openTabs: remaining });
+    // Drop every open tab and tree selection that lived under a deleted root.
+    const remaining = openTabs.filter((path) => !underDeleted(path));
+    const remainingSelection = selectedPaths.filter((path) => !underDeleted(path));
+    set({ openTabs: remaining, selectedPaths: remainingSelection });
 
-    if (under(selectedPath)) set({ selectedPath: null });
-    if (under(folderViewPath)) set({ folderViewPath: null });
+    if (underDeleted(selectedPath)) {
+      set({ selectedPath: remainingSelection[remainingSelection.length - 1] ?? null });
+    }
+    if (underDeleted(folderViewPath)) set({ folderViewPath: null });
 
-    if (under(activeFilePath)) {
+    if (underDeleted(activeFilePath)) {
       // Activate a neighbor tab if any survive; otherwise clear the pane.
       if (remaining.length > 0) {
         const idx = openTabs.indexOf(activeFilePath!);
@@ -2533,15 +2586,32 @@ export const useAppStore = create<AppState>((set, get) => ({
         }));
       }
     }
+
+    if (failed.length) get().showToast(`有 ${failed.length} 个项目删除失败`, "error");
   },
 
-  remove: async (path) => {
+  remove: async (path) => get().removeMany([path]),
+
+  removeMany: async (paths) => {
+    const unique = [...new Set(paths)];
+    const roots = unique.filter(
+      (path) =>
+        !unique.some(
+          (other) =>
+            other !== path &&
+            (path.startsWith(other + "/") || path.startsWith(other + "\\")),
+        ),
+    );
+    if (!roots.length) return;
     set({
       confirm: {
         title: "删除",
-        message: `确定删除「${basename(path)}」？此操作不可撤销。`,
+        message:
+          roots.length === 1
+            ? `确定删除「${basename(roots[0])}」？此操作不可撤销。`
+            : `确定删除选中的 ${roots.length} 个项目？此操作不可撤销。`,
         confirmLabel: "删除",
-        onConfirm: () => get().removeNow(path),
+        onConfirm: () => get().removeManyNow(roots),
       },
     });
   },

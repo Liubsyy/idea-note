@@ -10,7 +10,6 @@ import {
   useAppStore,
 } from "../../store/useAppStore";
 import { basename } from "../../lib/fs";
-import { SyncToast } from "../Toast";
 
 const HIDE_AFTER_MS = 2500;
 
@@ -90,12 +89,9 @@ export function PresentationControls() {
           <RotateCcw size={14} />
         </ControlButton>
         <span className="mx-1 h-5 w-px" style={{ background: "var(--border)" }} />
-        <div className="relative">
-          <ControlButton title="退出演示（Esc）" onClick={exit}>
-            <X size={16} />
-          </ControlButton>
-          <SyncToast />
-        </div>
+        <ControlButton title="退出演示（Esc）" onClick={exit}>
+          <X size={16} />
+        </ControlButton>
       </div>
     </div>
   );
