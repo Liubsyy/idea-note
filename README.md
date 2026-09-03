@@ -14,7 +14,7 @@
   <a href="https://github.com/Liubsyy/idea-note/releases"><img src="https://img.shields.io/github/downloads/Liubsyy/idea-note/total?style=flat-square&logo=github&label=downloads&color=10b981" alt="Total downloads" /></a>
 </p>
 
-**Idea Note** 是一款轻量简洁的笔记应用，包含 **Markdown** 编辑器、文件管理器、 **AI 笔记助手**，支持**Git远程同步**，兼容 Windows、MacOS 和 Linux 平台。
+**Idea Note** 是一款轻量简洁的笔记应用，集Markdown编辑器、AI 助手、代码运行、内容加密与 Git 同步于一体，支持 Windows、MacOS 和 Linux 平台。
 
 
 ![](./doc/assets/sample1.png)
