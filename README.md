@@ -23,18 +23,18 @@
 
 
 
-## ✨ 功能特性
-- 📝 **Markdown 编辑器**：所见即所得实时编辑，支持公式、Mermaid流程图、HTML/SVG渲染、大纲、工具栏。
-- ▶️ **执行代码块**：markdown中的的代码块一键直接执行。
-- 🕹️ **可交互组件**：在markdown中直接操作小工具、直接交互组件。
-- 🔐 **加密**：可对笔记中的部分内容进行加密/解密。
-- 📁 **文件管理**：除markdown外还可编辑其他文本文件，可作为轻量级项目文件管理器。
-- ![AI 助手](./doc/assets/ai-assistant-inline.svg) **AI 笔记助手**：用自然语言对当前笔记进行问答、总结、润色，并通过工具直接读取、搜索、新建、编辑或删除笔记，还能按需写出可交互组件。
-- 🛠️ **内置工具**：内置git远程同步、终端、导出PDF和打印。
+## 功能特性
+- **Markdown 编辑器**：所见即所得实时编辑，支持公式、Mermaid流程图、HTML/SVG渲染、大纲、工具栏。
+- **执行代码块**：markdown中的的代码块一键直接执行。
+- **可交互组件**：在markdown中直接操作小工具、直接交互组件。
+- **加密**：可对笔记中的部分内容进行加密/解密。
+- **文件管理**：除markdown外还可编辑其他文本文件，可作为轻量级项目文件管理器。
+- **AI 笔记助手**：用自然语言对当前笔记进行问答、总结、润色，并通过工具直接读取、搜索、新建、编辑或删除笔记，还能按需写出可交互组件。
+- **内置工具**：内置git远程同步、终端、导出PDF和打印。
 
-## 📖 使用说明
+## 使用说明
 
-### ⬇️ 安装
+### 安装
 
 根据平台下载桌面安装包或发行文件
 
@@ -52,7 +52,7 @@ MacOS 首次安装时如果遇到"无法打开"或"应用已损坏"之类的权�
 xattr -rd com.apple.quarantine /Applications/Idea\ Note.app
 ```
 
-### 📝 笔记管理
+### 笔记管理
 
 左侧列表提供三种视图：
 - **文件模式**：完整文件树，可新建、重命名、拖拽整理文件与文件夹，也能编辑普通文本、查看图片，当作轻量的项目文件管理器使用
@@ -65,7 +65,7 @@ xattr -rd com.apple.quarantine /Applications/Idea\ Note.app
 顶部工具栏可一键插入标题、加粗 / 斜体 / 删除线、列表与任务列表等，以及流程图、时序图、甘特图等各类 Mermaid 图表。粘贴的图片和文件会自动保存为附件（保存目录可在设置中配置）。
 
 
-### ▶️ 运行代码块
+### 运行代码块
 
 在代码块右上角点击运行图标，程序在本机执行，输出实时显示在独立的"运行输出"面板里。面板按当前文件显示运行记录，可停止、重跑、跳回代码块，或把结果作为 ```output 块插入笔记。
 
@@ -76,7 +76,7 @@ xattr -rd com.apple.quarantine /Applications/Idea\ Note.app
 
 
 
-### 🕹️ 可交互组件
+### 可交互组件
 
 在运行代码块之上再加一层：给代码块配一个参数块，笔记就变成了一个小工具。读者拖滑块、改数字、选日期，脚本就在本机重跑一遍，结果直接渲染回笔记里——不用打开终端，也不用改代码。
 
@@ -94,7 +94,7 @@ xattr -rd com.apple.quarantine /Applications/Idea\ Note.app
 
 
 
-### ![AI 助手](./doc/assets/ai-assistant.svg) AI 笔记助手
+### AI 笔记助手
 
 点击标题栏机器人图标打开 AI 笔记助手面板。在设置中添加模型服务即可使用：支持 Anthropic、OpenAI 以及任何兼容两者接口的服务（自定义 Base URL、API Key 和模型 ID），对话中可随时切换模型与思考级别。
 
@@ -117,7 +117,7 @@ xattr -rd com.apple.quarantine /Applications/Idea\ Note.app
 接入AI模型可参考： [doc/AI笔记助手接入DeepSeek步骤.md](./doc/AI笔记助手接入DeepSeek步骤.md)。
 
 
-### 🔐 笔记加密
+### 笔记加密
 
 在“设置 → 加密”中为当前工作区设置口令后，选中需要保护的内容并打开右键菜单，即可选择“整块加密”或“行内加密”。加密内容以密文形式保存在 Markdown 文件中，解锁后才能查看和编辑；也可以立即上锁，或设置口令在本次会话中的有效时间。
 
@@ -126,7 +126,7 @@ xattr -rd com.apple.quarantine /Applications/Idea\ Note.app
 使用 Git 同步时，请将工作区中的 `.ideanote/vault.json` 一并提交到仓库。该文件只保存由口令保护的密钥，不包含明文内容；在其他设备上输入相同口令，即可解锁随笔记同步的密文。
 
 
-### 🔄 Git 同步与历史记录
+### Git 同步与历史记录
 
 在"设置 → 远程同步"中配置，基于命令行 git 实现（需已安装 git），支持两种方式：
 
@@ -137,16 +137,16 @@ xattr -rd com.apple.quarantine /Applications/Idea\ Note.app
 
 点击标题栏历史图标，可查看当前笔记的每一次变更并左右对比差异，也可切换到全局历史浏览整个工作区的提交记录。
 
-### 🖥️ 内置终端
+### 内置终端
 
 点击标题栏终端图标可打开底部终端面板，直接在工作区目录下执行命令，运行脚本、使用 git 等都无需离开应用。
 
 
-### 📄 导出 PDF
+### 导出 PDF
 
 在侧栏文件右键菜单中选择"导出 PDF"，通过系统 WebView 静默打印直接生成 PDF 文件，自动附带书签大纲，公式、图表、代码高亮与应用内显示一致，无需安装任何额外组件。
 
-### ⚙️ 设置
+### 设置
 
 
 <img src="doc/assets/setting.png" width="60%">
@@ -165,20 +165,20 @@ xattr -rd com.apple.quarantine /Applications/Idea\ Note.app
 - **加密**：按工作区设置加密口令与口令有效期，可立即上锁、修改口令、重新生成恢复码或重置主密钥
 
 
-## 🛠️ 开发与构建
+## 开发与构建
 
-### 📚 技术栈
+### 技术栈
 
 - 前端：`React 19`、`TypeScript`、`Vite 8`、`CodeMirror 6`、`Zustand`、`Tailwind CSS`
 - 桌面端：`Tauri 2`
 - 后端逻辑：`Rust`
 
-### 🖥️ 环境要求
+### 环境要求
 
 - Node.js：建议使用较新的 LTS 版本
 - Rust：较新的稳定版
 
-### 📂 目录结构
+### 目录结构
 
 - `src/`：React 前端界面与页面逻辑
   - `components/`：侧栏、编辑器、面板、设置等 UI 组件
@@ -190,7 +190,7 @@ xattr -rd com.apple.quarantine /Applications/Idea\ Note.app
 
 
 
-### 💻 本地开发
+### 本地开发
 
 #### 1. 安装依赖
 
@@ -218,7 +218,7 @@ npm run tauri build
 
 无需 API Key 的固定问答服务可用 `npm run mock:ai` 启动，然后在 AI 模型设置中填写 Base URL `http://127.0.0.1:11435/v1`、模型 ID `idea-note-test`。详细说明见 [AI 测试服务](./mock-ai/README.md)。
 
-### ⌨️ 常用命令
+### 常用命令
 
 | 命令 | 说明 |
 | --- | --- |
@@ -234,7 +234,7 @@ npm run tauri build
 | `cargo test --manifest-path src-tauri/Cargo.toml` | 运行 Rust 单元测试 |
 
 
-### 📦 打包与资源说明
+### 打包与资源说明
 
 - 应用名称：`Idea Note`
 - 应用标识：`com.liubs.idea-note`
