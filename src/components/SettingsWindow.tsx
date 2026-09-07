@@ -48,6 +48,8 @@ import {
   type VaultRotationAck,
 } from "../store/useVaultStore";
 import {
+  AI_SESSION_HISTORY_LIMIT_MAX,
+  AI_SESSION_HISTORY_LIMIT_MIN,
   VAULT_TTL_OPTIONS,
   useAppStore,
   readSyncConfig,
@@ -198,6 +200,8 @@ export function SettingsWindow() {
   const resetEditorKeybindings = useAppStore((s) => s.resetEditorKeybindings);
   const aiAssistantFontSize = useAppStore((s) => s.aiAssistantFontSize);
   const setAiAssistantFontSize = useAppStore((s) => s.setAiAssistantFontSize);
+  const aiSessionHistoryLimit = useAppStore((s) => s.aiSessionHistoryLimit);
+  const setAiSessionHistoryLimit = useAppStore((s) => s.setAiSessionHistoryLimit);
   const compactSidebar = useAppStore((s) => s.compactSidebar);
   const setCompactSidebar = useAppStore((s) => s.setCompactSidebar);
   const compactEditor = useAppStore((s) => s.compactEditor);
@@ -525,6 +529,8 @@ export function SettingsWindow() {
             <ModelsTab
               aiAssistantFontSize={aiAssistantFontSize}
               setAiAssistantFontSize={setAiAssistantFontSize}
+              aiSessionHistoryLimit={aiSessionHistoryLimit}
+              setAiSessionHistoryLimit={setAiSessionHistoryLimit}
             />
           )}
           {activeTab === "sync" && <SyncTab />}
@@ -1945,9 +1951,13 @@ const emptyDraft: Draft = {
 function ModelsTab({
   aiAssistantFontSize,
   setAiAssistantFontSize,
+  aiSessionHistoryLimit,
+  setAiSessionHistoryLimit,
 }: {
   aiAssistantFontSize: number;
   setAiAssistantFontSize: (size: number) => void;
+  aiSessionHistoryLimit: number;
+  setAiSessionHistoryLimit: (limit: number) => void;
 }) {
   const aiModels = useAppStore((s) => s.aiModels);
   const addAiModel = useAppStore((s) => s.addAiModel);
@@ -2036,6 +2046,18 @@ function ModelsTab({
             step={1}
             format={(v) => `${v}px`}
             onChange={setAiAssistantFontSize}
+          />
+        </Row>
+        <Row
+          title="会话历史保留数量"
+          desc="超过上限后自动删除最早的会话；当前会话和生成中的会话会保留"
+        >
+          <NumberSettingInput
+            value={aiSessionHistoryLimit}
+            min={AI_SESSION_HISTORY_LIMIT_MIN}
+            max={AI_SESSION_HISTORY_LIMIT_MAX}
+            suffix="条"
+            onChange={setAiSessionHistoryLimit}
           />
         </Row>
       </Card>
@@ -2899,6 +2921,59 @@ function Preview({ label, children }: { label: string; children: React.ReactNode
         {children}
       </div>
     </div>
+  );
+}
+
+function NumberSettingInput({
+  value,
+  min,
+  max,
+  suffix,
+  onChange,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  suffix: string;
+  onChange: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+
+  useEffect(() => setDraft(String(value)), [value]);
+
+  const commit = () => {
+    const parsed = Number(draft);
+    const next = Number.isFinite(parsed)
+      ? Math.min(max, Math.max(min, Math.round(parsed)))
+      : value;
+    setDraft(String(next));
+    if (next !== value) onChange(next);
+  };
+
+  return (
+    <label
+      className="flex h-8 items-center overflow-hidden rounded-lg"
+      style={{ border: "1px solid var(--border)", background: "var(--bg)" }}
+    >
+      <input
+        type="number"
+        value={draft}
+        min={min}
+        max={max}
+        step={1}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") setDraft(String(value));
+        }}
+        className="h-full w-[72px] bg-transparent px-2 text-right text-[13px] font-medium tabular-nums outline-none"
+        style={{ color: "var(--text)" }}
+      />
+      <span className="pr-2 text-[12px]" style={{ color: "var(--text-muted)" }}>
+        {suffix}
+      </span>
+    </label>
   );
 }
 

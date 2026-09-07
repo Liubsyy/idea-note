@@ -97,6 +97,8 @@ interface ChatState {
   resolvePendingEdit: (itemId: string, approved: boolean) => void;
   /** Revert an applied edit back to its pre-edit content (auto-mode card). */
   undoEdit: (itemId: string) => void;
+  /** Remove the oldest persisted sessions until the configured cap is met. */
+  enforceHistoryLimit: (limit: number) => void;
 }
 
 // Sessions now live as Rust-owned files in the app config dir:
@@ -622,6 +624,33 @@ export const useChatStore = create<ChatState>((set, get) => {
       persistIndex(sessions, active, true);
     },
 
+    enforceHistoryLimit: (limit) => {
+      const state = get();
+      const cap = Math.max(1, Math.round(limit));
+      const saved = state.sessions.filter(hasSessionContent);
+      const overflow = saved.length - cap;
+      if (overflow <= 0) return;
+
+      // Session order is creation order. Never prune the conversation the user
+      // is looking at or one that still has an in-flight model/tool loop.
+      const protectedIds = new Set([
+        ...(state.activeSessionId ? [state.activeSessionId] : []),
+        ...state.sendingSessionIds,
+      ]);
+      const removeIds = new Set(
+        saved
+          .filter((session) => !protectedIds.has(session.id))
+          .slice(0, overflow)
+          .map((session) => session.id),
+      );
+      if (removeIds.size === 0) return;
+
+      const sessions = state.sessions.filter((session) => !removeIds.has(session.id));
+      set({ sessions });
+      for (const id of removeIds) deletePersistedSession(id);
+      persistIndex(sessions, state.activeSessionId, true);
+    },
+
     setActiveSession: (id) => {
       set({ activeSessionId: id });
       persistIndex(get().sessions, id);
@@ -678,6 +707,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         items: [...s.items, { id: uid(), kind: "user", text: trimmed }],
         history: [...s.history, { role: "user", content: trimmed }],
       }));
+      get().enforceHistoryLimit(useAppStore.getState().aiSessionHistoryLimit);
 
       const model = resolveModelSelection(useAppStore.getState().aiModels, session.modelId);
       if (!model) {
@@ -739,6 +769,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         updateSession(sessionId, (s) => ({ ...s, history }));
         if (currentAborts.get(sessionId) === abort) currentAborts.delete(sessionId);
         set({ sendingSessionIds: get().sendingSessionIds.filter((id) => id !== sessionId) });
+        get().enforceHistoryLimit(useAppStore.getState().aiSessionHistoryLimit);
       }
     },
   };
@@ -763,4 +794,13 @@ void loadPersisted().then((data) => {
   useChatStore.setState((s) =>
     s.sessions.length === 0 ? { ...data, hydrated: true } : { hydrated: true },
   );
+  useChatStore.getState().enforceHistoryLimit(useAppStore.getState().aiSessionHistoryLimit);
+});
+
+// The setting is edited in a separate Tauri window. useAppStore mirrors the
+// broadcast into this window; prune immediately when the configured cap drops.
+useAppStore.subscribe((state, previous) => {
+  if (state.aiSessionHistoryLimit !== previous.aiSessionHistoryLimit) {
+    useChatStore.getState().enforceHistoryLimit(state.aiSessionHistoryLimit);
+  }
 });

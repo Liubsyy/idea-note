@@ -141,6 +141,8 @@ interface AppSettings {
   /** How many files may be open in the editor tab strip at once. */
   editorMaxTabs: number;
   aiAssistantFontSize: number;
+  /** Maximum number of non-empty AI chat sessions kept on disk. */
+  aiSessionHistoryLimit: number;
   /** How long an unlocked encryption key may sit in memory: -1 = drop it as
    *  soon as the work needing it is done, 0 = never, >0 = minutes from unlock.
    *  Enforced in Rust; persisted here so it survives a restart. */
@@ -243,6 +245,9 @@ export const VAULT_TTL_OPTIONS = [-1, 1, 5, 15, 30, 60, 0];
 const AI_ASSISTANT_FONT_MIN = 11;
 const AI_ASSISTANT_FONT_MAX = 18;
 const AI_ASSISTANT_FONT_DEFAULT = 13;
+export const AI_SESSION_HISTORY_LIMIT_MIN = 1;
+export const AI_SESSION_HISTORY_LIMIT_MAX = 10_000;
+export const AI_SESSION_HISTORY_LIMIT_DEFAULT = 100;
 export const PRESENTATION_SCALE_MIN = 0.8;
 export const PRESENTATION_SCALE_MAX = 2;
 export const PRESENTATION_SCALE_DEFAULT = 1.25;
@@ -431,6 +436,7 @@ interface AppState {
   editorHeadingScale: number;
   editorMaxTabs: number;
   aiAssistantFontSize: number;
+  aiSessionHistoryLimit: number;
   vaultTtlMinutes: number;
   compactSidebar: boolean;
   compactEditor: boolean;
@@ -622,6 +628,7 @@ interface AppState {
   /** Clear all editor-shortcut overrides, restoring every default. */
   resetEditorKeybindings: () => void;
   setAiAssistantFontSize: (size: number) => void;
+  setAiSessionHistoryLimit: (limit: number) => void;
   /** Set how long an unlocked encryption key lives (minutes; 0 = never). */
   setVaultTtlMinutes: (minutes: number) => Promise<void>;
   setVaultRotationState: (busy: boolean, operation?: string | null) => void;
@@ -1216,6 +1223,7 @@ function readSettings(): AppSettings {
     editorHeadingScale: HEADING_SCALE_DEFAULT,
     editorMaxTabs: EDITOR_MAX_TABS_DEFAULT,
     aiAssistantFontSize: AI_ASSISTANT_FONT_DEFAULT,
+    aiSessionHistoryLimit: AI_SESSION_HISTORY_LIMIT_DEFAULT,
     vaultTtlMinutes: VAULT_TTL_DEFAULT,
     compactSidebar: false,
     compactEditor: false,
@@ -1303,6 +1311,14 @@ function readSettings(): AppSettings {
               Math.max(AI_ASSISTANT_FONT_MIN, parsed.aiAssistantFontSize),
             )
           : fallback.aiAssistantFontSize,
+      aiSessionHistoryLimit:
+        typeof parsed.aiSessionHistoryLimit === "number" &&
+        Number.isFinite(parsed.aiSessionHistoryLimit)
+          ? Math.min(
+              AI_SESSION_HISTORY_LIMIT_MAX,
+              Math.max(AI_SESSION_HISTORY_LIMIT_MIN, Math.round(parsed.aiSessionHistoryLimit)),
+            )
+          : fallback.aiSessionHistoryLimit,
       vaultTtlMinutes:
         typeof parsed.vaultTtlMinutes === "number" &&
         VAULT_TTL_OPTIONS.includes(parsed.vaultTtlMinutes)
@@ -1454,6 +1470,7 @@ function snapshotSettings(get: () => AppState): AppSettings {
     editorHeadingScale: s.editorHeadingScale,
     editorMaxTabs: s.editorMaxTabs,
     aiAssistantFontSize: s.aiAssistantFontSize,
+    aiSessionHistoryLimit: s.aiSessionHistoryLimit,
     vaultTtlMinutes: s.vaultTtlMinutes,
     compactSidebar: s.compactSidebar,
     compactEditor: s.compactEditor,
@@ -1552,6 +1569,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   editorHeadingScale: initialSettings.editorHeadingScale,
   editorMaxTabs: initialSettings.editorMaxTabs,
   aiAssistantFontSize: initialSettings.aiAssistantFontSize,
+  aiSessionHistoryLimit: initialSettings.aiSessionHistoryLimit,
   vaultTtlMinutes: initialSettings.vaultTtlMinutes,
   compactSidebar: initialSettings.compactSidebar,
   compactEditor: initialSettings.compactEditor,
@@ -2922,6 +2940,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ aiAssistantFontSize });
   },
 
+  setAiSessionHistoryLimit: (limit) => {
+    const aiSessionHistoryLimit = Math.min(
+      AI_SESSION_HISTORY_LIMIT_MAX,
+      Math.max(AI_SESSION_HISTORY_LIMIT_MIN, Math.round(limit)),
+    );
+    commitSettings({ ...snapshotSettings(get), aiSessionHistoryLimit });
+    set({ aiSessionHistoryLimit });
+  },
+
   setCompactSidebar: (compactSidebar) => {
     commitSettings({ ...snapshotSettings(get), compactSidebar });
     set({ compactSidebar });
@@ -3373,6 +3400,10 @@ listen<AppSettings>(SETTINGS_EVENT, ({ payload }) => {
     editorHeadingScale: payload.editorHeadingScale,
     editorMaxTabs: payload.editorMaxTabs,
     aiAssistantFontSize: payload.aiAssistantFontSize,
+    aiSessionHistoryLimit:
+      typeof payload.aiSessionHistoryLimit === "number"
+        ? payload.aiSessionHistoryLimit
+        : s.aiSessionHistoryLimit,
     vaultTtlMinutes: payload.vaultTtlMinutes,
     compactSidebar: payload.compactSidebar,
     compactEditor: payload.compactEditor,

@@ -249,15 +249,23 @@ function HistoryMenu() {
       if (e.key === "Escape") setOpen(false);
     };
     const onLeave = () => setOpen(false);
+    const onScroll = (e: Event) => {
+      const target = e.target;
+      // The listener runs in the capture phase so it also sees scroll events
+      // from the portaled history list. Scrolling that list must keep the menu
+      // open; only scrolling elsewhere should dismiss it.
+      if (target instanceof Node && menuRef.current?.contains(target)) return;
+      setOpen(false);
+    };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
     window.addEventListener("resize", onLeave);
-    window.addEventListener("scroll", onLeave, true);
+    window.addEventListener("scroll", onScroll, true);
     return () => {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
       window.removeEventListener("resize", onLeave);
-      window.removeEventListener("scroll", onLeave, true);
+      window.removeEventListener("scroll", onScroll, true);
     };
   }, [open]);
 
