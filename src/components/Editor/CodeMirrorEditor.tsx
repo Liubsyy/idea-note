@@ -45,6 +45,7 @@ import {
 } from "../../lib/codemirror/theme";
 import { setActiveView, getActiveView } from "../../lib/codemirror/activeView";
 import { handleEditorPaste } from "../../lib/attachments";
+import { fileDropCursor } from "../../lib/codemirror/fileDropCursor";
 import { computeActiveFormats, emptyFormats } from "../../lib/codemirror/activeFormats";
 import { isDraftPath, useAppStore, type MdViewMode } from "../../store/useAppStore";
 import { basename, isMarkdownFile } from "../../lib/fs";
@@ -211,6 +212,7 @@ export function CodeMirrorEditor() {
           markdownParagraphEnter,
           markdownAutoCloseFences,
           ...common,
+          fileDropCursor,
           markdown({
             base: markdownLanguage,
             codeLanguages: languages,

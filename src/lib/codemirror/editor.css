@@ -10,6 +10,33 @@
   font-size: var(--editor-font-size);
 }
 
+/* Native file-drop insertion marker: steady accent bar with end caps, distinct
+   from the blinking text caret. It never participates in layout or hit tests. */
+.cm-fileDropCursor {
+  position: absolute;
+  z-index: 10;
+  width: 0;
+  border-left: 2px solid var(--accent);
+  pointer-events: none;
+}
+.cm-fileDropCursor::before,
+.cm-fileDropCursor::after {
+  content: "";
+  position: absolute;
+  left: -4px;
+  width: 6px;
+  height: 2px;
+  background: var(--accent);
+}
+.cm-fileDropCursor::before { top: 0; }
+.cm-fileDropCursor::after { bottom: 0; }
+.cm-host .cm-file-drop-active .cm-content {
+  caret-color: transparent;
+}
+.cm-file-drop-active .cm-dropCursor {
+  display: none;
+}
+
 /* Immersive current-file presentation keeps the same EditorView mounted, but
    gives its content room below the transient controls and removes editor-only
    cursor-line affordances. The surrounding App overrides --editor-font-size. */

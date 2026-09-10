@@ -49,6 +49,7 @@ import {
 import { runScopeHandlers, type EditorView } from "@codemirror/view";
 import { getActiveView } from "./lib/codemirror/activeView";
 import { handleEditorDrop } from "./lib/attachments";
+import { setFileDropCursor } from "./lib/codemirror/fileDropCursor";
 import { isWindows } from "./lib/platform";
 
 const MIN_W = 180;
@@ -99,7 +100,7 @@ function elementAtDrop(position: PhysicalPosition): Element | null {
  *  image embed means nothing in a .py. */
 function editorAtDrop(el: Element | null): EditorView | null {
   const view = getActiveView();
-  if (!el || !view || !view.dom.contains(el)) return null;
+  if (!el || !view || view.state.readOnly || !view.dom.contains(el)) return null;
   const s = useAppStore.getState();
   if (s.presentationActive || s.mdViewMode === "readonly") return null;
   const path = s.activeFilePath;
@@ -450,11 +451,22 @@ function App() {
   // dragged to say what releasing will do.
   const dragPaths = useRef<string[]>([]);
   useEffect(() => {
+    let cursorView: EditorView | null = null;
+    const clearCursor = () => {
+      if (cursorView) setFileDropCursor(cursorView, null);
+      cursorView = null;
+    };
     const hintAt = (position: PhysicalPosition) => {
       const el = elementAtDrop(position);
+      const view = editorAtDrop(el);
+      const insert = view && dragPaths.current.some((path) => !isMarkdownFile(path));
+      if (cursorView !== view || !insert) clearCursor();
+      if (insert) {
+        cursorView = view;
+        setFileDropCursor(view, dropPoint(position));
+      }
       if (el?.closest("[data-sidebar]")) return null;
-      if (!editorAtDrop(el)) return "open" as const;
-      return dragPaths.current.every(isMarkdownFile) ? ("open" as const) : ("insert" as const);
+      return insert ? ("insert" as const) : ("open" as const);
     };
 
     const unlisten = getCurrentWebview().onDragDropEvent(async (event) => {
@@ -464,9 +476,11 @@ function App() {
       } else if (event.payload.type === "over") {
         setDropHint(hintAt(event.payload.position));
       } else if (event.payload.type === "leave") {
+        clearCursor();
         dragPaths.current = [];
         setDropHint(null);
       } else if (event.payload.type === "drop") {
+        clearCursor();
         setDropHint(null);
         dragPaths.current = [];
         const { paths, position } = event.payload;
@@ -502,6 +516,7 @@ function App() {
       }
     });
     return () => {
+      clearCursor();
       unlisten.then((fn) => fn());
     };
   }, []);
