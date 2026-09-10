@@ -34,28 +34,11 @@
     "targets": "all",
     "fileAssociations": [
       {
-        "ext": [
-          "md", "markdown", "mdown", "mkd", "mdx", "txt", "text", "log",
-          "json", "jsonc", "json5", "yaml", "yml", "toml", "xml", "csv", "tsv",
-          "ini", "conf", "cfg", "env", "properties",
-          "js", "jsx", "mjs", "cjs", "ts", "tsx", "html", "htm", "css", "scss",
-          "sass", "less", "vue", "svelte", "astro",
-          "py", "rs", "go", "java", "kt", "kts", "c", "h", "cpp", "cc", "cxx",
-          "hpp", "cs", "rb", "php", "sh", "bash", "zsh", "fish", "ps1", "bat", "cmd",
-          "sql", "swift", "lua", "r", "pl", "dart", "scala", "clj", "ex", "exs",
-          "gradle", "tex", "bib", "rst", "adoc", "org"
-        ],
-        "name": "Idea Note Text Document",
-        "description": "Text, markdown and code files",
-        "mimeType": "text/plain",
+        "ext": ["md", "markdown"],
+        "name": "Idea Note Markdown Document",
+        "description": "Markdown files",
+        "mimeType": "text/markdown",
         "role": "Editor"
-      },
-      {
-        "ext": ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"],
-        "name": "Idea Note Image",
-        "description": "Image files",
-        "mimeType": "image/png",
-        "role": "Viewer"
       }
     ],
     "macOS": {

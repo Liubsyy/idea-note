@@ -1,7 +1,7 @@
 // Charset handling for user text files. The workspace can contain files the
-// app didn't create — the OS file associations cover txt/log/csv/code files,
-// which on zh-CN Windows are often GBK — so reading strictly as UTF-8 made
-// them fail to open and silently vanish from search.
+// app didn't create — a workspace can include txt/log/csv/code files, which on
+// zh-CN Windows are often GBK — so reading strictly as UTF-8 made them fail to
+// open and silently vanish from search.
 //
 // Reads decode via BOM sniffing, strict UTF-8, then chardetng detection.
 // `EncodingState` remembers each opened file's on-disk encoding so a save
