@@ -9,6 +9,8 @@ import type { EditorView } from "@codemirror/view";
 import { SubMenuItem } from "../ContextSubMenu";
 import { getActiveView } from "../../lib/codemirror/activeView";
 import { openSearchWithReplace } from "../../lib/codemirror/searchPanel";
+import { commandKeyLabel } from "../../lib/codemirror/keybindings";
+import { useAppStore } from "../../store/useAppStore";
 import { copyText, readClipboardText } from "../../lib/clipboard";
 import { codeBlockAt } from "../../lib/codeRun/document";
 import { runInTerminal } from "../../lib/codeRun/run";
@@ -28,7 +30,6 @@ export interface EditorMenuState {
 
 const isMac = navigator.platform.toLowerCase().includes("mac");
 const mod = isMac ? "⌘" : "Ctrl+";
-const alt = isMac ? "⌥" : "Alt+";
 
 /** Selected text across all ranges, multi-cursor ranges joined by newlines. */
 function selectedText(view: EditorView): string {
@@ -46,6 +47,7 @@ export function EditorContextMenu({
   onClose: () => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const editorKeybindings = useAppStore((s) => s.editorKeybindings);
   // The right-click already moved the caret (see CodeMirrorEditor), so the
   // selection head tells us whether the click landed in a code block.
   const view = getActiveView();
@@ -138,10 +140,10 @@ export function EditorContextMenu({
         全选
       </Item>
       <div className="my-1" style={{ borderTop: "1px solid var(--border)" }} />
-      <Item hint={`${mod}F`} onClick={() => run((v) => openSearchPanel(v))}>
+      <Item hint={commandKeyLabel("find", editorKeybindings)} onClick={() => run((v) => openSearchPanel(v))}>
         查找
       </Item>
-      <Item hint={`${alt}${mod}F`} onClick={() => run((v) => openSearchWithReplace(v))}>
+      <Item hint={commandKeyLabel("replace", editorKeybindings)} onClick={() => run((v) => openSearchWithReplace(v))}>
         替换
       </Item>
       <div className="my-1" style={{ borderTop: "1px solid var(--border)" }} />

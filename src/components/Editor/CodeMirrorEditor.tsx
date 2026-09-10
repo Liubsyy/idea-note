@@ -20,7 +20,7 @@ import { markdownAutoCloseFences } from "../../lib/codemirror/autoClose";
 import { markdownParagraphEnter } from "../../lib/codemirror/paragraphEnter";
 import { paragraphSoftWrap } from "../../lib/codemirror/paragraphWrap";
 import { editorSearch } from "../../lib/codemirror/searchPanel";
-import { buildEditorKeymap } from "../../lib/codemirror/keybindings";
+import { buildEditorKeymap, commandTitle } from "../../lib/codemirror/keybindings";
 import { EditorContextMenu, type EditorMenuState } from "./EditorContextMenu";
 import { tablePreview } from "../../lib/codemirror/tablePreview";
 import { markdownLinkClick } from "../../lib/codemirror/linkClick";
@@ -168,9 +168,7 @@ export function CodeMirrorEditor() {
       EditorView.lineWrapping,
       cmHighlighting,
       cmTheme,
-      // Before defaultKeymap so the search panel wins Escape (it falls
-      // through to simplifySelection when the panel is closed).
-      editorSearch,
+      editorSearch(commandTitle("切换替换", "replace", editorKeybindings)),
       // Curated, user-customisable keymap (Settings › 快捷键) + the stock
       // bindings for everything it doesn't manage.
       buildEditorKeymap(editorKeybindings, isMd),

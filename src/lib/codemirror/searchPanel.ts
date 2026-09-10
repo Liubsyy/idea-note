@@ -3,10 +3,9 @@
 // app's CSS variables instead of the library's default look.
 
 import type { EditorState } from "@codemirror/state";
-import { keymap, EditorView, type Panel, type ViewUpdate } from "@codemirror/view";
+import { runScopeHandlers, EditorView, type Panel, type ViewUpdate } from "@codemirror/view";
 import {
   search,
-  searchKeymap,
   SearchQuery,
   getSearchQuery,
   setSearchQuery,
@@ -23,7 +22,7 @@ import {
 // it was invoked on; panels register themselves here while mounted.
 const panels = new WeakMap<EditorView, FindPanel>();
 
-/** Open the search panel with the replace row expanded (⌥⌘F). */
+/** Open the search panel with the replace row expanded (Mod-R). */
 export function openSearchWithReplace(view: EditorView): boolean {
   openSearchPanel(view);
   panels.get(view)?.setReplaceVisible(true);
@@ -92,7 +91,7 @@ class FindPanel implements Panel {
   private regexBtn: HTMLButtonElement;
   private wordBtn: HTMLButtonElement;
 
-  constructor(private view: EditorView) {
+  constructor(private view: EditorView, replaceTitle: string) {
     panels.set(view, this);
 
     this.searchField = document.createElement("input");
@@ -129,6 +128,15 @@ class FindPanel implements Panel {
       }
     });
 
+    // Search and replacement text must stay literal. In macOS WebKit,
+    // spellcheck=false also disables smart quotes and dash substitution.
+    for (const field of [this.searchField, this.replaceField]) {
+      field.spellcheck = false;
+      field.setAttribute("autocorrect", "off");
+      field.setAttribute("autocapitalize", "off");
+      field.autocomplete = "off";
+    }
+
     this.caseBtn = toggleButton("区分大小写", icons.caseSensitive, () => this.onQueryChanged());
     this.regexBtn = toggleButton("正则表达式", icons.regex, () => this.onQueryChanged());
     this.wordBtn = toggleButton("全字匹配", icons.wholeWord, () => this.onQueryChanged());
@@ -136,7 +144,7 @@ class FindPanel implements Panel {
     this.countEl = document.createElement("span");
     this.countEl.className = "cm-find-count";
 
-    this.modeBtn = iconButton("切换替换", icons.chevronRight, () =>
+    this.modeBtn = iconButton(replaceTitle, icons.chevronRight, () =>
       this.setReplaceVisible(this.replaceRow.style.display === "none"),
     );
     this.modeBtn.classList.add("cm-find-mode");
@@ -172,6 +180,11 @@ class FindPanel implements Panel {
 
     this.dom = document.createElement("div");
     this.dom.className = "cm-find-panel";
+    this.dom.addEventListener("keydown", (e) => {
+      if (!e.defaultPrevented && !e.isComposing && runScopeHandlers(this.view, e, "search-panel")) {
+        e.preventDefault();
+      }
+    });
     // Keep clicks on panel chrome from collapsing the editor selection.
     this.dom.addEventListener("mousedown", (e) => {
       if (!(e.target instanceof HTMLInputElement)) e.preventDefault();
@@ -285,12 +298,13 @@ function countMatches(query: SearchQuery, state: EditorState) {
 }
 
 /**
- * Editor search support: ⌘F find, ⌥⌘F find-and-replace, ↵/⇧↵ or ⌘G/⇧⌘G to
+ * Editor search support: Mod-F find, Mod-R find-and-replace, ↵/⇧↵ or Mod-G/Shift-Mod-G to
  * step through matches, Esc to close. Other occurrences of the selected text
  * are highlighted passively.
  */
-export const editorSearch = [
-  search({ top: true, createPanel: (view) => new FindPanel(view) }),
-  highlightSelectionMatches(),
-  keymap.of([{ key: "Mod-Alt-f", run: openSearchWithReplace }, ...searchKeymap]),
-];
+export function editorSearch(replaceTitle: string) {
+  return [
+    search({ top: true, createPanel: (view) => new FindPanel(view, replaceTitle) }),
+    highlightSelectionMatches(),
+  ];
+}

@@ -6,6 +6,7 @@ import {
   type CSSProperties,
 } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import type { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 
@@ -45,9 +46,10 @@ import {
   pathIsDir,
   takePendingOpenFiles,
 } from "./lib/fs";
-import { openSearchPanel } from "@codemirror/search";
+import { runScopeHandlers, type EditorView } from "@codemirror/view";
 import { getActiveView } from "./lib/codemirror/activeView";
-import { openSearchWithReplace } from "./lib/codemirror/searchPanel";
+import { handleEditorDrop } from "./lib/attachments";
+import { isWindows } from "./lib/platform";
 
 const MIN_W = 180;
 const MAX_W = 480;
@@ -60,6 +62,49 @@ const EDITOR_MIN_W = 180;
 async function openExternalFile(path: string) {
   if (await pathIsDir(path)) return;
   await useAppStore.getState().openFile(path);
+}
+
+/**
+ * A native drop point in CSS pixels.
+ *
+ * Tauri hands every platform's coordinate over as a `PhysicalPosition`, but wry
+ * doesn't measure them the same way: Windows reports device pixels (a
+ * `ScreenToClient` point), while macOS reports AppKit points — `draggingLocation`
+ * flipped against the webview frame — and GTK its own logical units. Neither of
+ * the latter two is touched by page zoom, which is how applyZoom scales the UI
+ * (`setZoom`, the webview's native zoom). `devicePixelRatio` folds the display
+ * scale and that zoom together, so it converts the Windows flavour and only
+ * that one; elsewhere the divisor is the UI zoom alone. Dividing by the wrong
+ * one lands the hit test up and to the left of where the file was released —
+ * half a window off on a Retina screen.
+ */
+function dropPoint(position: PhysicalPosition): { x: number; y: number } {
+  const divisor = isWindows
+    ? window.devicePixelRatio
+    : useAppStore.getState().uiZoom || 1;
+  return { x: position.x / divisor, y: position.y / divisor };
+}
+
+/** The element under a native drop point. Tauri reports a coordinate instead of
+ *  delivering a DOM event, so the target is found by hit test; the drop overlay
+ *  is pointer-events-none and so never shadows what's beneath. */
+function elementAtDrop(position: PhysicalPosition): Element | null {
+  const { x, y } = dropPoint(position);
+  return document.elementFromPoint(x, y);
+}
+
+/** The markdown editor a drop landed in, or null when it landed anywhere else.
+ *  Source mode counts — it's still an editable note — while read-only and
+ *  presentation don't, and neither does a plain-text file's editor: a markdown
+ *  image embed means nothing in a .py. */
+function editorAtDrop(el: Element | null): EditorView | null {
+  const view = getActiveView();
+  if (!el || !view || !view.dom.contains(el)) return null;
+  const s = useAppStore.getState();
+  if (s.presentationActive || s.mdViewMode === "readonly") return null;
+  const path = s.activeFilePath;
+  if (!path || !(isMarkdownFile(path) || isDraftPath(path))) return null;
+  return view;
 }
 
 function App() {
@@ -345,11 +390,25 @@ function App() {
   }, []);
 
   // Global Ctrl/Cmd+N creates an untitled draft and Ctrl/Cmd+S saves;
-  // Ctrl/Cmd+F (⌥ for replace) opens editor search even when focus is elsewhere
+  // Configurable find/replace shortcuts work even when focus is elsewhere
   // — except other text inputs (chat, terminal), which keep their own keys.
   // Ctrl/Cmd+Shift+F opens the sidebar global search.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const state = useAppStore.getState();
+      if (e.defaultPrevented || e.isComposing || state.presentationActive) return;
+      const view = getActiveView();
+      const target = e.target as HTMLElement | null;
+      const inOtherInput =
+        !!target && !view?.dom.contains(target) &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      const modalOpen = !!state.prompt || !!state.confirm || !!state.gitCredentialPrompt || !!state.history;
+      // Reuse CodeMirror's active bindings and key normalization instead of
+      // keeping a second fixed shortcut list in the app-level handler.
+      if (view && !inOtherInput && !modalOpen && runScopeHandlers(view, e, "search-open")) {
+        e.preventDefault();
+        return;
+      }
       if (
         (e.metaKey || e.ctrlKey) &&
         !e.altKey &&
@@ -357,20 +416,6 @@ function App() {
         e.key.toLowerCase() === "n"
       ) {
         e.preventDefault();
-        const state = useAppStore.getState();
-        const view = getActiveView();
-        const target = e.target as HTMLElement | null;
-        const inOtherInput =
-          !!target &&
-          !view?.dom.contains(target) &&
-          (target.tagName === "INPUT" ||
-            target.tagName === "TEXTAREA" ||
-            target.isContentEditable);
-        const modalOpen =
-          !!state.prompt ||
-          !!state.confirm ||
-          !!state.gitCredentialPrompt ||
-          !!state.history;
         if (!inOtherInput && !modalOpen) void state.newDraft();
         return;
       }
@@ -379,48 +424,81 @@ function App() {
         save();
         return;
       }
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "f") {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.shiftKey && e.key.toLowerCase() === "f") {
         e.preventDefault();
         useAppStore.getState().openGlobalSearch();
         return;
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
-        const view = getActiveView();
-        const t = e.target as HTMLElement | null;
-        const inOtherInput =
-          !!t &&
-          !view?.dom.contains(t) &&
-          (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
-        if (view && !inOtherInput) {
-          e.preventDefault();
-          if (e.altKey) openSearchWithReplace(view);
-          else openSearchPanel(view);
-        }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [save]);
 
-  // Files dragged in from the OS (Finder/Explorer) open in the editor. Tauri
-  // delivers native drag-drop as webview events with bare paths, not HTML5
-  // DataTransfer, so this is window-wide rather than a DOM drop target.
-  const [dropHover, setDropHover] = useState(false);
+  // Files dragged in from the OS (Finder/Explorer). Tauri delivers native
+  // drag-drop as webview events carrying bare paths and a window coordinate,
+  // not HTML5 DataTransfer, so this is window-wide and does its own hit test.
+  // Where the file lands decides what the drop means:
+  //   • on the markdown editor → it's referenced at the drop point, the file
+  //     copied into the dir set in 设置 › 图片/附件 (same as pasting one)
+  //   • on the sidebar tree → nothing; the tree isn't a drop target
+  //   • anywhere else → it opens, as a drop always used to
+  // A dropped .md opens wherever it lands: a note is something to read, not
+  // something to attach to another note.
+  const [dropHint, setDropHint] = useState<"open" | "insert" | null>(null);
+  // Only "enter" and "drop" carry paths, so they're kept here for the "over"
+  // events in between — the hint has to know whether it's markdown being
+  // dragged to say what releasing will do.
+  const dragPaths = useRef<string[]>([]);
   useEffect(() => {
+    const hintAt = (position: PhysicalPosition) => {
+      const el = elementAtDrop(position);
+      if (el?.closest("[data-sidebar]")) return null;
+      if (!editorAtDrop(el)) return "open" as const;
+      return dragPaths.current.every(isMarkdownFile) ? ("open" as const) : ("insert" as const);
+    };
+
     const unlisten = getCurrentWebview().onDragDropEvent(async (event) => {
       if (event.payload.type === "enter") {
-        setDropHover(true);
+        dragPaths.current = event.payload.paths;
+        setDropHint(hintAt(event.payload.position));
+      } else if (event.payload.type === "over") {
+        setDropHint(hintAt(event.payload.position));
       } else if (event.payload.type === "leave") {
-        setDropHover(false);
+        dragPaths.current = [];
+        setDropHint(null);
       } else if (event.payload.type === "drop") {
-        setDropHover(false);
-        const path = event.payload.paths[0];
-        if (!path) return;
-        if (await pathIsDir(path)) {
-          window.alert(`「${basename(path)}」是文件夹，请拖入文件。`);
+        setDropHint(null);
+        dragPaths.current = [];
+        const { paths, position } = event.payload;
+        if (paths.length === 0) return;
+
+        // Resolve the target before any await: the pointer is gone by then.
+        const el = elementAtDrop(position);
+        if (el?.closest("[data-sidebar]")) return;
+        const view = editorAtDrop(el);
+        // Resolved now, not after the awaits below: it's where the pointer was
+        // when the file landed, and the view could be gone by then.
+        const at = view?.posAtCoords(dropPoint(position));
+
+        // A drop is a hand-off from another app, so the drag itself is the
+        // request to come forward: without this the note opens (or grows a
+        // reference) behind whatever window the file was dragged out of, and
+        // the editor can't take the caret that insertRefs hands it.
+        void getCurrentWindow().setFocus().catch(() => {});
+
+        // A folder can be neither opened as a note nor referenced as a file.
+        const files: string[] = [];
+        for (const p of paths) if (!(await pathIsDir(p))) files.push(p);
+        if (files.length === 0) {
+          window.alert(`「${basename(paths[0])}」是文件夹，请拖入文件。`);
           return;
         }
-        await useAppStore.getState().openFile(path);
+
+        if (!view || files.every(isMarkdownFile)) {
+          await useAppStore.getState().openFile(files[0]);
+          return;
+        }
+        await handleEditorDrop(view, files, at);
       }
     });
     return () => {
@@ -606,6 +684,7 @@ function App() {
               ? `translateX(${sidebarOpen ? 0 : -width}px)`
               : undefined,
           }}
+          data-sidebar
         >
           <div style={{ width }} className="h-full">
             <Sidebar />
@@ -635,7 +714,7 @@ function App() {
 
       {/* Main editor pane */}
       <div className="relative flex min-w-0 flex-1 flex-col" style={{ background: "var(--bg)" }}>
-        {!presentationActive && dropHover && (
+        {!presentationActive && dropHint && (
           <div
             className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center"
             style={{ background: "color-mix(in srgb, var(--accent) 8%, transparent)" }}
@@ -648,7 +727,7 @@ function App() {
                 background: "var(--bg)",
               }}
             >
-              松开以打开文件
+              {dropHint === "insert" ? "松开以插入引用" : "松开以打开文件"}
             </span>
           </div>
         )}

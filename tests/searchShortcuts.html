@@ -1,0 +1,89 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Search shortcut regression tests</title>
+<h1>Search shortcut regression tests</h1>
+<p>Run through Vite: /tests/searchShortcuts.html?platform=mac (or win/linux).</p>
+<pre id="results">Running…</pre>
+<div id="editor"></div>
+<script type="module">
+  // Exercise the real command registry, keymap, and search panel in a DOM.
+  const output = document.querySelector("#results");
+  const platform = new URLSearchParams(location.search).get("platform") || "mac";
+  Object.defineProperty(navigator, "platform", {
+    value: platform === "mac" ? "MacIntel" : platform === "win" ? "Win32" : "Linux x86_64",
+    configurable: true,
+  });
+  try {
+    // Only the desktop bridge is mocked; all editor behavior below is real.
+    const { mockIPC, mockWindows } = await import("@tauri-apps/api/mocks");
+    mockWindows("main");
+    mockIPC((command) => command === "git_proxy_load" ? "" : undefined, { shouldMockEvents: true });
+    const { EditorState, Compartment } = await import("@codemirror/state");
+    const { EditorView, runScopeHandlers } = await import("@codemirror/view");
+    const { closeSearchPanel } = await import("@codemirror/search");
+    const { buildEditorKeymap, commandTitle, commandKeyLabel, EDITOR_COMMANDS } =
+      await import("/src/lib/codemirror/keybindings.ts");
+    const { editorSearch } = await import("/src/lib/codemirror/searchPanel.ts");
+    const passed = [];
+    function check(condition, message) {
+      if (!condition) throw new Error(message);
+      passed.push(message);
+    }
+    const bindings = new Compartment();
+    const view = new EditorView({
+      parent: document.querySelector("#editor"),
+      state: EditorState.create({
+        doc: "alpha beta alpha",
+        selection: { anchor: 0, head: 5 },
+        extensions: [
+          editorSearch(commandTitle("切换替换", "replace", {})),
+          bindings.of(buildEditorKeymap({})),
+        ],
+      }),
+    });
+    function key(letter, scope = "editor", alt = false) {
+      const event = new KeyboardEvent("keydown", {
+        key: letter, code: `Key${letter.toUpperCase()}`,
+        metaKey: platform === "mac", ctrlKey: platform !== "mac", altKey: alt,
+        bubbles: true, cancelable: true,
+      });
+      if (scope === "editor") {
+        view.contentDOM.dispatchEvent(event);
+        return event.defaultPrevented;
+      }
+      if (scope === "search-panel") {
+        document.activeElement.dispatchEvent(event);
+        return event.defaultPrevented;
+      }
+      return runScopeHandlers(view, event, scope);
+    }
+    const field = () => view.dom.querySelector('input[placeholder="查找"]');
+    const replacement = () => view.dom.querySelector('input[placeholder="替换为"]');
+    check(EDITOR_COMMANDS.some(c => c.id === "find") && EDITOR_COMMANDS.some(c => c.id === "replace"), "Both commands are available to Settings");
+    check(key("r") && document.activeElement === replacement(), "Default replace opens and focuses replacement directly");
+    check(field().value === "alpha", "Selected document text seeds the query");
+    check(key("f", "search-panel") && document.activeElement === field(), "Find works from inside the replacement field");
+    closeSearchPanel(view);
+    check(key("f", "search-open") && document.activeElement === field(), "App fallback scope opens find");
+    closeSearchPanel(view);
+
+    const overrides = { find: "Mod-Alt-j", replace: "Mod-Alt-k" };
+    view.dispatch({ effects: bindings.reconfigure(buildEditorKeymap(overrides)) });
+    check(!key("f") && !field(), "Rebinding removes the stock CodeMirror find shortcut");
+    check(!key("r") && !field(), "Rebinding removes the old replace shortcut");
+    check(!key("f", "search-open") && !key("r", "search-open"), "App fallback also drops old shortcuts");
+    check(key("k", "search-open", true) && document.activeElement === replacement(), "Custom replace works through the app fallback");
+    check(key("j", "search-panel", true) && document.activeElement === field(), "Custom find works within the search panel");
+    check(key("k", "search-panel", true) && document.activeElement === replacement(), "Custom replace works within the search panel");
+    const expected = platform === "mac" ? "⌘⌥K" : "Ctrl+Alt+K";
+    check(commandKeyLabel("replace", overrides) === expected, "Menu shortcut label reflects the override");
+    closeSearchPanel(view);
+    view.dispatch({ effects: bindings.reconfigure(buildEditorKeymap({})) });
+    check(key("r") && document.activeElement === replacement(), "Reset restores the default replace shortcut");
+    check(view.state.doc.toString() === "alpha beta alpha", "Opening and rebinding never changes document text");
+    view.destroy();
+    output.textContent = `PASS (${platform}): ${passed.length} checks\n` + passed.join("\n");
+  } catch (error) {
+    output.textContent = `FAIL (${platform}): ${error.stack || error}`;
+  }
+</script>

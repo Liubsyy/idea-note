@@ -32,6 +32,8 @@ import {
   cursorMatchingBracket,
 } from "@codemirror/commands";
 import { MARKDOWN_ACTIONS } from "./markdownActions";
+import { openSearchPanel, searchKeymap } from "@codemirror/search";
+import { openSearchWithReplace } from "./searchPanel";
 
 type Platform = "mac" | "win" | "linux";
 
@@ -63,6 +65,8 @@ export interface EditorCommandDef {
   run: Command;
   /** Settings section and whether the binding only applies to Markdown. */
   group: "general" | "markdown";
+  /** Additional contexts where the command is available. */
+  scope?: string;
 }
 
 /**
@@ -71,6 +75,8 @@ export interface EditorCommandDef {
  * Mod-I for italic. Markdown defaults are shared with the toolbar tooltips.
  */
 export const EDITOR_COMMANDS: EditorCommandDef[] = [
+  { id: "find", label: "查找", desc: "打开当前文档的查找框", defaultKey: "Mod-f", run: openSearchPanel, group: "general", scope: "editor search-panel search-open" },
+  { id: "replace", label: "替换", desc: "直接打开并聚焦替换框", defaultKey: "Mod-r", run: openSearchWithReplace, group: "general", scope: "editor search-panel search-open" },
   { id: "undo", label: "撤销", desc: "撤销上一次编辑", defaultKey: "Mod-z", run: undo, group: "general" },
   // Redo: ⌘⇧Z on mac, Ctrl+Y on Windows, Ctrl+Shift+Z on Linux.
   { id: "redo", label: "重做", desc: "重做被撤销的编辑", defaultKey: "Mod-y", mac: "Mod-Shift-z", linux: "Ctrl-Shift-z", run: redo, group: "general" },
@@ -156,18 +162,19 @@ export function buildEditorKeymap(
     const o = overrides[cmd.id];
     // An override applies on every platform; otherwise let CodeMirror pick the
     // platform-specific default via the mac/win/linux fields.
-    if (o && o.trim()) return { key: o, run: cmd.run, preventDefault: true };
+    if (o && o.trim()) return { key: o, run: cmd.run, scope: cmd.scope, preventDefault: true };
     return {
       key: cmd.defaultKey,
       mac: cmd.mac,
       win: cmd.win,
       linux: cmd.linux,
       run: cmd.run,
+      scope: cmd.scope,
       preventDefault: true,
     };
   });
 
-  const rest = [...defaultKeymap, ...historyKeymap].filter(
+  const rest = [...searchKeymap, ...defaultKeymap, ...historyKeymap].filter(
     (b) => !b.run || !managedRuns.has(b.run),
   );
 
@@ -176,6 +183,12 @@ export function buildEditorKeymap(
 
 export function runEditorCommand(id: string, view: EditorView): boolean {
   return EDITOR_COMMANDS.find((cmd) => cmd.id === id)?.run(view) ?? false;
+}
+
+/** Current shortcut label, shared by settings and editor menus. */
+export function commandKeyLabel(id: string, overrides: Record<string, string>): string {
+  const cmd = EDITOR_COMMANDS.find((item) => item.id === id);
+  return cmd ? formatKey(effectiveKey(cmd, overrides)) : "";
 }
 
 /** A native tooltip containing the command's current platform-aware binding. */

@@ -89,6 +89,9 @@ export function SearchPanel() {
             }}
             placeholder="搜索全部笔记"
             spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
+            autoComplete="off"
             className="min-w-0 flex-1 bg-transparent py-1 text-sm outline-none"
             style={{ color: "var(--text)" }}
           />
