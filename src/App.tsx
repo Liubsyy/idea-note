@@ -44,6 +44,7 @@ import {
   isImageFile,
   isMarkdownFile,
   pathIsDir,
+  saveFileToDir,
   takePendingOpenFiles,
 } from "./lib/fs";
 import { runScopeHandlers, type EditorView } from "@codemirror/view";
@@ -51,6 +52,7 @@ import { getActiveView } from "./lib/codemirror/activeView";
 import { handleEditorDrop } from "./lib/attachments";
 import { setFileDropCursor } from "./lib/codemirror/fileDropCursor";
 import { isWindows } from "./lib/platform";
+import { createSidebarDropFeedback, sidebarDropTarget } from "./lib/sidebarDrop";
 
 const MIN_W = 180;
 const MAX_W = 480;
@@ -441,10 +443,9 @@ function App() {
   // Where the file lands decides what the drop means:
   //   • on the markdown editor → it's referenced at the drop point, the file
   //     copied into the dir set in 设置 › 图片/附件 (same as pasting one)
-  //   • on the sidebar tree → nothing; the tree isn't a drop target
+  //   • on the sidebar tree → copy into the folder under the pointer
   //   • anywhere else → it opens, as a drop always used to
-  // A dropped .md opens wherever it lands: a note is something to read, not
-  // something to attach to another note.
+  // Outside the sidebar, a dropped .md opens instead of becoming an attachment.
   const [dropHint, setDropHint] = useState<"open" | "insert" | null>(null);
   // Only "enter" and "drop" carry paths, so they're kept here for the "over"
   // events in between — the hint has to know whether it's markdown being
@@ -452,12 +453,20 @@ function App() {
   const dragPaths = useRef<string[]>([]);
   useEffect(() => {
     let cursorView: EditorView | null = null;
+    const sidebarFeedback = createSidebarDropFeedback();
     const clearCursor = () => {
       if (cursorView) setFileDropCursor(cursorView, null);
       cursorView = null;
     };
     const hintAt = (position: PhysicalPosition) => {
       const el = elementAtDrop(position);
+      const target = sidebarDropTarget(el);
+      if (target && dragPaths.current.length) {
+        clearCursor();
+        sidebarFeedback.show(target, dropPoint(position), dragPaths.current.length);
+        return null;
+      }
+      sidebarFeedback.clear();
       const view = editorAtDrop(el);
       const insert = view && dragPaths.current.some((path) => !isMarkdownFile(path));
       if (cursorView !== view || !insert) clearCursor();
@@ -477,10 +486,12 @@ function App() {
         setDropHint(hintAt(event.payload.position));
       } else if (event.payload.type === "leave") {
         clearCursor();
+        sidebarFeedback.clear();
         dragPaths.current = [];
         setDropHint(null);
       } else if (event.payload.type === "drop") {
         clearCursor();
+        sidebarFeedback.clear();
         setDropHint(null);
         dragPaths.current = [];
         const { paths, position } = event.payload;
@@ -488,6 +499,39 @@ function App() {
 
         // Resolve the target before any await: the pointer is gone by then.
         const el = elementAtDrop(position);
+        const target = sidebarDropTarget(el);
+        if (target) {
+          const copyWorkspace = useAppStore.getState().workspacePath;
+          void getCurrentWindow().setFocus().catch(() => {});
+          let copied = 0;
+          const failures: string[] = [];
+          for (const path of paths) {
+            try {
+              if (await pathIsDir(path)) throw new Error("请拖入文件，暂不支持拷贝文件夹");
+              await saveFileToDir(path, target.dir, basename(path));
+              copied += 1;
+            } catch (error) {
+              failures.push(`「${basename(path)}」：${error}`);
+            }
+          }
+          const store = useAppStore.getState();
+          // Refresh even after a partial failure so completed copies are visible.
+          if (copied && store.workspacePath === copyWorkspace) {
+            store.setExpanded(target.dir, true);
+            try {
+              await store.refreshTree();
+            } catch (error) {
+              failures.push(`目录刷新失败：${error}`);
+            }
+          }
+          store.showToast(
+            failures.length
+              ? `已拷贝 ${copied} 个文件；${failures.join("；")}`
+              : `已拷贝 ${copied} 个文件到「${basename(target.dir)}」`,
+            failures.length ? "error" : "success",
+          );
+          return;
+        }
         if (el?.closest("[data-sidebar]")) return;
         const view = editorAtDrop(el);
         // Resolved now, not after the awaits below: it's where the pointer was
@@ -517,6 +561,7 @@ function App() {
     });
     return () => {
       clearCursor();
+      sidebarFeedback.clear();
       unlisten.then((fn) => fn());
     };
   }, []);

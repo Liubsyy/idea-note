@@ -498,6 +498,11 @@ export function Sidebar() {
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div
           ref={listRef}
+          data-sidebar-drop-root={
+            workspacePath && (sidebarMode === "files" || sidebarMode === "notes")
+              ? workspacePath
+              : undefined
+          }
           tabIndex={0}
           onScroll={onListScroll}
           onContextMenu={openRootContextMenu}

@@ -514,3 +514,49 @@ body {
     opacity: 0.5;
   }
 }
+/* Native file drops: highlight the actual destination and follow the pointer
+   with an explicit copy indicator (native drags bypass DOM mouse events). */
+[data-native-drop-target="true"] {
+  background: color-mix(in srgb, var(--accent) 20%, var(--bg)) !important;
+  box-shadow: inset 0 0 0 2px var(--accent) !important;
+  border-radius: 6px;
+  cursor: copy !important;
+}
+
+[data-native-drop-target="true"] * {
+  cursor: copy !important;
+}
+
+.sidebar-copy-badge {
+  position: fixed;
+  z-index: 10000;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 16px);
+  padding: 9px 12px;
+  border: 1.5px solid var(--accent);
+  border-radius: 9px;
+  background: var(--bg-elev);
+  color: var(--text);
+  box-shadow: 0 6px 24px var(--shadow);
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.sidebar-copy-badge::before {
+  content: "+";
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  font-size: 20px;
+  font-weight: 700;
+}
