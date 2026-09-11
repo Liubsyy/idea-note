@@ -1969,6 +1969,7 @@ dependencies = [
  "dirs",
  "encoding_rs",
  "gtk",
+ "libc",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",

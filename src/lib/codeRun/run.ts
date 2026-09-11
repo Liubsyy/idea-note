@@ -45,6 +45,8 @@ interface LiveRun {
   pending: RunSegment[];
   timer: ReturnType<typeof setInterval> | null;
   unlisten: UnlistenFn[];
+  started: boolean;
+  stopRequested: boolean;
 }
 
 const live = new Map<number, LiveRun>();
@@ -249,7 +251,13 @@ async function launch(runner: CodeRunner, args: StartRunArgs): Promise<void> {
     protocolError: null,
   });
 
-  const state: LiveRun = { pending: [], timer: null, unlisten: [] };
+  const state: LiveRun = {
+    pending: [],
+    timer: null,
+    unlisten: [],
+    started: false,
+    stopRequested: false,
+  };
   live.set(runId, state);
 
   // Listeners must be in place before the command starts, or a program that
@@ -281,6 +289,18 @@ async function launch(runner: CodeRunner, args: StartRunArgs): Promise<void> {
   state.timer = setInterval(() => flush(runId), FLUSH_MS);
 
   try {
+    // The stop button is visible before listeners and the backend session are
+    // ready. Retain that request instead of sending a stop for a missing ID.
+    if (state.stopRequested) {
+      useRunStore.getState().finish(runId, {
+        status: "killed",
+        exitCode: null,
+        truncated: false,
+        ms: 0,
+      });
+      cleanup(runId);
+      return;
+    }
     await invoke("code_run_start", {
       id: runId,
       command: runner.command,
@@ -292,6 +312,8 @@ async function launch(runner: CodeRunner, args: StartRunArgs): Promise<void> {
       timeoutMs: runner.timeoutMs,
       maxBytes: app.codeRunConfig.maxOutputKb * 1024,
     });
+    state.started = true;
+    if (state.stopRequested && live.get(runId) === state) stopRun(runId);
   } catch (e) {
     useRunStore.getState().fail(runId, String(e));
     cleanup(runId);
@@ -299,7 +321,14 @@ async function launch(runner: CodeRunner, args: StartRunArgs): Promise<void> {
 }
 
 export function stopRun(runId: number): void {
-  void invoke("code_run_stop", { id: runId }).catch(() => {});
+  const state = live.get(runId);
+  if (state && !state.started) {
+    state.stopRequested = true;
+    return;
+  }
+  void invoke("code_run_stop", { id: runId }).catch((error) => {
+    useAppStore.getState().showToast(`停止失败：${String(error)}`, "error");
+  });
 }
 
 /** Wrap a path for the shell only when it needs it. */

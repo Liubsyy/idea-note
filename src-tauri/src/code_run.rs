@@ -1,10 +1,10 @@
 // Fenced-code-block execution (the right panel's "运行输出" view).
 //
-// One run is one short-lived child process. The block's source is written into
+// One run owns an interpreter and its descendants. The block's source is written into
 // a private temp dir and handed to the interpreter as a file argument — never
 // through `sh -c`, so nothing inside a note can be reinterpreted as shell
 // syntax. Two reader threads stream the child's output to the frontend as
-// `code:data:{id}` events; a watchdog kills it past its timeout. However the
+// `code:data:{id}` events; the supervisor stops its process tree on timeout. However the
 // process ends, the exit is reported exactly once as `code:exit:{id}`.
 //
 // The language table lives in the frontend (src/lib/codeRun/runners.ts): this
@@ -12,9 +12,8 @@
 // has a single home.
 
 use std::collections::HashMap;
-use std::io::Read;
 use std::path::Path;
-use std::process::{Child, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -27,8 +26,8 @@ use tempfile::TempDir;
 
 use crate::proc;
 
-/// How often the supervisor/watchdog threads re-check a running child.
-const POLL: Duration = Duration::from_millis(60);
+mod process;
+use process::{read_output, ProcessTree, RunPipe, StopReason, POLL};
 
 /// `cmd.exe` is much less forgiving than the other interpreters here: Markdown
 /// source uses LF internally, while batch files need Windows line endings to
@@ -44,10 +43,9 @@ fn snippet_contents(ext: &str, code: &str) -> String {
 }
 
 struct RunSession {
-    child: Arc<Mutex<Child>>,
+    process: Arc<Mutex<ProcessTree>>,
     /// Deleted when the session is dropped, i.e. once the child has exited.
     _dir: TempDir,
-    killed: Arc<AtomicBool>,
 }
 
 #[derive(Default)]
@@ -107,24 +105,22 @@ fn spawn_reader(
     app: AppHandle,
     event: String,
     stream: &'static str,
-    mut source: Box<dyn Read + Send>,
+    mut source: Box<dyn RunPipe>,
     budget: Arc<AtomicU64>,
     truncated: Arc<AtomicBool>,
+    cancel: Arc<AtomicBool>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
-        let mut buf = [0u8; 8192];
         let mut decoder: Option<Decoder> = None;
-        loop {
-            let n = match source.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => n,
-            };
-            let decoder = decoder.get_or_insert_with(|| pick_decoder(&buf[..n]));
-            let text = decode_chunk(decoder, &buf[..n], false);
-            if text.is_empty() {
-                continue;
+        let result = read_output(source.as_mut(), &cancel, |bytes| {
+            let decoder = decoder.get_or_insert_with(|| pick_decoder(bytes));
+            let text = decode_chunk(decoder, bytes, false);
+            if !text.is_empty() {
+                emit_text(&app, &event, stream, text, &budget, &truncated);
             }
-            emit_text(&app, &event, stream, text, &budget, &truncated);
+        });
+        if !matches!(result, Ok(false)) {
+            truncated.store(true, Ordering::Relaxed);
         }
         // Flush whatever the decoder was still holding on to.
         if let Some(mut decoder) = decoder {
@@ -211,18 +207,15 @@ pub fn code_run_start(
         .stderr(Stdio::piped());
 
     let started = Instant::now();
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("无法启动 {command}：{e}"))?;
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
+    let mut process =
+        ProcessTree::spawn(&mut cmd).map_err(|e| format!("无法启动 {command}：{e}"))?;
+    let stdout = process.child.stdout.take();
+    let stderr = process.child.stderr.take();
+    let cancel_output = process.cancel_output.clone();
 
-    let killed = Arc::new(AtomicBool::new(false));
-    let timed_out = Arc::new(AtomicBool::new(false));
     let truncated = Arc::new(AtomicBool::new(false));
     let budget = Arc::new(AtomicU64::new(max_bytes));
-    let done = Arc::new(AtomicBool::new(false));
-    let child = Arc::new(Mutex::new(child));
+    let process = Arc::new(Mutex::new(process));
 
     let mut readers = Vec::new();
     if let Some(stdout) = stdout {
@@ -233,6 +226,7 @@ pub fn code_run_start(
             Box::new(stdout),
             budget.clone(),
             truncated.clone(),
+            cancel_output.clone(),
         ));
     }
     if let Some(stderr) = stderr {
@@ -243,6 +237,7 @@ pub fn code_run_start(
             Box::new(stderr),
             budget.clone(),
             truncated.clone(),
+            cancel_output,
         ));
     }
 
@@ -252,63 +247,70 @@ pub fn code_run_start(
     state.runs.lock().unwrap().insert(
         id,
         RunSession {
-            child: child.clone(),
+            process: process.clone(),
             _dir: dir,
-            killed,
         },
     );
 
-    // Watchdog: kill on timeout. Killing closes the pipes, so the readers hit
-    // EOF and the supervisor below reports the exit as usual. `timeout_ms == 0`
-    // means "no limit".
-    if timeout_ms > 0 {
-        let child = child.clone();
-        let done = done.clone();
-        let timed_out = timed_out.clone();
-        thread::spawn(move || {
-            let deadline = Instant::now() + Duration::from_millis(timeout_ms);
-            while !done.load(Ordering::Relaxed) {
-                if Instant::now() >= deadline {
-                    timed_out.store(true, Ordering::Relaxed);
-                    let _ = child.lock().unwrap().kill();
-                    return;
-                }
-                thread::sleep(POLL);
-            }
-        });
-    }
-
-    // Supervisor: wait for both pipes to drain *before* reporting the exit, so
-    // no output can land after the "finished" event. `try_wait` in a loop
-    // rather than `wait` — the lock has to stay free for stop/timeout kills.
+    // Poll reader completion instead of blocking on join: timeout and manual
+    // stop must still work when a descendant retains an output pipe. Reap the
+    // root only after the readers finish, which also reserves its PID/PGID on
+    // Unix until we no longer need to signal the run's group.
     let supervisor_app = app.clone();
     thread::spawn(move || {
-        for reader in readers {
-            let _ = reader.join();
-        }
-        let code = loop {
-            match child.lock().unwrap().try_wait() {
-                Ok(Some(status)) => break status.code(),
-                Err(_) => break None,
-                Ok(None) => {}
+        let mut retry_timeout_at = Duration::from_millis(timeout_ms);
+        let (code, reason) = loop {
+            if readers.iter().all(thread::JoinHandle::is_finished) {
+                let mut process = process.lock().unwrap();
+                match process.try_wait() {
+                    Ok(Some(status)) => {
+                        process.mark_complete();
+                        break (status.code(), process.reason);
+                    }
+                    Err(error) => {
+                        let _ = supervisor_app.emit(
+                            &format!("code:data:{id}"),
+                            DataPayload {
+                                stream: "stderr",
+                                text: format!("无法读取退出状态：{error}\n"),
+                            },
+                        );
+                        process.mark_complete();
+                        break (None, process.reason);
+                    }
+                    Ok(None) => {}
+                }
+            }
+            if timeout_ms > 0 && started.elapsed() >= retry_timeout_at {
+                if let Err(error) = process.lock().unwrap().stop(StopReason::Timeout) {
+                    let _ = supervisor_app.emit(
+                        &format!("code:data:{id}"),
+                        DataPayload {
+                            stream: "stderr",
+                            text: format!("超时终止失败，将重试：{error}\n"),
+                        },
+                    );
+                }
+                retry_timeout_at = started.elapsed() + Duration::from_secs(1);
             }
             thread::sleep(POLL);
         };
-        done.store(true, Ordering::Relaxed);
+        for reader in readers {
+            let _ = reader.join();
+        }
         // Dropping the session deletes the temp dir.
-        let killed = supervisor_app
+        supervisor_app
             .state::<CodeRunState>()
             .runs
             .lock()
             .unwrap()
-            .remove(&id)
-            .is_some_and(|session| session.killed.load(Ordering::Relaxed));
+            .remove(&id);
         let _ = supervisor_app.emit(
             &format!("code:exit:{id}"),
             ExitPayload {
                 code,
-                timed_out: timed_out.load(Ordering::Relaxed),
-                killed,
+                timed_out: reason == Some(StopReason::Timeout),
+                killed: reason == Some(StopReason::Manual),
                 truncated: truncated.load(Ordering::Relaxed),
                 ms: started.elapsed().as_millis() as u64,
             },
@@ -319,10 +321,23 @@ pub fn code_run_start(
 }
 
 #[tauri::command]
-pub fn code_run_stop(state: State<CodeRunState>, id: u64) -> Result<(), String> {
-    if let Some(session) = state.runs.lock().unwrap().get(&id) {
-        session.killed.store(true, Ordering::Relaxed);
-        let _ = session.child.lock().unwrap().kill();
+pub async fn code_run_stop(state: State<'_, CodeRunState>, id: u64) -> Result<(), String> {
+    let process = state
+        .runs
+        .lock()
+        .unwrap()
+        .get(&id)
+        .map(|s| s.process.clone());
+    if let Some(process) = process {
+        tauri::async_runtime::spawn_blocking(move || {
+            process
+                .lock()
+                .unwrap()
+                .stop(StopReason::Manual)
+                .map_err(|e| format!("无法停止代码块：{e}"))
+        })
+        .await
+        .map_err(|e| e.to_string())??;
     }
     Ok(())
 }
