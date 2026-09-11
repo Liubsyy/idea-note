@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { ArrowRight, Sparkles } from "lucide-react";
 
 import { useAppStore } from "../../store/useAppStore";
+import { useChatStore } from "../../store/useChatStore";
 import type {
   OutKind,
   ResultPlacement,
@@ -166,6 +168,25 @@ export function CodeComponentModal({
         <div className="mb-3 text-sm font-semibold" style={{ color: "var(--text)" }}>
           插入可交互组件
         </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            useChatStore.getState().openWithPrompt("帮我在当前笔记中插入一个可交互组件：");
+            onClose();
+          }}
+          className="mb-4 flex w-full items-center gap-2.5 rounded-lg p-3 text-left transition-colors hover:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+          style={{ background: "var(--active)", color: "var(--accent)" }}
+        >
+          <Sparkles size={18} className="shrink-0" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium">试试 AI 笔记助手</span>
+            <span className="mt-0.5 block text-xs" style={{ color: "var(--text-soft)" }}>
+              用自然语言描述需求，让 AI 帮你生成。
+            </span>
+          </span>
+          <ArrowRight size={16} className="shrink-0" />
+        </button>
 
         <div className="space-y-3">
           <div className="flex gap-3">

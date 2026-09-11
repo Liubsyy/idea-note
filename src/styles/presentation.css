@@ -1,0 +1,35 @@
+/* Pagination changes only the viewport. All content styles and rendering
+   remain those of the full-screen CodeMirror / image presentation. */
+.presentation-slides .cm-host .cm-editor {
+  padding-top: 88px;
+  padding-bottom: 48px;
+}
+.presentation-slides .cm-host .cm-scroller {
+  overflow-y: hidden;
+}
+.presentation-slides .cm-host .cm-content {
+  padding-top: 0;
+  /* Let even a short final page align with the top of the viewport. This
+     padding is excluded from the measured document height and page count. */
+  padding-bottom: 100vh;
+}
+.presentation-slides [data-presentation-scroll] {
+  margin-top: 88px;
+  height: calc(100% - 136px);
+  overflow-y: hidden;
+}
+.slide-footer {
+  position: absolute;
+  inset: auto 0 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 max(40px, 6%);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}

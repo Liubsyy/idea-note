@@ -322,11 +322,18 @@
 .cm-content .cm-md-highlight-block {
   --md-highlight-color: #3b82f6;
   --md-highlight-background: rgba(59, 130, 246, 0.18);
+  --md-highlight-code-background: rgba(59, 130, 246, 0.2);
   position: relative;
   padding-left: 1em;
   padding-right: 1em;
   color: var(--text);
   background: var(--md-highlight-background);
+}
+/* Keep inline code compact and tint it to match its highlight block. */
+.cm-content .cm-md-highlight-block .cm-md-code {
+  background: var(--md-highlight-code-background);
+  padding: 0.08em 0.28em;
+  border-radius: 3px;
 }
 .cm-content .cm-md-highlight-first {
   padding-top: 0.5em;

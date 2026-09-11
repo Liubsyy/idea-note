@@ -297,6 +297,10 @@ function applyHighlightBlocks(root: DocumentFragment) {
       .slice(marker.length)
       .replace(/^(?:\r?\n|<br\s*\/?>)?\s*/i, "");
     blockquote.classList.add("print-highlight-block");
+    blockquote.style.setProperty(
+      "--print-highlight-code-background",
+      highlightBackgroundCss(marker.color, 0.2),
+    );
     if (isCustomHighlightColor(marker.color)) {
       blockquote.classList.add("print-highlight-custom");
       blockquote.style.setProperty("--print-highlight-color", marker.color);

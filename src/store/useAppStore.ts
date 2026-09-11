@@ -110,6 +110,7 @@ export type NotesViewMode = "cards" | "tree";
  * - "readonly": Typora preview rendered but locked (no editing)
  */
 export type MdViewMode = "live" | "source" | "readonly";
+export type PresentationMode = "fullscreen" | "slides";
 
 /**
  * Where a pasted image / attachment file is written, and how its markdown link
@@ -457,6 +458,9 @@ interface AppState {
   mdViewMode: MdViewMode;
   /** Immersive, read-only presentation of the current file. Session-only. */
   presentationActive: boolean;
+  presentationMode: PresentationMode;
+  presentationPage: number;
+  presentationPageCount: number;
   /** Presentation content zoom (0.8–2.0). Session-only. */
   presentationScale: number;
   /** Bottom panel hosting the integrated terminal(s). */
@@ -645,9 +649,11 @@ interface AppState {
   toggleSidebar: () => void;
   setMdViewMode: (mode: MdViewMode) => void;
   /** Present the current file without saving or replacing its editor buffer. */
-  enterPresentation: () => void;
+  enterPresentation: (mode?: PresentationMode) => void;
   exitPresentation: () => void;
   setPresentationScale: (scale: number) => void;
+  setPresentationPage: (page: number) => void;
+  setPresentationPageCount: (count: number) => void;
   toggleBottomPanel: () => void;
   setBottomPanelHeight: (height: number) => void;
   toggleRightPanel: () => void;
@@ -1585,6 +1591,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   sidebarOpen: true,
   mdViewMode: "live",
   presentationActive: false,
+  presentationMode: "fullscreen",
+  presentationPage: 0,
+  presentationPageCount: 1,
   presentationScale: PRESENTATION_SCALE_DEFAULT,
   bottomPanelOpen: false,
   bottomPanelHeight: 260,
@@ -2965,18 +2974,35 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ uiZoom });
   },
 
-  enterPresentation: () => {
+  enterPresentation: (mode = "fullscreen") => {
     if (!get().activeFilePath || get().folderViewPath) {
       get().showToast("请先打开一个文件再开始演示", "error");
       return;
     }
     set({
       presentationActive: true,
+      presentationMode: mode,
+      presentationPage: 0,
+      presentationPageCount: 1,
       presentationScale: PRESENTATION_SCALE_DEFAULT,
     });
   },
 
   exitPresentation: () => set({ presentationActive: false }),
+
+  setPresentationPage: (page) => {
+    if (!Number.isFinite(page)) return;
+    set({ presentationPage: Math.max(0, Math.min(get().presentationPageCount - 1, Math.floor(page))) });
+  },
+
+  setPresentationPageCount: (count) => {
+    if (!Number.isFinite(count)) return;
+    const presentationPageCount = Math.max(1, Math.floor(count));
+    set({
+      presentationPageCount,
+      presentationPage: Math.min(get().presentationPage, presentationPageCount - 1),
+    });
+  },
 
   setPresentationScale: (scale) => {
     if (!Number.isFinite(scale)) return;

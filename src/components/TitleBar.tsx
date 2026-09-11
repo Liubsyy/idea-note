@@ -5,13 +5,13 @@ import {
   PanelBottom,
   PanelLeft,
   PanelLeftClose,
-  Presentation,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppStore } from "../store/useAppStore";
 import { isImageFile } from "../lib/fs";
 import { isWindows } from "../lib/platform";
 import { ChatHeaderActions } from "./Panels/RightPanel";
+import { PresentationMenu } from "./Editor/PresentationMenu";
 
 /** Count words: CJK characters count individually, latin runs as words. */
 function countWords(text: string): number {
@@ -49,7 +49,6 @@ export function TitleBar({ leftWidth }: { leftWidth: number }) {
   const lastSyncAt = useAppStore((s) => s.lastSyncAt);
   const syncNow = useAppStore((s) => s.syncNow);
   const openHistory = useAppStore((s) => s.openHistory);
-  const enterPresentation = useAppStore((s) => s.enterPresentation);
 
   const words = activeFilePath ? countWords(content) : 0;
 
@@ -144,15 +143,7 @@ export function TitleBar({ leftWidth }: { leftWidth: number }) {
             activeFilePath && showWords ? "" : "ml-auto"
           }`}
         >
-          {activeFilePath && (
-            <PanelToggle
-              title="演示当前文件（F5）"
-              active={false}
-              onClick={enterPresentation}
-            >
-              <Presentation size={16} />
-            </PanelToggle>
-          )}
+          {activeFilePath && <PresentationMenu />}
           {/* History needs only a local repo (no remote required). With a
               file open, the dialog includes current-file and global tabs; with
               no file open, it opens directly to global history. File-level

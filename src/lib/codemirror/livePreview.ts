@@ -511,6 +511,7 @@ function buildDecorations(view: EditorView): DecorationSet {
                       style: [
                         `--md-highlight-color:${highlightColorCss(highlightColor)}`,
                         `--md-highlight-background:${highlightBackgroundCss(highlightColor)}`,
+                        `--md-highlight-code-background:${highlightBackgroundCss(highlightColor, 0.2)}`,
                       ].join(";"),
                     },
                   }).range(line.from),

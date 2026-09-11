@@ -228,6 +228,12 @@
 #print-root .print-doc blockquote.print-highlight-block > :last-child {
   margin-bottom: 0;
 }
+/* Exclude fenced code and ordinary quotes nested inside a highlight block. */
+#print-root .print-doc blockquote.print-highlight-block code:not(pre code):not(blockquote:not(.print-highlight-block) code) {
+  background: var(--print-highlight-code-background, rgba(59, 130, 246, 0.2));
+  padding: 0.08em 0.28em;
+  border-radius: 3px;
+}
 
 /* Tables */
 #print-root .print-doc table {

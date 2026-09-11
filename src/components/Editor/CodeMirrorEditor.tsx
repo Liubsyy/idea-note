@@ -52,6 +52,7 @@ import { basename, isMarkdownFile } from "../../lib/fs";
 import { ArrowDownUp } from "lucide-react";
 import logoUrl from "../../assets/logo.png";
 import "../../lib/codemirror/editor.css";
+import { PRESENTATION_LAYOUT_EVENT } from "../../lib/presentation/breaks";
 
 // Typora-style rendering plugins; gated behind a compartment so source mode can
 // drop them while keeping the markdown grammar (and its syntax highlighting) live.
@@ -146,6 +147,11 @@ export function CodeMirrorEditor() {
     };
 
     const updateListener = EditorView.updateListener.of((u) => {
+      const presentation = useAppStore.getState();
+      if (presentation.presentationActive && presentation.presentationMode === "slides" &&
+          (u.geometryChanged || u.viewportChanged || u.docChanged)) {
+        window.dispatchEvent(new Event(PRESENTATION_LAYOUT_EVENT));
+      }
       if (u.docChanged) setContent(u.state.doc.toString());
       if (u.docChanged || u.selectionSet) {
         // Read-only mode never edits, so the toolbar shows no active formats

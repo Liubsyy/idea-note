@@ -23,6 +23,7 @@ import {
 import { ImageView } from "./components/Editor/ImageView";
 import { FolderView } from "./components/Editor/FolderView";
 import { PresentationControls } from "./components/Editor/PresentationControls";
+import { SlidePresentation } from "./components/Editor/SlidePresentation";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { BottomPanel } from "./components/Panels/BottomPanel";
 import { RightPanel } from "./components/Panels/RightPanel";
@@ -126,6 +127,8 @@ function App() {
   const docKey = useAppStore((s) => s.docKey);
   const presentationActive = useAppStore((s) => s.presentationActive);
   const presentationScale = useAppStore((s) => s.presentationScale);
+  const presentationMode = useAppStore((s) => s.presentationMode);
+  const slidesActive = presentationActive && presentationMode === "slides";
   const editorFontSize = useAppStore((s) => s.editorFontSize);
 
   // The terminal panel stays mounted once opened so toggling it just hides the
@@ -372,7 +375,19 @@ function App() {
         }
       }
 
-      if (["PageUp", "PageDown", "Home", "End"].includes(e.key)) {
+      if (state.presentationMode === "slides" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        // Space on a focused control activates that control instead of also
+        // advancing the slide. Elsewhere it behaves like a presentation remote.
+        const onControl = (e.target as HTMLElement | null)?.closest("button, input, select, textarea, a");
+        if (["ArrowRight", "ArrowDown", "PageDown", "ArrowLeft", "ArrowUp", "PageUp", "Home", "End"].includes(e.key) || (e.key === " " && !onControl)) {
+          stop();
+          const previous = ["ArrowLeft", "ArrowUp", "PageUp"].includes(e.key) || (e.key === " " && e.shiftKey);
+          state.setPresentationPage(e.key === "Home" ? 0 : e.key === "End" ? state.presentationPageCount - 1 : state.presentationPage + (previous ? -1 : 1));
+          return;
+        }
+      }
+
+      if (state.presentationMode !== "slides" && ["PageUp", "PageDown", "Home", "End"].includes(e.key)) {
         const scroller =
           getActiveView()?.scrollDOM ??
           document.querySelector<HTMLElement>("[data-presentation-scroll]");
@@ -713,7 +728,7 @@ function App() {
   return (
     <div
       className={`flex h-screen w-screen flex-col overflow-hidden ${
-        presentationActive ? "presentation-active" : ""
+        presentationActive ? `presentation-active${slidesActive ? " presentation-slides" : ""}` : ""
       }`}
       style={
         presentationActive
@@ -832,20 +847,24 @@ function App() {
                 </div>
               </div>
             )}
-            <div className="min-h-0 flex-1 overflow-hidden">
-              {isImageFile(activeFilePath) ? (
-                <ImageView
-                  path={activeFilePath}
-                  presentationScale={
-                    presentationActive ? presentationScale : undefined
-                  }
-                />
-              ) : (
-                // key forces a clean remount when switching files
-                <ErrorBoundary resetKey={docKey}>
-                  <CodeMirrorEditor key={docKey} />
-                </ErrorBoundary>
-              )}
+            <div className="relative min-h-0 flex-1 overflow-hidden">
+              {/* Both presentation modes display this same mounted editor. */}
+              <div className="presentation-editor h-full">
+                {isImageFile(activeFilePath) ? (
+                  <ImageView
+                    path={activeFilePath}
+                    presentationScale={
+                      presentationActive ? presentationScale : undefined
+                    }
+                  />
+                ) : (
+                  // key forces a clean remount when switching files
+                  <ErrorBoundary resetKey={docKey}>
+                    <CodeMirrorEditor key={docKey} />
+                  </ErrorBoundary>
+                )}
+              </div>
+              {slidesActive && <SlidePresentation />}
             </div>
           </>
         ) : (

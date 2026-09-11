@@ -388,17 +388,37 @@ function HistoryMenu() {
 
 /* ------------------------------ session view ----------------------------- */
 
-const SUGGESTIONS = ["总结当前文件的要点", "帮我润色这篇文档", "检查并修正错别字与语法"];
+const SUGGESTIONS = [
+  "总结当前文件的要点",
+  "帮我润色这篇文档",
+  "插入一个温度换算器可交互工具",
+  "查找笔记中关于 Git 的使用技巧",
+  "把复杂内容画成一张图",
+];
 
 function SessionView({ session }: { session: ChatSession }) {
   const sending = useChatStore((s) => s.sendingSessionIds.includes(session.id));
   const sendMessage = useChatStore((s) => s.sendMessage);
   const stopSending = useChatStore((s) => s.stopSending);
+  const hydrated = useChatStore((s) => s.hydrated);
+  const pendingComposerPrompt = useChatStore((s) => s.pendingComposerPrompt);
 
   const [input, setInput] = useState("");
   const [focused, setFocused] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!hydrated || pendingComposerPrompt === null) return;
+    const chat = useChatStore.getState();
+    if (chat.activeSessionId !== session.id) return;
+    const prompt = chat.takeComposerPrompt();
+    if (prompt === null) return;
+    // Keep any existing draft and consume the request once, including in StrictMode.
+    setInput((current) => current.trim() ? `${current}\n\n${prompt}` : prompt);
+    chat.setSessionUseOpenFile(session.id, true);
+    taRef.current?.focus();
+  }, [hydrated, pendingComposerPrompt, session.id]);
 
   // `session.items` gets a new identity on every streamed delta, so this also
   // keeps the view pinned to the bottom while a reply is streaming in.

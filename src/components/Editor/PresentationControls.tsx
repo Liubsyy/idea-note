@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Maximize2, Minus, Plus, RotateCcw, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, GalleryVerticalEnd, Maximize2, Minus, Plus, RotateCcw, X } from "lucide-react";
 
 import {
   PRESENTATION_SCALE_DEFAULT,
@@ -19,6 +19,10 @@ export function PresentationControls() {
   const scale = useAppStore((s) => s.presentationScale);
   const setScale = useAppStore((s) => s.setPresentationScale);
   const exit = useAppStore((s) => s.exitPresentation);
+  const slides = useAppStore((s) => s.presentationMode === "slides");
+  const page = useAppStore((s) => s.presentationPage);
+  const pageCount = useAppStore((s) => s.presentationPageCount);
+  const setPage = useAppStore((s) => s.setPresentationPage);
   const [visible, setVisible] = useState(true);
   const timerRef = useRef<number | undefined>(undefined);
 
@@ -55,14 +59,26 @@ export function PresentationControls() {
           border: "1px solid var(--border)",
         }}
       >
-        <Maximize2 size={15} className="ml-1 shrink-0" style={{ color: "var(--accent)" }} />
-        <span className="max-w-[40vw] truncate px-2 text-sm font-medium">
+        {slides ? <GalleryVerticalEnd size={15} className="ml-1 shrink-0" style={{ color: "var(--accent)" }} /> : <Maximize2 size={15} className="ml-1 shrink-0" style={{ color: "var(--accent)" }} />}
+        <span className="max-w-[20vw] truncate px-2 text-sm font-medium">
           {isDraftPath(activeFilePath)
             ? "未命名"
             : activeFilePath
               ? basename(activeFilePath)
               : "演示"}
         </span>
+        {slides && <>
+          <span className="mx-1 h-5 w-px" style={{ background: "var(--border)" }} />
+          <ControlButton title="上一页（← / PageUp）" disabled={page === 0} onClick={() => setPage(page - 1)}>
+            <ChevronLeft size={16} />
+          </ControlButton>
+          <span className="min-w-12 select-none text-center text-xs tabular-nums" aria-label={`第 ${page + 1} 页，共 ${pageCount} 页`}>
+            {page + 1} / {pageCount}
+          </span>
+          <ControlButton title="下一页（→ / PageDown）" disabled={page >= pageCount - 1} onClick={() => setPage(page + 1)}>
+            <ChevronRight size={16} />
+          </ControlButton>
+        </>}
         <span className="mx-1 h-5 w-px" style={{ background: "var(--border)" }} />
         <ControlButton
           title="缩小（⌘/Ctrl -）"

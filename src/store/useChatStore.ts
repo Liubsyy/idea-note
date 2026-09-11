@@ -75,6 +75,10 @@ interface ChatState {
   sendingSessionIds: string[];
   /** True once sessions have been loaded from the Rust backend (async). */
   hydrated: boolean;
+  /** Draft requested by another UI entry point; never sent automatically. */
+  pendingComposerPrompt: string | null;
+  openWithPrompt: (text: string) => void;
+  takeComposerPrompt: () => string | null;
 
   ensureSession: () => void;
   newSession: () => void;
@@ -537,6 +541,18 @@ export const useChatStore = create<ChatState>((set, get) => {
     activeSessionId: null,
     sendingSessionIds: [],
     hydrated: false,
+    pendingComposerPrompt: null,
+
+    openWithPrompt: (text) => {
+      set({ pendingComposerPrompt: text });
+      useAppStore.setState({ rightPanelOpen: true });
+    },
+
+    takeComposerPrompt: () => {
+      const text = get().pendingComposerPrompt;
+      set({ pendingComposerPrompt: null });
+      return text;
+    },
 
     ensureSession: () => {
       if (!get().sessions.some((s) => !s.archived)) get().newSession();
