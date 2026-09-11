@@ -31,6 +31,7 @@ import {
   type RunTrigger,
 } from "../codeRun/fenceAttrs";
 import { codeRunnersChanged } from "./livePreview";
+import { canInteract } from "./interaction";
 
 /** Interpreters cost tens of milliseconds to start; a dragged slider emits
  *  changes far faster than that. Only the last position gets a process. */
@@ -133,7 +134,7 @@ export const autoRuns = ViewPlugin.fromClass(
     }
 
     scheduleWatch(changedKey: string) {
-      if (this.view.state.readOnly) return;
+      if (!canInteract(this.view.state)) return;
       const filePath = useAppStore.getState().activeFilePath ?? "";
       const prefix = `${filePath} `;
       if (!changedKey.startsWith(prefix)) return; // another note's block
@@ -143,7 +144,7 @@ export const autoRuns = ViewPlugin.fromClass(
         this.timer = null;
         const blockId = this.pending;
         this.pending = null;
-        if (blockId === null) return;
+        if (blockId === null || !canInteract(this.view.state)) return;
         for (const target of targets(this.view, "watch", blockId))
           void runBlock(this.view, target.info, target.code, { auto: true });
       }, DEBOUNCE_MS);

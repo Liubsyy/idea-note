@@ -375,6 +375,11 @@ function App() {
         }
       }
 
+      // Parameter fields keep navigation keys (slider steps, select options,
+      // text cursor movement) instead of turning the presentation page.
+      const inField = (e.target as HTMLElement | null)?.closest("input, select, textarea, [contenteditable=true], [role=slider], [role=spinbutton]");
+      if (inField) return;
+
       if (state.presentationMode === "slides" && !e.metaKey && !e.ctrlKey && !e.altKey) {
         // Space on a focused control activates that control instead of also
         // advancing the slide. Elsewhere it behaves like a presentation remote.

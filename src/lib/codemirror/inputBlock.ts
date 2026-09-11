@@ -35,6 +35,7 @@ import {
 } from "../inputs/schema";
 import { inputKey, useInputStore, valuesFor } from "../../store/useInputStore";
 import { useAppStore } from "../../store/useAppStore";
+import { canInteract, presentationInteraction } from "./interaction";
 
 const el = <K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -341,6 +342,8 @@ class InputWidget extends WidgetType {
   constructor(
     readonly block: InputBlockInfo,
     readonly filePath: string,
+    readonly editable: boolean,
+    readonly interactive: boolean,
   ) {
     super();
   }
@@ -351,7 +354,9 @@ class InputWidget extends WidgetType {
       o.block.source === this.block.source &&
       o.block.id === this.block.id &&
       o.block.from === this.block.from &&
-      o.filePath === this.filePath
+      o.filePath === this.filePath &&
+      o.editable === this.editable &&
+      o.interactive === this.interactive
     );
   }
   get estimatedHeight() {
@@ -366,26 +371,28 @@ class InputWidget extends WidgetType {
     const wrap = el("div", "cm-md-input");
     const card = el("div", "cm-md-input-card");
     wrap.append(card);
-    const readOnly = view.state.readOnly;
 
     const head = el("div", "cm-md-input-head");
     const title = el("span", "cm-md-input-title");
     title.textContent = this.block.named ? `参数 · ${this.block.id}` : "参数";
     head.append(title);
 
-    if (!readOnly) {
+    if (this.editable) {
       const pin = el("button", "cm-md-input-btn");
       pin.type = "button";
       pin.textContent = "固化为默认值";
       pin.title = "把当前值写回笔记，作为这个块的新默认值";
       pin.addEventListener("click", () => pinDefaults(view, this.block, key));
+      head.append(pin);
+    }
 
+    if (this.interactive) {
       const reset = el("button", "cm-md-input-btn");
       reset.type = "button";
       reset.textContent = "重置";
       reset.title = "恢复笔记里写的默认值";
       reset.addEventListener("click", () => useInputStore.getState().reset(key));
-      head.append(pin, reset);
+      head.append(reset);
     }
     card.append(head);
 
@@ -399,7 +406,7 @@ class InputWidget extends WidgetType {
       const { node, handle } = buildControl(field, values[field.name], (next) => {
         useInputStore.getState().set(key, field.name, next);
       });
-      if (readOnly)
+      if (!this.interactive)
         node.querySelectorAll("input, select").forEach((c) => {
           (c as HTMLInputElement).disabled = true;
         });
@@ -468,7 +475,7 @@ function buildInputs(state: EditorState): DecorationSet {
     if (inside) continue;
     ranges.push(
       Decoration.replace({
-        widget: new InputWidget(block, filePath),
+        widget: new InputWidget(block, filePath, !state.readOnly, canInteract(state)),
         block: true,
       }).range(block.from, block.to),
     );
@@ -482,7 +489,8 @@ export const inputBlock = StateField.define<DecorationSet>({
     if (
       tr.docChanged ||
       tr.selection ||
-      tr.startState.readOnly !== tr.state.readOnly
+      tr.startState.readOnly !== tr.state.readOnly ||
+      tr.startState.facet(presentationInteraction) !== tr.state.facet(presentationInteraction)
     )
       return buildInputs(tr.state);
     return deco.map(tr.changes);

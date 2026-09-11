@@ -32,6 +32,7 @@ import {
 import { copyText } from "../clipboard";
 import { useAppStore } from "../../store/useAppStore";
 import { runBlock } from "../codeRun/runBlock";
+import { canInteract, presentationInteraction } from "./interaction";
 import { resolveRunner } from "../codeRun/runners";
 import {
   INPUT_FENCE,
@@ -627,10 +628,10 @@ function buildDecorations(view: EditorView): DecorationSet {
                   return fenced ? t : t.replace(/^( {1,4}|\t)/, "");
                 })
                 .join("\n");
-              // Read-only preview never offers to run: it's the mode for
-              // reading notes that came from elsewhere.
+              // Presentation permits execution while keeping the source locked.
+              // Ordinary read-only preview still never offers to run.
               const runnable =
-                !state.readOnly &&
+                canInteract(state) &&
                 fenceInfo.lang &&
                 resolveRunner(
                   fenceInfo.lang,
@@ -1019,6 +1020,7 @@ export const livePreview = ViewPlugin.fromClass(
         // Switching in/out of read-only mode changes whether the cursor line is
         // revealed as source, so rebuild when the readOnly facet toggles.
         u.startState.readOnly !== u.state.readOnly ||
+        u.startState.facet(presentationInteraction) !== u.state.facet(presentationInteraction) ||
         u.transactions.some((t) =>
           t.effects.some((e) => e.is(parseAdvanced) || e.is(codeRunnersChanged)),
         )

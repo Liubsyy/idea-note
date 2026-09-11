@@ -37,6 +37,7 @@ import { vaultErrorMessage } from "../../lib/crypto/vault";
 import { useVaultStore } from "../../store/useVaultStore";
 import { resultBlock } from "../../lib/codemirror/resultBlock";
 import { autoRuns } from "../../lib/codemirror/autoRuns";
+import { presentationInteraction } from "../../lib/codemirror/interaction";
 import {
   cmTheme,
   cmHighlighting,
@@ -182,7 +183,7 @@ export function CodeMirrorEditor() {
       updateListener,
       presentationCompartment.current.of(
         useAppStore.getState().presentationActive
-          ? [EditorState.readOnly.of(true), EditorView.editable.of(false)]
+          ? [EditorState.readOnly.of(true), EditorView.editable.of(false), presentationInteraction.of(!vaultRotationBusy)]
           : [],
       ),
       ...(vaultRotationBusy
@@ -378,12 +379,12 @@ export function CodeMirrorEditor() {
     view.dispatch({
       effects: presentationCompartment.current.reconfigure(
         presentationActive
-          ? [EditorState.readOnly.of(true), EditorView.editable.of(false)]
+          ? [EditorState.readOnly.of(true), EditorView.editable.of(false), presentationInteraction.of(!vaultRotationBusy)]
           : [],
       ),
     });
     if (presentationActive) setMenu(null);
-  }, [presentationActive]);
+  }, [presentationActive, vaultRotationBusy]);
 
   // Enabling a language in settings (a different window) must make its run
   // buttons appear without reopening the file. Decorations only rebuild on

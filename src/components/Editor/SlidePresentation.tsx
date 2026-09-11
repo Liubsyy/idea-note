@@ -122,9 +122,32 @@ export function SlidePresentation() {
 
   useEffect(() => { scheduleRef.current?.(); }, [page, scale, breaks]);
 
+  useEffect(() => {
+    let lastPageAt = -Infinity;
+    const onWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey ||
+          event.deltaY === 0 || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+      if (!(event.target instanceof Element) || !event.target.closest(".presentation-editor")) return;
+      if (event.target.closest("input, select, textarea, [contenteditable=true], [role=slider], [role=spinbutton]")) return;
+      const store = useAppStore.getState();
+      if (!store.presentationActive || store.presentationMode !== "slides") return;
+
+      // Own vertical scrolling before editor widgets can scroll the page away
+      // from its measured boundary. Limit rapid wheel events to one page turn.
+      event.preventDefault();
+      event.stopPropagation();
+      const now = performance.now();
+      if (now - lastPageAt < 400) return;
+      lastPageAt = now;
+      store.setPresentationPage(store.presentationPage + (event.deltaY > 0 ? 1 : -1));
+    };
+    window.addEventListener("wheel", onWheel, { capture: true, passive: false });
+    return () => window.removeEventListener("wheel", onWheel, true);
+  }, []);
+
   return (
     <div className="slide-footer" aria-label="分页演示" aria-live="polite">
-      <span>← / → 翻页 · 空格下一页 · Esc 退出</span>
+      <span>← / → 或滚轮翻页 · 空格下一页 · Esc 退出</span>
       <span>{page + 1} / {count}</span>
     </div>
   );
