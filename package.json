@@ -10,6 +10,7 @@
     "mock:ai": "node mock-ai/server.mjs",
     "test:mock-ai": "node --test mock-ai/server.test.mjs",
     "test:code-run": "node --test tests/codeRunStop.test.mjs",
+    "test:ai-cancellation": "node --test tests/aiCancellation.test.mjs",
     "test:presentation": "node --test --experimental-strip-types tests/presentation.test.mjs",
     "test:fence-attrs": "node --test tests/fenceAttrs.test.mjs",
     "test:result-protocol": "node --test tests/resultProtocol.test.mjs",

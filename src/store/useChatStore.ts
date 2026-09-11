@@ -10,6 +10,7 @@ import { useAppStore } from "./useAppStore";
 import { basename } from "../lib/fs";
 import type { ChatMsg, ThinkingLevel, ToolCall } from "../lib/ai/types";
 import { runChat } from "../lib/ai/client";
+import { abortable, throwIfAborted } from "../lib/ai/cancellation";
 import { firstModelSelection, resolveModelSelection } from "../lib/ai/modelSelection";
 import {
   TOOL_DEFS,
@@ -35,6 +36,7 @@ export type ToolStatus =
   | "applied"
   | "rejected"
   | "undone"
+  | "cancelled"
   | "error";
 
 /** One entry in a session's visible timeline. */
@@ -307,7 +309,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           : s,
       ),
     });
-  const patchItem = (itemId: string, patch: Partial<Extract<ChatItem, { kind: "tool" }>>) => {
+  const patchToolItem = (itemId: string, patch: Partial<Extract<ChatItem, { kind: "tool" }>>) => {
     let updated: ChatSession | null = null;
     const sessions = get().sessions.map((s) => ({
       ...s,
@@ -323,16 +325,25 @@ export const useChatStore = create<ChatState>((set, get) => {
   };
 
   /** Execute one tool call against the editor, honoring the session's mode. */
-  const runToolCall = async (sessionId: string, call: ToolCall): Promise<string> => {
+  const runToolCall = async (sessionId: string, call: ToolCall, signal: AbortSignal): Promise<string> => {
+    throwIfAborted(signal);
+    const patchItem: typeof patchToolItem = (itemId, patch) => {
+      throwIfAborted(signal);
+      patchToolItem(itemId, patch);
+    };
     const mode = get().sessions.find((s) => s.id === sessionId)?.mode ?? "ask";
     const shouldConfirmEveryTool = mode === "ask_all";
 
     const waitForApproval = async (itemId: string) => {
-      const approved = await new Promise<boolean>((resolve) =>
-        pendingApprovals.set(itemId, { sessionId, resolve }),
-      );
-      pendingApprovals.delete(itemId);
-      return approved;
+      try {
+        const approved = await abortable(signal, () => new Promise<boolean>((resolve) =>
+          pendingApprovals.set(itemId, { sessionId, resolve }),
+        ));
+        throwIfAborted(signal);
+        return approved;
+      } finally {
+        pendingApprovals.delete(itemId);
+      }
     };
 
     if (call.name === "read_open_file") {
@@ -396,7 +407,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         return "用户拒绝了新建笔记。";
       }
       if (shouldConfirmEveryTool) patchItem(itemId, { status: "running" });
-      const r = await createNote(call.args);
+      const r = await createNote(call.args, signal);
       patchItem(itemId, {
         status: r.ok ? "done" : "error",
         summary: r.ok ? r.name : "新建笔记",
@@ -420,7 +431,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         return `用户拒绝了搜索：${query}`;
       }
       if (shouldConfirmEveryTool) patchItem(itemId, { status: "running" });
-      const r = await runSearch(call.args);
+      const r = await runSearch(call.args, signal);
       patchItem(itemId, {
         status: r.ok ? "done" : "error",
         summary: r.ok ? `“${query}”（${r.hits.length} 条结果）` : `“${query}”`,
@@ -683,6 +694,12 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     stopSending: (sessionId) => {
       currentAborts.get(sessionId)?.abort();
+      updateSession(sessionId, (s) => ({
+        ...s,
+        items: s.items.map((item) => item.kind === "tool"
+          && (item.status === "running" || item.status === "pending")
+          ? { ...item, status: "cancelled" } : item),
+      }));
       // Release approvals for this session only so other conversations keep
       // waiting/running independently.
       for (const [itemId, pending] of pendingApprovals) {
@@ -706,7 +723,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       if (before == null) return;
       if (applyContent(before)) {
         undoSnapshots.delete(itemId);
-        patchItem(itemId, { status: "undone" });
+        patchToolItem(itemId, { status: "undone" });
       }
     },
 
@@ -738,6 +755,8 @@ export const useChatStore = create<ChatState>((set, get) => {
       set({ sendingSessionIds: [...get().sendingSessionIds, sessionId] });
       const abort = new AbortController();
       currentAborts.set(sessionId, abort);
+      const ownsTurn = () => currentAborts.get(sessionId) === abort
+        && get().sessions.some((s) => s.id === sessionId);
       const system = buildSystemPrompt(
         session.useOpenFile ? useAppStore.getState().activeFilePath : null,
         useAppStore.getState().workspacePath,
@@ -757,6 +776,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           { thinkingLevel: session.thinkingLevel, signal: abort.signal },
           {
             onTextDelta: (delta) => {
+              if (abort.signal.aborted || !ownsTurn()) return;
               if (!streamItemId) {
                 streamItemId = uid();
                 appendItem(sessionId, { id: streamItemId, kind: "assistant", text: "" });
@@ -764,28 +784,31 @@ export const useChatStore = create<ChatState>((set, get) => {
               appendItemText(sessionId, streamItemId, delta);
             },
             onTextDone: () => {
+              if (abort.signal.aborted || !ownsTurn()) return;
               streamItemId = null;
               const latest = get().sessions.find((s) => s.id === sessionId);
               if (latest) persistSession(latest);
             },
             onToolCall: (call) => {
               streamItemId = null;
-              return runToolCall(sessionId, call);
+              return runToolCall(sessionId, call, abort.signal);
             },
           },
         );
       } catch (e: any) {
-        appendItem(sessionId, {
+        if (ownsTurn()) appendItem(sessionId, {
           id: uid(),
           kind: "error",
           text: abort.signal.aborted ? "已手动停止。" : `请求失败：${e?.message ?? String(e)}`,
         });
       } finally {
-        // Persist whatever history the loop accumulated (success or failure).
-        updateSession(sessionId, (s) => ({ ...s, history }));
-        if (currentAborts.get(sessionId) === abort) currentAborts.delete(sessionId);
-        set({ sendingSessionIds: get().sendingSessionIds.filter((id) => id !== sessionId) });
-        get().enforceHistoryLimit(useAppStore.getState().aiSessionHistoryLimit);
+        // An old turn must never overwrite a newer turn or a deleted session.
+        if (currentAborts.get(sessionId) === abort) {
+          if (ownsTurn()) updateSession(sessionId, (s) => ({ ...s, history }));
+          currentAborts.delete(sessionId);
+          set({ sendingSessionIds: get().sendingSessionIds.filter((id) => id !== sessionId) });
+          get().enforceHistoryLimit(useAppStore.getState().aiSessionHistoryLimit);
+        }
       }
     },
   };

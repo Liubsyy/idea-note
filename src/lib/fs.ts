@@ -3,6 +3,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { abortable, throwIfAborted } from "./ai/cancellation";
 
 export interface FileNode {
   name: string;
@@ -27,8 +28,27 @@ export interface SearchHit {
   snippet: string | null;
 }
 
-export const searchNotes = (dir: string, query: string) =>
-  invoke<SearchHit[]>("search_notes", { dir, query });
+export function searchNotes(dir: string, query: string, signal?: AbortSignal): Promise<SearchHit[]> {
+  return abortable(signal, async () => {
+    const requestId = crypto.randomUUID();
+    const cancel = () => {
+      void invoke("cancel_note_search", { requestId }).catch((error) => {
+        console.warn("无法取消笔记搜索", error);
+      });
+    };
+    signal?.addEventListener("abort", cancel, { once: true });
+    try {
+      // Registration acknowledges the ID before any scan starts. If stop
+      // beats registration, the finally block cancels the newly registered ID.
+      await invoke("prepare_note_search", { requestId });
+      throwIfAborted(signal);
+      return await invoke<SearchHit[]>("search_notes", { dir, query, requestId });
+    } finally {
+      signal?.removeEventListener("abort", cancel);
+      cancel();
+    }
+  });
+}
 
 export const readFile = (path: string) =>
   invoke<string>("read_file", { path });

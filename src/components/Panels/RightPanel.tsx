@@ -861,6 +861,7 @@ const STATUS_META: Record<ToolStatus, { label: string; color: string }> = {
   applied: { label: "已应用", color: "#2ea043" },
   rejected: { label: "已拒绝", color: "var(--text-muted)" },
   undone: { label: "已撤销", color: "var(--text-muted)" },
+  cancelled: { label: "已停止", color: "var(--text-muted)" },
   error: { label: "失败", color: "#f85149" },
 };
 

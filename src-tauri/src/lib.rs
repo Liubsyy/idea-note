@@ -105,6 +105,7 @@ pub fn run() {
     builder
         .manage(TerminalState::default())
         .manage(CodeRunState::default())
+        .manage(tree::NoteSearchState::default())
         .manage(encoding::EncodingState::default())
         .manage(vault)
         .manage(pending)
@@ -112,6 +113,8 @@ pub fn run() {
             open_with::take_pending_open_files,
             tree::list_dir,
             tree::search_notes,
+            tree::prepare_note_search,
+            tree::cancel_note_search,
             search::global_search,
             search::global_search_stream,
             search::stop_global_search,

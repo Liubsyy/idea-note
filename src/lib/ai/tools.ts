@@ -9,6 +9,7 @@ import { getActiveView } from "../codemirror/activeView";
 import { useAppStore } from "../../store/useAppStore";
 import { componentGuide, GUIDE_TOPICS, isGuideTopic } from "./componentGuide";
 import { resolvePathWithinWorkspace, type WorkspacePathResult } from "../workspacePath";
+import { throwIfAborted } from "./cancellation";
 import {
   basename,
   isImageFile,
@@ -272,7 +273,8 @@ export type CreateNoteResult =
   | { ok: false; error: string };
 
 /** Create a markdown note (optionally with content), refresh and open it. */
-export async function createNote(args: Record<string, unknown>): Promise<CreateNoteResult> {
+export async function createNote(args: Record<string, unknown>, signal?: AbortSignal): Promise<CreateNoteResult> {
+  throwIfAborted(signal);
   const name = typeof args.name === "string" ? args.name.trim() : "";
   if (!name) return { ok: false, error: "create_note 需要 name 字符串。" };
   if (/[/\\]/.test(name)) return { ok: false, error: "name 不能包含路径分隔符，请用 dir 指定文件夹。" };
@@ -288,14 +290,18 @@ export async function createNote(args: Record<string, unknown>): Promise<CreateN
 
   try {
     const created = await createFile(dir, name);
+    throwIfAborted(signal);
     if (typeof args.content === "string" && args.content) {
       await writeFile(created, args.content);
+      throwIfAborted(signal);
     }
     const { refreshTree, openFile } = useAppStore.getState();
     await refreshTree();
+    throwIfAborted(signal);
     await openFile(created);
     return { ok: true, path: created, name: basename(created) };
   } catch (e) {
+    throwIfAborted(signal);
     return { ok: false, error: typeof e === "string" ? e : (e as Error)?.message ?? "创建失败" };
   }
 }
@@ -322,14 +328,16 @@ export type SearchResult =
   | { ok: false; error: string };
 
 /** Keyword search over the workspace (filenames + text content). */
-export async function runSearch(args: Record<string, unknown>): Promise<SearchResult> {
+export async function runSearch(args: Record<string, unknown>, signal?: AbortSignal): Promise<SearchResult> {
+  throwIfAborted(signal);
   const query = typeof args.query === "string" ? args.query.trim() : "";
   if (!query) return { ok: false, error: "search_notes 需要 query 关键词。" };
   const ws = useAppStore.getState().workspacePath;
   if (!ws) return { ok: false, error: "当前没有打开工作区。" };
   try {
-    return { ok: true, hits: await searchNotes(ws, query) };
+    return { ok: true, hits: await searchNotes(ws, query, signal) };
   } catch (e) {
+    throwIfAborted(signal);
     return { ok: false, error: typeof e === "string" ? e : (e as Error)?.message ?? "搜索失败" };
   }
 }

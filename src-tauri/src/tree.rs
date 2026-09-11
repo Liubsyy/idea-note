@@ -1,10 +1,104 @@
 // Workspace file tree and full-text search.
 
+use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
+use tauri::State;
+
+const SEARCH_CANCELLED: &str = "笔记搜索已取消";
+
+#[derive(Default)]
+pub struct NoteSearchState {
+    searches: Arc<Mutex<HashMap<String, NoteSearchEntry>>>,
+}
+
+struct NoteSearchEntry {
+    cancelled: Arc<AtomicBool>,
+    started: bool,
+}
+
+impl NoteSearchState {
+    fn prepare(&self, id: String) -> Result<(), String> {
+        let mut searches = self.searches.lock().unwrap();
+        if id.is_empty() || searches.contains_key(&id) {
+            return Err("搜索 ID 无效或已存在".into());
+        }
+        searches.insert(
+            id,
+            NoteSearchEntry {
+                cancelled: Arc::new(AtomicBool::new(false)),
+                started: false,
+            },
+        );
+        Ok(())
+    }
+
+    fn claim(&self, id: String) -> Result<ActiveNoteSearch, String> {
+        let mut searches = self.searches.lock().unwrap();
+        let entry = searches.get_mut(&id).ok_or(SEARCH_CANCELLED)?;
+        if entry.started {
+            return Err("该搜索已在运行".into());
+        }
+        entry.started = true;
+        Ok(ActiveNoteSearch {
+            id,
+            cancelled: entry.cancelled.clone(),
+            searches: self.searches.clone(),
+        })
+    }
+
+    fn cancel(&self, id: &str) {
+        if let Some(entry) = self.searches.lock().unwrap().remove(id) {
+            entry.cancelled.store(true, Ordering::Release);
+        }
+    }
+}
+
+struct ActiveNoteSearch {
+    id: String,
+    cancelled: Arc<AtomicBool>,
+    searches: Arc<Mutex<HashMap<String, NoteSearchEntry>>>,
+}
+
+impl Drop for ActiveNoteSearch {
+    fn drop(&mut self) {
+        let mut searches = self.searches.lock().unwrap();
+        if searches
+            .get(&self.id)
+            .is_some_and(|e| Arc::ptr_eq(&e.cancelled, &self.cancelled))
+        {
+            searches.remove(&self.id);
+        }
+    }
+}
+
+fn check_search_cancelled(cancelled: &AtomicBool) -> Result<(), String> {
+    if cancelled.load(Ordering::Acquire) {
+        Err(SEARCH_CANCELLED.into())
+    } else {
+        Ok(())
+    }
+}
+
+/// Acknowledge registration before the frontend dispatches any disk work.
+/// Cancellation can remove a queued registration as well as stop a running scan.
+#[tauri::command]
+pub fn prepare_note_search(
+    state: State<NoteSearchState>,
+    request_id: String,
+) -> Result<(), String> {
+    state.prepare(request_id)
+}
+
+#[tauri::command]
+pub fn cancel_note_search(state: State<NoteSearchState>, request_id: String) {
+    state.cancel(&request_id);
+}
 
 /// A node in the workspace file tree. Directories carry their children;
 /// files have `children: None`.
@@ -268,7 +362,9 @@ fn scan_file(
     terms: &[String],
     name_matched: bool,
     lower_buf: &mut String,
-) -> Option<FileResult> {
+    cancelled: &AtomicBool,
+) -> Result<Option<FileResult>, String> {
+    check_search_cancelled(cancelled)?;
     let mut hits = Vec::new();
     let mut score = 0i64;
 
@@ -284,6 +380,7 @@ fn scan_file(
 
     let mut freq = 0i64;
     for (i, raw_line) in content.lines().enumerate() {
+        check_search_cancelled(cancelled)?;
         let line = raw_line.trim();
         if line.is_empty() {
             continue;
@@ -316,10 +413,34 @@ fn scan_file(
     }
 
     if hits.is_empty() {
-        return None;
+        return Ok(None);
     }
     score += freq.min(SCORE_FREQ_CAP);
-    Some(FileResult { score, hits })
+    Ok(Some(FileResult { score, hits }))
+}
+
+/// Check between bounded reads, including when a file grows during the scan.
+/// A single OS read may still have to finish, but no further reads start after stop.
+fn read_search_bytes(
+    reader: &mut impl Read,
+    cancelled: &AtomicBool,
+) -> Result<Option<Vec<u8>>, String> {
+    let mut bytes = Vec::new();
+    let mut chunk = [0u8; 64 * 1024];
+    loop {
+        check_search_cancelled(cancelled)?;
+        match reader.read(&mut chunk) {
+            Ok(0) => return Ok(Some(bytes)),
+            Ok(n) => {
+                if bytes.len() + n > SEARCH_MAX_FILE_BYTES as usize {
+                    return Ok(None);
+                }
+                bytes.extend_from_slice(&chunk[..n]);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return Ok(None),
+        }
+    }
 }
 
 fn search_dir(
@@ -327,9 +448,12 @@ fn search_dir(
     terms: &[String],
     lower_buf: &mut String,
     results: &mut Vec<FileResult>,
+    cancelled: &AtomicBool,
 ) -> Result<(), String> {
+    check_search_cancelled(cancelled)?;
     let entries = fs::read_dir(dir).map_err(|e| format!("read_dir failed: {e}"))?;
     for entry in entries {
+        check_search_cancelled(cancelled)?;
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
@@ -342,7 +466,11 @@ fn search_dir(
         };
 
         if metadata.is_dir() {
-            search_dir(&path, terms, lower_buf, results)?;
+            search_dir(&path, terms, lower_buf, results, cancelled)?;
+            continue;
+        }
+        // FIFOs/devices are not note files and could block a read indefinitely.
+        if !metadata.is_file() {
             continue;
         }
 
@@ -353,16 +481,29 @@ fn search_dir(
         // legacy charsets like GBK are decoded). Oversized files can still
         // land a filename hit.
         let content = if metadata.len() <= SEARCH_MAX_FILE_BYTES {
-            fs::read(&path).ok().and_then(crate::encoding::decode_text)
+            check_search_cancelled(cancelled)?;
+            match fs::File::open(&path) {
+                Ok(mut file) => {
+                    read_search_bytes(&mut file, cancelled)?.and_then(crate::encoding::decode_text)
+                }
+                Err(_) => None,
+            }
         } else {
             None
         };
 
+        check_search_cancelled(cancelled)?;
         match content {
             Some(text) => {
-                if let Some(result) =
-                    scan_file(&path_str, &name, &text, terms, name_matched, lower_buf)
-                {
+                if let Some(result) = scan_file(
+                    &path_str,
+                    &name,
+                    &text,
+                    terms,
+                    name_matched,
+                    lower_buf,
+                    cancelled,
+                )? {
                     results.push(result);
                 }
             }
@@ -390,7 +531,12 @@ fn search_dir(
 // freeze the WebView (and the "处理中" card never paints) for the duration of
 // the crawl. The `#[tauri::command]` wrapper below moves it off the main
 // thread; this inner fn stays sync so the unit tests can call it directly.
-fn search_notes_inner(dir: String, query: String) -> Result<Vec<SearchHit>, String> {
+fn search_notes_inner(
+    dir: String,
+    query: String,
+    cancelled: &AtomicBool,
+) -> Result<Vec<SearchHit>, String> {
+    check_search_cancelled(cancelled)?;
     let terms: Vec<String> = query.split_whitespace().map(|t| t.to_lowercase()).collect();
     if terms.is_empty() {
         return Err("query is empty".into());
@@ -398,10 +544,18 @@ fn search_notes_inner(dir: String, query: String) -> Result<Vec<SearchHit>, Stri
 
     let mut results = Vec::new();
     let mut lower_buf = String::new();
-    search_dir(Path::new(&dir), &terms, &mut lower_buf, &mut results)?;
+    search_dir(
+        Path::new(&dir),
+        &terms,
+        &mut lower_buf,
+        &mut results,
+        cancelled,
+    )?;
 
+    check_search_cancelled(cancelled)?;
     // Highest score first; stable so equal scores keep walk order.
     results.sort_by(|a, b| b.score.cmp(&a.score));
+    check_search_cancelled(cancelled)?;
 
     let mut hits = Vec::with_capacity(SEARCH_MAX_HITS.min(results.len()));
     for result in results {
@@ -416,10 +570,21 @@ fn search_notes_inner(dir: String, query: String) -> Result<Vec<SearchHit>, Stri
 }
 
 #[tauri::command]
-pub async fn search_notes(dir: String, query: String) -> Result<Vec<SearchHit>, String> {
-    tauri::async_runtime::spawn_blocking(move || search_notes_inner(dir, query))
-        .await
-        .map_err(|e| format!("search task failed: {e}"))?
+pub async fn search_notes(
+    state: State<'_, NoteSearchState>,
+    dir: String,
+    query: String,
+    request_id: String,
+) -> Result<Vec<SearchHit>, String> {
+    let search = state.claim(request_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        // The guard releases the registration on success, error, or panic.
+        let result = search_notes_inner(dir, query, &search.cancelled);
+        drop(search);
+        result
+    })
+    .await
+    .map_err(|e| format!("search task failed: {e}"))?
 }
 
 #[cfg(test)]
@@ -429,7 +594,10 @@ mod excerpt_tests {
     /// Body long enough that the 4KB excerpt read stops mid-file, so the
     /// read boundary lands inside a multibyte character.
     fn long_body(first_line: &str) -> String {
-        format!("{first_line}\n\n{}", "填充正文用来把文件撑过四千字节。".repeat(200))
+        format!(
+            "{first_line}\n\n{}",
+            "填充正文用来把文件撑过四千字节。".repeat(200)
+        )
     }
 
     fn write_temp(tag: &str, bytes: &[u8]) -> std::path::PathBuf {
@@ -517,7 +685,12 @@ mod search_tests {
     }
 
     fn run(dir: &Path, query: &str) -> Vec<SearchHit> {
-        search_notes_inner(dir.to_string_lossy().into(), query.into()).unwrap()
+        search_notes_inner(
+            dir.to_string_lossy().into(),
+            query.into(),
+            &AtomicBool::new(false),
+        )
+        .unwrap()
     }
 
     #[test]
@@ -602,6 +775,87 @@ mod search_tests {
 
     #[test]
     fn empty_query_errors() {
-        assert!(search_notes_inner("/tmp".into(), "   ".into()).is_err());
+        assert!(search_notes_inner("/tmp".into(), "   ".into(), &AtomicBool::new(false)).is_err());
+    }
+
+    #[test]
+    fn cancelled_registration_never_starts_a_scan() {
+        let state = NoteSearchState::default();
+        state.prepare("queued".into()).unwrap();
+        state.cancel("queued");
+        assert!(matches!(state.claim("queued".into()), Err(e) if e == SEARCH_CANCELLED));
+        assert!(state.searches.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn cancellation_is_scoped_and_old_cleanup_cannot_remove_a_new_registration() {
+        let state = NoteSearchState::default();
+        state.prepare("first".into()).unwrap();
+        state.prepare("second".into()).unwrap();
+        let first = state.claim("first".into()).unwrap();
+        let second = state.claim("second".into()).unwrap();
+        assert!(state.claim("second".into()).is_err());
+        state.cancel("first");
+        assert!(check_search_cancelled(&first.cancelled).is_err());
+        assert!(check_search_cancelled(&second.cancelled).is_ok());
+        state.prepare("first".into()).unwrap();
+        drop(first);
+        let next = state.claim("first".into()).unwrap();
+        assert!(check_search_cancelled(&next.cancelled).is_ok());
+        drop(next);
+        drop(second);
+        assert!(state.searches.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn cancelled_scan_exits_before_touching_the_directory_or_matching_lines() {
+        let cancelled = AtomicBool::new(true);
+        assert!(matches!(
+            search_notes_inner("missing-directory".into(), "query".into(), &cancelled),
+            Err(e) if e == SEARCH_CANCELLED
+        ));
+        assert!(matches!(
+            scan_file("note.md", "note.md", "query", &["query".into()], false, &mut String::new(), &cancelled),
+            Err(e) if e == SEARCH_CANCELLED
+        ));
+    }
+
+    #[test]
+    fn cancellation_during_a_read_prevents_the_next_chunk() {
+        struct CancellingReader<'a> {
+            cancelled: &'a AtomicBool,
+            reads: usize,
+        }
+        impl Read for CancellingReader<'_> {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                self.reads += 1;
+                buf.fill(b'x');
+                self.cancelled.store(true, Ordering::Release);
+                Ok(buf.len())
+            }
+        }
+        let cancelled = AtomicBool::new(false);
+        let mut reader = CancellingReader {
+            cancelled: &cancelled,
+            reads: 0,
+        };
+        assert_eq!(
+            read_search_bytes(&mut reader, &cancelled).unwrap_err(),
+            SEARCH_CANCELLED
+        );
+        assert_eq!(reader.reads, 1);
+    }
+
+    #[test]
+    fn growing_file_is_still_bounded_and_successful_read_preserves_bytes() {
+        let cancelled = AtomicBool::new(false);
+        let bytes = "笔记正文\n".repeat(10_000).into_bytes();
+        assert_eq!(
+            read_search_bytes(&mut bytes.as_slice(), &cancelled).unwrap(),
+            Some(bytes)
+        );
+        assert!(read_search_bytes(&mut std::io::repeat(b'x'), &cancelled)
+            .unwrap()
+            .is_none());
     }
 }
