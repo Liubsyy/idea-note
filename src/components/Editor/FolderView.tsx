@@ -18,6 +18,10 @@ export function FolderView({ path }: { path: string }) {
   const children = node?.children ?? [];
   const createReadme = () => newFile(path, "README.md");
 
+  if (node?.children == null) {
+    return <div role="status" className="flex h-full items-center justify-center text-sm" style={{ color: "var(--text-muted)" }}>正在加载文件夹…</div>;
+  }
+
   if (children.length === 0) {
     return (
       <div className="flex h-full items-center justify-center px-6 text-sm">

@@ -302,6 +302,7 @@ function App() {
   // already guards against re-entry and saves dirty edits first. A repo
   // without a remote still auto-syncs: each tick is a local commit snapshot.
   const workspacePath = useAppStore((s) => s.workspacePath);
+  const loadingWorkspace = useAppStore((s) => s.loadingWorkspace);
   const syncConfig = useAppStore((s) => s.syncConfig);
   const gitSyncReady = useAppStore((s) => !!s.gitInfo?.isRepo);
   useEffect(() => {
@@ -419,7 +420,7 @@ function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const state = useAppStore.getState();
-      if (e.defaultPrevented || e.isComposing || state.presentationActive) return;
+      if (e.defaultPrevented || e.isComposing || state.presentationActive || state.loadingWorkspace) return;
       const view = getActiveView();
       const target = e.target as HTMLElement | null;
       const inOtherInput =
@@ -811,7 +812,7 @@ function App() {
             </span>
           </div>
         )}
-        <div data-editor-pane className="relative flex min-h-0 flex-1 flex-col">
+        <div data-editor-pane inert={!!loadingWorkspace} aria-busy={!!loadingWorkspace} className="relative flex min-h-0 flex-1 flex-col">
         {!presentationActive && <EditorTabs />}
         {folderViewPath ? (
           <>

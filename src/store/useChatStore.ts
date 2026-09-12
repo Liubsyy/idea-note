@@ -457,7 +457,8 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     if (call.name === "delete_file") {
       const itemId = uid();
-      const prep = prepareDelete(call.args);
+      const prep = await prepareDelete(call.args);
+      throwIfAborted(signal);
       if (!prep.ok) {
         appendItem(sessionId, {
           id: itemId,

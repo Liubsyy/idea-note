@@ -9,6 +9,7 @@ import {
 import { isMarkdownFile, dirname, type FileNode } from "../../lib/fs";
 import { useAppStore, type NotesViewMode } from "../../store/useAppStore";
 import { TreeDragProvider, useTreeDrag } from "./treeDrag";
+import { useNoteExcerpt } from "../../lib/noteExcerpts";
 
 interface Props {
   nodes: FileNode[];
@@ -309,6 +310,7 @@ function NoteCard({
   node: FileNode;
   onContextMenu: Props["onContextMenu"];
 }) {
+  const { ref, excerpt } = useNoteExcerpt(node);
   const selectedPath = useAppStore((s) => s.selectedPath);
   const selectedPaths = useAppStore((s) => s.selectedPaths);
   const openFile = useAppStore((s) => s.openFile);
@@ -321,6 +323,7 @@ function NoteCard({
 
   return (
     <div
+      ref={ref}
       data-tree-path={node.path}
       data-tree-parent={dirname(node.path)}
       onMouseDown={(e) => drag?.beginDrag(e, node)}
@@ -352,7 +355,7 @@ function NoteCard({
       >
         {noteName(node.name)}
       </div>
-      {node.excerpt && (
+      {excerpt && (
         <div
           className="truncate"
           style={{
@@ -361,7 +364,7 @@ function NoteCard({
             marginTop: 2,
           }}
         >
-          {node.excerpt}
+          {excerpt}
         </div>
       )}
       {time && (
@@ -495,6 +498,7 @@ function NoteRow({
   depth: number;
   onContextMenu: Props["onContextMenu"];
 }) {
+  const { ref, excerpt } = useNoteExcerpt(node);
   const selectedPath = useAppStore((s) => s.selectedPath);
   const selectedPaths = useAppStore((s) => s.selectedPaths);
   const openFile = useAppStore((s) => s.openFile);
@@ -508,6 +512,7 @@ function NoteRow({
 
   return (
     <div
+      ref={ref}
       data-tree-path={node.path}
       data-tree-parent={dirname(node.path)}
       onMouseDown={(e) => drag?.beginDrag(e, node)}
@@ -549,15 +554,15 @@ function NoteRow({
         <div className="truncate" style={{ lineHeight: 1.25 }}>
           {noteName(node.name)}
         </div>
-        {(node.excerpt || time) && (
+        {(excerpt || time) && (
           <div
             className="truncate"
             style={{ fontSize: "max(0.82em, 11px)", lineHeight: 1.25, marginTop: 2 }}
           >
-            {node.excerpt && (
-              <span style={{ color: "var(--text-soft)" }}>{node.excerpt}</span>
+            {excerpt && (
+              <span style={{ color: "var(--text-soft)" }}>{excerpt}</span>
             )}
-            {node.excerpt && time && (
+            {excerpt && time && (
               <span style={{ color: "var(--text-muted)" }}> · </span>
             )}
             {time && <span style={{ color: "var(--text-muted)" }}>{time}</span>}

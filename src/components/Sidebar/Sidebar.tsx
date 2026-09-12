@@ -111,6 +111,11 @@ function clampMenuPosition(x: number, y: number, estimatedHeight: number) {
 export function Sidebar() {
   const workspacePath = useAppStore((s) => s.workspacePath);
   const tree = useAppStore((s) => s.tree);
+  const loadingWorkspace = useAppStore((s) => s.loadingWorkspace);
+  const notesTree = useAppStore((s) => s.notesTree);
+  const notesLoading = useAppStore((s) => s.notesLoading);
+  const notesError = useAppStore((s) => s.notesError);
+  const loadNotes = useAppStore((s) => s.loadNotes);
   const openWorkspace = useAppStore((s) => s.openWorkspace);
   const requestOpenWorkspace = useAppStore((s) => s.requestOpenWorkspace);
   const requestOpenWorkspaceAt = useAppStore((s) => s.requestOpenWorkspaceAt);
@@ -285,7 +290,7 @@ export function Sidebar() {
   const pasteTarget = (): string | null => {
     if (!workspacePath) return null;
     if (!selectedPath) return workspacePath;
-    const node = findNode(tree, selectedPath);
+    const node = findNode(tree, selectedPath) ?? findNode(notesTree, selectedPath);
     if (node?.is_dir) return node.path;
     return dirname(selectedPath);
   };
@@ -504,6 +509,7 @@ export function Sidebar() {
               : undefined
           }
           tabIndex={0}
+          data-sidebar-list
           onScroll={onListScroll}
           onContextMenu={openRootContextMenu}
           onKeyDown={onListKeyDown}
@@ -525,13 +531,28 @@ export function Sidebar() {
             fontWeight: "var(--sidebar-font-weight)",
           }}
         >
-          {workspacePath ? (
+          {loadingWorkspace ? (
+            <p role="status" className="flex items-center justify-center gap-2 px-4 py-6 text-xs" style={{ color: "var(--text-muted)" }}>
+              <RefreshCw size={14} className="animate-spin shrink-0" />
+              正在打开 {basename(loadingWorkspace)}…
+            </p>
+          ) : workspacePath ? (
             sidebarMode === "search" ? (
               <SearchPanel />
             ) : sidebarMode === "outline" ? (
               <OutlinePanel />
             ) : sidebarMode === "notes" ? (
-              <NotesTree nodes={tree} onContextMenu={openContextMenu} />
+              notesLoading && !notesTree.length ? (
+                <p role="status" className="px-4 py-6 text-center text-xs" style={{ color: "var(--text-muted)" }}>正在查找笔记…</p>
+              ) : notesError ? (
+                <div role="alert" className="px-4 py-6 text-center text-xs">
+                  <p>{notesError}</p>
+                  <button className="mt-2 underline" onClick={() => void loadNotes()}>重试</button>
+                </div>
+              ) : <>
+                {notesLoading && <p role="status" className="px-3 py-1 text-xs" style={{ color: "var(--text-muted)" }}>正在更新笔记…</p>}
+                <NotesTree nodes={notesTree} onContextMenu={openContextMenu} />
+              </>
             ) : tree.length ? (
               <FileTree nodes={tree} onContextMenu={openContextMenu} />
             ) : (

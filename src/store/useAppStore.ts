@@ -14,9 +14,11 @@ import {
 import { isWindows } from "../lib/platform";
 import {
   FileNode,
-  listDir,
+  listDirectory,
+  listNotesIndex,
   readFile,
   fileStat,
+  pathIsDir,
   writeFile,
   pickWorkspace,
   pickSavePath,
@@ -29,8 +31,10 @@ import {
   dirname,
   basename,
   isImageFile,
-  findNode,
 } from "../lib/fs";
+import { DirectoryTree } from "../lib/directoryTree";
+import { clearNoteExcerpts } from "../lib/noteExcerpts";
+import { abortable } from "../lib/ai/cancellation";
 import {
   globalSearchStream,
   stopGlobalSearch as stopGlobalSearchBackend,
@@ -359,6 +363,11 @@ export interface CommitMessageConfig {
 interface AppState {
   workspacePath: string | null;
   tree: FileNode[];
+  loadingWorkspace: string | null;
+  notesTree: FileNode[];
+  notesLoading: boolean;
+  notesError: string | null;
+  notesLoaded: boolean;
   sidebarMode: SidebarMode;
   /** Sub-mode of the sidebar's notes mode (persisted). */
   notesViewMode: NotesViewMode;
@@ -524,6 +533,8 @@ interface AppState {
   /** Set a folder's expand/collapse state (persisted in `expanded`). */
   setExpanded: (path: string, open: boolean) => void;
   refreshTree: () => Promise<void>;
+  loadDirectory: (path: string) => Promise<FileNode[]>;
+  loadNotes: () => Promise<void>;
   openFile: (path: string) => Promise<void>;
   /** Select a folder: open its README.md if present, else show its listing. */
   openFolder: (node: FileNode) => Promise<void>;
@@ -1532,9 +1543,20 @@ async function captureDiskStat(path: string): Promise<void> {
     useAppStore.setState({ diskStat: st });
 }
 
+let workspaceRequest = 0;
+let workspaceQueue: Promise<void> = Promise.resolve();
+let workspaceController: AbortController | null = null;
+let directoryTree: DirectoryTree | null = null;
+let notesController: AbortController | null = null;
+
 export const useAppStore = create<AppState>((set, get) => ({
   workspacePath: null,
   tree: [],
+  loadingWorkspace: null,
+  notesTree: [],
+  notesLoading: false,
+  notesError: null,
+  notesLoaded: false,
   sidebarMode: readSidebarMode(),
   notesViewMode: readNotesViewMode(),
   searchQuery: "",
@@ -1623,56 +1645,97 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   openWorkspaceAt: async (path) => {
-    await get().flushActiveTab();
-    let tree: FileNode[];
-    try {
-      tree = await listDir(path);
-    } catch {
-      window.alert(`无法打开「${path}」（文件夹可能已被移动或删除）。`);
-      set({ recentWorkspaces: dropRecent(path) });
-      return;
-    }
-    const previousWorkspace = get().workspacePath;
-    if (previousWorkspace && previousWorkspace !== path)
-      await useVaultStore.getState().lock();
-    localStorage.setItem(WORKSPACE_KEY, path);
-    await ensureSyncConfigsLoaded();
-    // This window leaves its previous vault session behind explicitly, while
-    // sessions owned by other project windows remain available in Rust.
-    await useVaultStore.getState().refresh(path);
-    set((s) => ({
-      workspacePath: path,
-      tree,
-      expanded: readExpandedFolders(path),
-      recentWorkspaces: pushRecent(path),
-      activeFilePath: null,
-      openTabs: [],
-      draftContents: {},
-      selectedPath: null,
-      folderViewPath: null,
-      content: "",
-      savedContentHash: null,
-      isDirty: false,
-      docKey: s.docKey + 1,
-      activeFormats: emptyFormats,
-      searchQuery: "",
-      searchHits: [],
-      searchTotalHits: 0,
-      searchDisplayLimited: false,
-      searchTruncated: false,
-      searchLoading: false,
-      searchRegexError: null,
-      gitInfo: null,
-      syncState: "idle",
-      lastSyncMessage: null,
-      lastSyncAt: null,
-      syncConfig: readSyncConfig(path),
-      ...readAttachmentConfig(path),
-    }));
-    void get().refreshGitInfo();
+    const request = ++workspaceRequest;
+    workspaceController?.abort();
+    const controller = new AbortController();
+    workspaceController = controller;
+    set({ loadingWorkspace: path });
+    // Serialize save/vault transitions, while letting a newer selection supersede
+    // a queued or reading request. Only the newest request may commit UI state.
+    const task = workspaceQueue.catch(() => {}).then(async () => {
+      if (request !== workspaceRequest) return;
+      try {
+        await get().flushActiveTab();
+        if (request !== workspaceRequest) return;
+        const nextTree = new DirectoryTree(path, listDirectory);
+        let tree: FileNode[];
+        try {
+          await abortable(controller.signal, () => nextTree.load(path));
+          tree = nextTree.snapshot();
+        } catch {
+          if (request !== workspaceRequest) return;
+          window.alert(`无法打开「${path}」（文件夹可能已被移动或删除）。`);
+          set({ recentWorkspaces: dropRecent(path) });
+          return;
+        }
+        if (request !== workspaceRequest) return;
+        const previousWorkspace = get().workspacePath;
+        if (previousWorkspace && previousWorkspace !== path)
+          await useVaultStore.getState().lock();
+        await ensureSyncConfigsLoaded();
+        if (request !== workspaceRequest) return;
+        // This window leaves its previous vault session behind explicitly, while
+        // sessions owned by other project windows remain available in Rust.
+        await useVaultStore.getState().refresh(path);
+        if (request !== workspaceRequest) {
+          await useVaultStore.getState().refresh(get().workspacePath ?? "");
+          return;
+        }
+        localStorage.setItem(WORKSPACE_KEY, path);
+        notesController?.abort();
+        notesController = null;
+        get().stopGlobalSearch();
+        directoryTree?.dispose();
+        directoryTree = nextTree;
+        set((s) => ({
+          workspacePath: path,
+          tree,
+          notesTree: [],
+          notesLoaded: false,
+          notesLoading: false,
+          notesError: null,
+          expanded: readExpandedFolders(path),
+          recentWorkspaces: pushRecent(path),
+          activeFilePath: null,
+          openTabs: [],
+          draftContents: {},
+          selectedPath: null,
+          selectedPaths: [],
+          folderViewPath: null,
+          content: "",
+          savedContentHash: null,
+          isDirty: false,
+          docKey: s.docKey + 1,
+          activeFormats: emptyFormats,
+          searchQuery: "",
+          searchHits: [],
+          searchTotalHits: 0,
+          searchDisplayLimited: false,
+          searchTruncated: false,
+          searchLoading: false,
+          searchRegexError: null,
+          gitInfo: null,
+          syncState: "idle",
+          lastSyncMessage: null,
+          lastSyncAt: null,
+          syncConfig: readSyncConfig(path),
+          ...readAttachmentConfig(path),
+        }));
+        void get().refreshGitInfo();
+        if (get().sidebarMode === "notes") void get().loadNotes();
+      } finally {
+        if (request === workspaceRequest) set({ loadingWorkspace: null });
+      }
+    });
+    workspaceQueue = task;
+    await task;
   },
 
   closeWorkspace: async () => {
+    ++workspaceRequest;
+    workspaceController?.abort();
+    workspaceController = null;
+    set({ loadingWorkspace: null });
     if (!get().workspacePath) return;
 
     // Closing drops every open tab; confirm before discarding unsaved changes
@@ -1691,10 +1754,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     localStorage.removeItem(WORKSPACE_KEY);
+    notesController?.abort();
+    notesController = null;
+    directoryTree?.dispose();
+    directoryTree = null;
+    get().stopGlobalSearch();
     void useVaultStore.getState().lock();
     set((s) => ({
       workspacePath: null,
       tree: [],
+      notesTree: [],
+      notesLoading: false,
+      notesError: null,
+      notesLoaded: false,
       expanded: {},
       activeFilePath: null,
       openTabs: [],
@@ -1756,22 +1828,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   restoreWorkspace: async () => {
-    if (get().workspacePath) return;
+    if (get().workspacePath || get().loadingWorkspace) return;
     const saved = localStorage.getItem(WORKSPACE_KEY);
     if (!saved) return;
     try {
-      const tree = await listDir(saved);
-      await ensureSyncConfigsLoaded();
-      await useVaultStore.getState().refresh(saved);
-      set({
-        workspacePath: saved,
-        tree,
-        expanded: readExpandedFolders(saved),
-        recentWorkspaces: pushRecent(saved),
-        syncConfig: readSyncConfig(saved),
-        ...readAttachmentConfig(saved),
-      });
-      void get().refreshGitInfo();
+      await get().openWorkspaceAt(saved);
+      if (!get().workspacePath && !get().loadingWorkspace && localStorage.getItem(WORKSPACE_KEY) === saved)
+        localStorage.removeItem(WORKSPACE_KEY);
     } catch {
       // Folder was moved or deleted since last run — forget it.
       localStorage.removeItem(WORKSPACE_KEY);
@@ -1781,6 +1844,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSidebarMode: (sidebarMode) => {
     localStorage.setItem(SIDEBAR_MODE_KEY, sidebarMode);
     set({ sidebarMode });
+    if (sidebarMode === "notes") void get().loadNotes();
+    else if (notesController) {
+      notesController.abort();
+      notesController = null;
+      set({ notesLoading: false });
+    }
   },
 
   setSearchQuery: (searchQuery) => set({ searchQuery }),
@@ -1923,11 +1992,65 @@ export const useAppStore = create<AppState>((set, get) => ({
   refreshTree: async () => {
     const { workspacePath } = get();
     if (!workspacePath) return;
-    set({ tree: await listDir(workspacePath) });
+    const nextTree = new DirectoryTree(workspacePath, listDirectory);
+    directoryTree?.dispose();
+    directoryTree = nextTree;
+    notesController?.abort();
+    notesController = null;
+    clearNoteExcerpts();
+    set({ notesLoaded: false, notesLoading: false, notesError: null });
+    if (get().sidebarMode === "notes") void get().loadNotes();
+    try { await nextTree.load(workspacePath); }
+    catch (error) {
+      if (directoryTree !== nextTree) return;
+      throw error;
+    }
+    if (directoryTree !== nextTree || get().workspacePath !== workspacePath) return;
+    set({ tree: nextTree.snapshot() });
+    const folder = get().folderViewPath;
+    if (folder) {
+      try { await get().loadDirectory(folder); }
+      catch {
+        if (directoryTree === nextTree && get().folderViewPath === folder)
+          set({ folderViewPath: null, selectedPath: null });
+      }
+    }
+  },
+
+  loadDirectory: async (path) => {
+    const current = directoryTree;
+    if (!current) return [];
+    const children = await current.load(path);
+    if (directoryTree === current && get().workspacePath === current.root)
+      set({ tree: current.snapshot() });
+    return children;
+  },
+
+  loadNotes: async () => {
+    const { workspacePath, notesLoaded, notesLoading } = get();
+    if (!workspacePath || notesLoaded || notesLoading) return;
+    const controller = new AbortController();
+    notesController = controller;
+    set({ notesLoading: true, notesError: null });
+    try {
+      const notesTree = await listNotesIndex(workspacePath, controller.signal);
+      if (notesController === controller && get().workspacePath === workspacePath)
+        set({ notesTree, notesLoaded: true });
+    } catch (error) {
+      if (!controller.signal.aborted && notesController === controller)
+        set({ notesError: `无法加载笔记：${String(error)}` });
+    } finally {
+      if (notesController === controller) {
+        notesController = null;
+        set({ notesLoading: false });
+      }
+    }
   },
 
   openFile: async (path) => {
+    const request = workspaceRequest;
     await get().flushActiveTab();
+    if (request !== workspaceRequest) return;
     // Opening collapses any multi-selection back to this single item.
     set({ selectedPaths: [] });
     // Drafts have no disk file: restore their stashed text instead of reading.
@@ -1967,6 +2090,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       content = await readFile(path);
     } catch {
+      if (request !== workspaceRequest) return;
       // Other non-text files (PDFs, binaries, …) can't be read as UTF-8.
       get().showToast(
         `无法以文本方式打开「${basename(path)}」（可能是二进制文件）。`,
@@ -1974,6 +2098,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       );
       return;
     }
+    if (request !== workspaceRequest) return;
     set((s) => ({
       activeFilePath: path,
       openTabs: addTab(s.openTabs, path, get().editorMaxTabs, s.activeFilePath),
@@ -1992,18 +2117,28 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   openFolder: async (node) => {
+    const current = directoryTree;
+    let children: FileNode[];
+    try { children = await get().loadDirectory(node.path); }
+    catch (error) {
+      if (directoryTree === current) get().showToast(`无法打开文件夹：${String(error)}`, "error");
+      return;
+    }
+    if (directoryTree !== current) return;
     set({ selectedPaths: [] });
     // Open the folder's README.md if it has one, keeping the folder selected.
-    const readme = node.children?.find(
+    const readme = children.find(
       (c) => !c.is_dir && c.name.toLowerCase() === "readme.md",
     );
     if (readme) {
       await get().openFile(readme.path);
+      if (directoryTree !== current) return;
       set({ selectedPath: node.path, folderViewPath: null });
       return;
     }
     // Otherwise show the folder's contents in the right pane.
     await get().flushActiveTab();
+    if (directoryTree !== current) return;
     set((s) => ({
       selectedPath: node.path,
       folderViewPath: node.path,
@@ -3297,14 +3432,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Restore the target tree without moving HEAD. The rollback remains an
     // ordinary working-tree change for manual or scheduled sync to commit.
     await restoreWorkspaceToCommit(workspacePath, commit.hash);
-    const tree = await listDir(workspacePath);
-    // The snapshot may have added/removed files: drop any open tab whose file
-    // no longer exists in the restored tree.
-    const survives = (p: string) => {
-      const n = findNode(tree, p);
-      return !!n && !n.is_dir;
-    };
-    set((s) => ({ tree, openTabs: s.openTabs.filter(survives) }));
+    // Check open tabs on disk: unloaded directories are not absent files.
+    const candidates = [...new Set([...get().openTabs, ...(activeFilePath ? [activeFilePath] : [])])];
+    const surviving = new Set(await Promise.all(candidates.map(async (path) =>
+      await fileStat(path) && !await pathIsDir(path) ? path : null,
+    )));
+    if (get().workspacePath !== workspacePath) return;
+    const survives = (path: string) => surviving.has(path);
+    set((s) => ({ openTabs: s.openTabs.filter(survives) }));
+    await get().refreshTree();
 
     if (activeFilePath) {
       if (survives(activeFilePath)) {

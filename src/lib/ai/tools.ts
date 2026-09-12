@@ -17,6 +17,8 @@ import {
   readFile,
   writeFile,
   findNode,
+  fileStat,
+  pathIsDir,
   searchNotes,
   type SearchHit,
 } from "../fs";
@@ -311,16 +313,20 @@ export type PrepareDeleteResult =
   | { ok: false; error: string };
 
 /** Resolve and validate a delete target without deleting (for the confirm card). */
-export function prepareDelete(args: Record<string, unknown>): PrepareDeleteResult {
+export async function prepareDelete(args: Record<string, unknown>): Promise<PrepareDeleteResult> {
   if (typeof args.path !== "string") return { ok: false, error: "delete_file 需要 path 字符串。" };
   const resolved = resolveWorkspacePath(args.path);
   if (!resolved.ok) return resolved;
-  const { workspacePath, tree } = useAppStore.getState();
+  const { workspacePath } = useAppStore.getState();
   if (resolved.path === workspacePath)
     return { ok: false, error: "不能删除工作区根目录。" };
-  const node = findNode(tree, resolved.path);
-  if (!node) return { ok: false, error: `找不到「${args.path}」，请先用 search_notes 确认路径。` };
-  return { ok: true, path: node.path, name: node.name, isDir: node.is_dir };
+  // Lazy browsing need not have visited the target's parent directory.
+  if (!await fileStat(resolved.path))
+    return { ok: false, error: `找不到「${args.path}」，请先用 search_notes 确认路径。` };
+  const isDir = await pathIsDir(resolved.path);
+  if (useAppStore.getState().workspacePath !== workspacePath)
+    return { ok: false, error: "项目已切换，请重新确认删除目标。" };
+  return { ok: true, path: resolved.path, name: basename(resolved.path), isDir };
 }
 
 export type SearchResult =

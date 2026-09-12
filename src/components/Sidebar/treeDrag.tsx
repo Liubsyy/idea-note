@@ -103,7 +103,7 @@ export function TreeDragProvider({
 
     // Drag the whole multi-selection when grabbing one of its members;
     // otherwise just this row.
-    const { selectedPaths, selectedPath, tree } = useAppStore.getState();
+    const { selectedPaths, selectedPath, tree, notesTree } = useAppStore.getState();
     const selection = selectedPaths.length
       ? selectedPaths
       : selectedPath
@@ -111,7 +111,7 @@ export function TreeDragProvider({
         : [];
     let items: DragItem[];
     if (selection.includes(node.path) && selection.length > 1) {
-      items = selection.map((p) => ({ path: p, isDir: findNode(tree, p)?.is_dir ?? false }));
+      items = selection.map((p) => ({ path: p, isDir: (findNode(tree, p) ?? findNode(notesTree, p))?.is_dir ?? false }));
     } else {
       items = [{ path: node.path, isDir: node.is_dir }];
     }

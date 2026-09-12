@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   ChevronRight,
   ChevronDown,
@@ -75,6 +76,18 @@ function TreeRow({
   const storedOpen = useAppStore((s) => s.expanded[node.path]);
   const setExpanded = useAppStore((s) => s.setExpanded);
   const open = storedOpen ?? false;
+  const loadDirectory = useAppStore((s) => s.loadDirectory);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    if (!node.is_dir || !open || node.children != null) return;
+    let alive = true;
+    setLoadError(null);
+    void loadDirectory(node.path).catch((error) => {
+      if (alive) setLoadError(String(error));
+    });
+    return () => { alive = false; };
+  }, [node.is_dir, node.path, node.children, open, loadDirectory, retry]);
 
   // The multi-selection set takes over highlighting once it's non-empty.
   const isActive = selectedPaths.length
@@ -163,6 +176,11 @@ function TreeRow({
           )}
           <span className="truncate">{node.name}</span>
         </div>
+        {open && node.children == null && (
+          <div className="pl-6 py-1 text-xs" style={{ color: "var(--text-muted)" }}>
+            {loadError ? <button title={loadError} onClick={() => setRetry((n) => n + 1)}>加载失败，点击重试</button> : <span role="status">正在加载…</span>}
+          </div>
+        )}
         {open && node.children && (
           // Indent guide: children are inset under a hairline so deep levels
           // stay visually aligned with their parent folder.

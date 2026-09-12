@@ -285,6 +285,112 @@ pub async fn list_dir(path: String) -> Result<Vec<FileNode>, String> {
         .map_err(|e| format!("list_dir task failed: {e}"))?
 }
 
+/// A single level for browsing. Unloaded directories have children: None;
+/// an empty, loaded directory has children: Some([]) in the frontend cache.
+fn read_directory(dir: &Path) -> Result<Vec<FileNode>, String> {
+    let mut nodes = Vec::new();
+    for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if is_excluded(&name) {
+            continue;
+        }
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        nodes.push(FileNode {
+            name,
+            path: entry.path().to_string_lossy().into_owned(),
+            is_dir: metadata.is_dir(),
+            children: None,
+            mtime: if metadata.is_dir() {
+                None
+            } else {
+                file_mtime_ms(&metadata)
+            },
+            excerpt: None,
+        });
+    }
+    nodes.sort_by_cached_key(|n| (!n.is_dir, n.name.to_lowercase()));
+    Ok(nodes)
+}
+
+#[tauri::command]
+pub async fn list_directory(path: String) -> Result<Vec<FileNode>, String> {
+    tauri::async_runtime::spawn_blocking(move || read_directory(Path::new(&path)))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// The notes index is independent of the lazy browser tree and never opens
+/// note contents. Check cancellation between entries and never follow directory
+/// symlinks/junctions: a project can link back to its own parent.
+fn read_notes_index(dir: &Path, cancelled: &AtomicBool) -> Result<Vec<FileNode>, String> {
+    check_search_cancelled(cancelled)?;
+    let mut nodes = Vec::new();
+    for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
+        check_search_cancelled(cancelled)?;
+        let Ok(entry) = entry else { continue };
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if is_excluded(&name) {
+            continue;
+        }
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        let path = entry.path();
+        if kind.is_dir() && !kind.is_symlink() {
+            let children = match read_notes_index(&path, cancelled) {
+                Ok(children) => children,
+                Err(_) if cancelled.load(Ordering::Acquire) => return Err(SEARCH_CANCELLED.into()),
+                Err(_) => continue, // One unreadable folder must not hide all notes.
+            };
+            if !children.is_empty() {
+                nodes.push(FileNode {
+                    name,
+                    path: path.to_string_lossy().into_owned(),
+                    is_dir: true,
+                    children: Some(children),
+                    mtime: None,
+                    excerpt: None,
+                });
+            }
+        } else if kind.is_file() && is_markdown(&name) {
+            nodes.push(FileNode {
+                name,
+                path: path.to_string_lossy().into_owned(),
+                is_dir: false,
+                children: None,
+                mtime: entry.metadata().ok().and_then(|m| file_mtime_ms(&m)),
+                excerpt: None,
+            });
+        }
+    }
+    nodes.sort_by_cached_key(|n| (!n.is_dir, n.name.to_lowercase()));
+    Ok(nodes)
+}
+
+#[tauri::command]
+pub async fn list_notes_index(
+    path: String,
+    request_id: String,
+    state: State<'_, NoteSearchState>,
+) -> Result<Vec<FileNode>, String> {
+    let search = state.claim(request_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        read_notes_index(Path::new(&path), &search.cancelled)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn note_excerpt(path: String) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || md_excerpt(Path::new(&path)))
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// One match from `search_notes`. Filename matches have `line: None`;
 /// content matches carry the 1-based line number and a trimmed snippet.
 #[derive(Serialize)]
@@ -662,6 +768,87 @@ mod excerpt_tests {
             "本文介绍灵感笔记的 AI 助手是如何工作的。"
         );
         fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
+}
+
+#[cfg(test)]
+mod browsing_tests {
+    use super::*;
+
+    #[test]
+    fn shallow_listing_does_not_read_descendants_or_excerpts() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("nested")).unwrap();
+        fs::write(dir.path().join("nested/hidden.md"), "body").unwrap();
+        fs::write(dir.path().join("root.md"), "preview").unwrap();
+        let nodes = read_directory(dir.path()).unwrap();
+        assert_eq!(nodes.len(), 2);
+        assert!(nodes[0].is_dir);
+        assert!(nodes
+            .iter()
+            .all(|n| n.children.is_none() && n.excerpt.is_none()));
+        assert!(nodes[1].mtime.is_some());
+    }
+
+    #[test]
+    fn notes_index_keeps_nested_notes_without_opening_contents() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in [
+            "deep/a/note.MD",
+            "deep/a/code.rs",
+            "empty/code.js",
+            ".git/ignored.md",
+            ".hidden/visible.markdown",
+        ] {
+            let path = dir.path().join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, "preview text").unwrap();
+        }
+        let nodes = read_notes_index(dir.path(), &AtomicBool::new(false)).unwrap();
+        assert_eq!(nodes.len(), 2);
+        assert_eq!(nodes[0].name, ".hidden");
+        let deep = &nodes[1].children.as_ref().unwrap()[0]
+            .children
+            .as_ref()
+            .unwrap()[0];
+        assert_eq!(deep.name, "note.MD");
+        assert!(deep.excerpt.is_none());
+        assert!(read_notes_index(dir.path(), &AtomicBool::new(true)).is_err());
+    }
+
+    #[test]
+    fn cancelled_index_registration_cannot_start() {
+        let state = NoteSearchState::default();
+        state.prepare("index".into()).unwrap();
+        state.cancel("index");
+        assert!(state.claim("index".into()).is_err());
+    }
+
+    #[test]
+    #[ignore = "Synthetic I/O benchmark; run explicitly with --ignored --nocapture"]
+    fn compare_large_workspace_listing() {
+        let dir = tempfile::tempdir().unwrap();
+        for i in 0..100 {
+            let folder = dir.path().join(format!("folder-{i}"));
+            fs::create_dir(&folder).unwrap();
+            for j in 0..50 {
+                fs::write(
+                    folder.join(format!("note-{j}.md")),
+                    "# Title\n\nA note preview.\n".repeat(200),
+                )
+                .unwrap();
+            }
+        }
+        let start = std::time::Instant::now();
+        let full = read_tree(dir.path()).unwrap();
+        let full_elapsed = start.elapsed();
+        let start = std::time::Instant::now();
+        let shallow = read_directory(dir.path()).unwrap();
+        let shallow_elapsed = start.elapsed();
+        assert_eq!(full.len(), shallow.len());
+        assert_eq!(shallow.len(), 100);
+        assert!(shallow.iter().all(|n| n.children.is_none()));
+        eprintln!("5000 notes / 100 folders: full={full_elapsed:?}, root-only={shallow_elapsed:?}");
     }
 }
 

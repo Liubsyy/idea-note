@@ -274,3 +274,27 @@ test("cancelling creation prevents follow-up writes and navigation after the nat
   await assert.rejects(creating, { name: "AbortError" });
   assert.deepEqual(followUps, []);
 });
+
+test("delete preparation checks disk for targets in directories that have not been expanded", async () => {
+  const appState = { workspacePath: "/notes", tree: [] };
+  const tools = load("src/lib/ai/tools.ts", {
+    diff: {}, "./types": {}, "../codemirror/activeView": {},
+    "../../store/useAppStore": { useAppStore: { getState: () => appState } },
+    "./componentGuide": { GUIDE_TOPICS: [] },
+    "../workspacePath": load("src/lib/workspacePath.ts"),
+    "./cancellation": cancellation,
+    "../fs": {
+      fileStat: async (path) => path.endsWith("missing") ? null : { mtime: 1, size: 1 },
+      pathIsDir: async (path) => path.endsWith("folder"),
+      basename: (path) => path.split("/").at(-1),
+    },
+  });
+  const file = await tools.prepareDelete({ path: "deep/note.md" });
+  assert.equal(file.ok, true);
+  assert.equal(file.path, "/notes/deep/note.md");
+  assert.equal(file.isDir, false);
+  assert.equal((await tools.prepareDelete({ path: "deep/folder" })).isDir, true);
+  assert.equal((await tools.prepareDelete({ path: "deep/missing" })).ok, false);
+  assert.equal((await tools.prepareDelete({ path: "/notes" })).ok, false);
+  assert.equal((await tools.prepareDelete({ path: "../outside" })).ok, false);
+});

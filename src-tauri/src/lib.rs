@@ -112,6 +112,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             open_with::take_pending_open_files,
             tree::list_dir,
+            tree::list_directory,
+            tree::list_notes_index,
+            tree::note_excerpt,
             tree::search_notes,
             tree::prepare_note_search,
             tree::cancel_note_search,

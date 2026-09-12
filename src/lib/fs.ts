@@ -19,6 +19,25 @@ export interface FileNode {
 export const listDir = (path: string) =>
   invoke<FileNode[]>("list_dir", { path });
 
+export const listDirectory = (path: string) =>
+  invoke<FileNode[]>("list_directory", { path });
+
+export function listNotesIndex(path: string, signal: AbortSignal): Promise<FileNode[]> {
+  return abortable(signal, async () => {
+    const requestId = crypto.randomUUID();
+    const cancel = () => { void invoke("cancel_note_search", { requestId }).catch(console.warn); };
+    signal.addEventListener("abort", cancel, { once: true });
+    try {
+      await invoke("prepare_note_search", { requestId });
+      throwIfAborted(signal);
+      return await invoke<FileNode[]>("list_notes_index", { path, requestId });
+    } finally {
+      signal.removeEventListener("abort", cancel);
+      cancel();
+    }
+  });
+}
+
 /** One `search_notes` match: filename hits have `line: null`, content hits
  *  carry the 1-based line number and a trimmed snippet. */
 export interface SearchHit {
