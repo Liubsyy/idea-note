@@ -11,7 +11,9 @@ import { getActiveView } from "../../lib/codemirror/activeView";
 import { openSearchWithReplace } from "../../lib/codemirror/searchPanel";
 import { commandKeyLabel } from "../../lib/codemirror/keybindings";
 import { useAppStore } from "../../store/useAppStore";
-import { copyText, readClipboardText } from "../../lib/clipboard";
+import { copyText } from "../../lib/clipboard";
+import { pasteEditorClipboard } from "../../lib/attachments";
+import { copyEditorSelectionSafe } from "../../lib/codemirror/resourceClipboard";
 import { codeBlockAt } from "../../lib/codeRun/document";
 import { runInTerminal } from "../../lib/codeRun/run";
 
@@ -95,7 +97,11 @@ export function EditorContextMenu({
   };
 
   const copy = (view: EditorView) => {
-    void copyText(selectedText(view));
+    copyEditorSelectionSafe(view);
+    view.focus();
+  };
+  const copyTextOnly = (view: EditorView) => {
+    copyEditorSelectionSafe(view, true);
     view.focus();
   };
   const cut = (view: EditorView) => {
@@ -104,10 +110,9 @@ export function EditorContextMenu({
     view.focus();
   };
   const paste = (view: EditorView) => {
-    void readClipboardText().then((text) => {
-      if (text) view.dispatch(view.state.replaceSelection(text), { scrollIntoView: true });
-      view.focus();
-    });
+    void pasteEditorClipboard(view).catch((error) =>
+      useAppStore.getState().showToast(`粘贴失败：${String(error)}`, "error"),
+    );
   };
 
   return (
@@ -116,11 +121,11 @@ export function EditorContextMenu({
       className="fixed z-50 w-44 rounded-lg py-1 text-sm shadow-lg"
       style={{
         left: Math.min(menu.x, window.innerWidth - 184),
-        // Seven rows at 32px, two dividers, and the panel's own padding —
+        // Eight rows at 32px, two dividers, and the panel's own padding —
         // measured, not guessed. Fixed now that the encryption entries are one
         // submenu row instead of two to four rows that came and went with the
         // vault's state. 在终端运行 adds a row and a divider.
-        top: Math.min(menu.y, window.innerHeight - (block ? 294 : 252)),
+        top: Math.max(8, Math.min(menu.y, window.innerHeight - (block ? 326 : 284))),
         background: "var(--bg-elev)",
         border: "1px solid var(--border)",
         boxShadow: "0 8px 24px var(--shadow)",
@@ -132,6 +137,9 @@ export function EditorContextMenu({
       </Item>
       <Item hint={`${mod}C`} disabled={!menu.hasSelection} onClick={() => run(copy)}>
         复制
+      </Item>
+      <Item disabled={!menu.hasSelection} onClick={() => run(copyTextOnly)}>
+        仅复制文本
       </Item>
       <Item hint={`${mod}V`} onClick={() => run(paste)}>
         粘贴

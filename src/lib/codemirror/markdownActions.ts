@@ -3,9 +3,10 @@
 // click and the matching key binding always produce the same edit.
 
 import type { Command, EditorView } from "@codemirror/view";
+import { syntaxTree } from "@codemirror/language";
 
 import { pickImage } from "../fs";
-import { NO_IMAGE_SIZE, parseImageDimension } from "../imageSyntax";
+import { NO_IMAGE_SIZE, parseImageDimension, unwrapImageDest, wrapImageDest } from "../imageSyntax";
 import { useAppStore } from "../../store/useAppStore";
 import { getActiveView } from "./activeView";
 import { imageAt } from "./imageAt";
@@ -125,7 +126,7 @@ const openLinkPrompt = editableAction((view) => {
 // (so a size can be set right when inserting), prefilled from that image when
 // there is one. md.image() resolves the target again on submit, so it stays
 // correct even if the document moved while the dialog was open.
-const openImagePrompt = editableAction((view) => {
+export const openImagePrompt = editableAction((view) => {
   const current = imageAt(view.state, view.state.selection.main.head);
   const size = current?.size ?? NO_IMAGE_SIZE;
   useAppStore.getState().openPrompt({
@@ -174,6 +175,48 @@ const openImagePrompt = editableAction((view) => {
     },
   });
 });
+
+/** Edit a selected resource in place, retaining its optional Markdown title. */
+export function openResourcePrompt(view: EditorView, url: string, label: string): void {
+  if (view.state.readOnly) return;
+  const range = view.state.selection.main;
+  const source = view.state.sliceDoc(range.from, range.to);
+  let node = syntaxTree(view.state).resolveInner(range.from + 1, 1);
+  while (node.parent && node.name !== "Link") node = node.parent;
+  const destination = node.getChildren("URL").find((child) =>
+    child.prevSibling?.name === "LinkMark" &&
+    view.state.sliceDoc(child.prevSibling.from, child.prevSibling.to) === "(",
+  );
+  if (node.name !== "Link" || !destination) return;
+  const suffix = source.slice(destination.to - range.from);
+  useAppStore.getState().openPrompt({
+    title: "编辑资源文件",
+    defaultValue: "",
+    fields: [
+      { name: "label", label: "显示名称", defaultValue: label, placeholder: "文件名称" },
+      { name: "href", label: "文件路径或链接地址", defaultValue: unwrapImageDest(url), placeholder: "assets/file.pdf" },
+    ],
+    onSubmit: (_value, values) => {
+      const href = values.href?.trim();
+      if (!href) throw "请填写文件路径或链接地址";
+      if (activeEditableView() !== view) throw "当前文档已切换，请重新打开编辑框";
+      const target = view.state.selection.main;
+      if (view.state.sliceDoc(target.from, target.to) !== source)
+        throw "资源内容已变化，请重新打开编辑框";
+      const text = values.label?.trim() || label;
+      // Preserve formatting and escapes in existing labels; protect newly typed brackets.
+      const safeLabel = text.replace(/\\.|[\[\]]/g, (part) => part.startsWith("\\") ? part : `\\${part}`);
+      const dest = href === unwrapImageDest(url) ? url : wrapImageDest(href.replace(/</g, "%3C").replace(/>/g, "%3E").replace(/\r?\n/g, ""));
+      const insert = `[${safeLabel}](${dest}${suffix}`;
+      view.dispatch({
+        changes: { from: target.from, to: target.to, insert },
+        selection: { anchor: target.from, head: target.from + insert.length },
+        userEvent: "input",
+      });
+      view.focus();
+    },
+  });
+}
 
 /** Stable command ids are persisted in user settings, so never rename them. */
 export const MARKDOWN_ACTIONS: Record<string, Command> = {

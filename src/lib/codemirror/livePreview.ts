@@ -4,7 +4,8 @@
 // for every line that the selection does NOT touch, hide the markdown markers
 // and render the result (big headings, bold text, real images, …). On the
 // line(s) the cursor is on, markers stay visible so you edit raw markdown —
-// exactly the Typora hybrid behavior.
+// exactly the Typora hybrid behavior. Images and local file links stay rendered
+// until their source button is explicitly pressed.
 
 import {
   ensureSyntaxTree,
@@ -23,6 +24,16 @@ import {
 import type { SyntaxNode, Tree } from "@lezer/common";
 
 import { toDisplaySrc } from "../imagePath";
+import { openImagePrompt } from "./markdownActions";
+import {
+  bindResourcePreview,
+  isResourceLink,
+  ResourceWidget,
+  resourceSelected,
+  resourceSourceField,
+  resourceSourceVisible,
+  setResourceSource,
+} from "./resourcePreview";
 import {
   imageSizeStyle,
   NO_IMAGE_SIZE,
@@ -133,6 +144,10 @@ class ImageWidget extends WidgetType {
     readonly url: string,
     readonly alt: string,
     readonly title: string,
+    readonly from: number,
+    readonly to: number,
+    readonly selected: boolean,
+    readonly readOnly: boolean,
     readonly size: ImageSize = NO_IMAGE_SIZE,
   ) {
     super();
@@ -142,6 +157,10 @@ class ImageWidget extends WidgetType {
       o.url === this.url &&
       o.alt === this.alt &&
       o.title === this.title &&
+      o.from === this.from &&
+      o.to === this.to &&
+      o.selected === this.selected &&
+      o.readOnly === this.readOnly &&
       o.size.width === this.size.width &&
       o.size.height === this.size.height
     );
@@ -155,6 +174,7 @@ class ImageWidget extends WidgetType {
     img.alt = this.alt;
     img.className = "cm-md-image";
     img.loading = "lazy";
+    img.draggable = false;
     img.referrerPolicy = "no-referrer";
     // An explicit size wins over the stylesheet's intrinsic sizing; the
     // `max-width: 100%` there still clamps it to the editor width.
@@ -185,10 +205,12 @@ class ImageWidget extends WidgetType {
       wrap.append(cap);
     }
 
+    bindResourcePreview(wrap, view, this, this.url, "图片", this.selected,
+      () => openImagePrompt(view));
     return wrap;
   }
   ignoreEvent() {
-    return false;
+    return true;
   }
 }
 
@@ -411,6 +433,10 @@ function buildDecorations(view: EditorView): DecorationSet {
     view.hasFocus && !state.readOnly
       ? activeLineSet(state)
       : new Set<number>();
+  const resourceSource = state.field(resourceSourceField, false);
+  if (resourceSource && !state.readOnly)
+    for (let n = state.doc.lineAt(resourceSource.from).number;
+      n <= state.doc.lineAt(resourceSource.to).number; n++) active.add(n);
   const ranges: Range<Decoration>[] = [];
 
   // Markdown parsing is async/incremental: right after a file opens the tree
@@ -446,6 +472,7 @@ function buildDecorations(view: EditorView): DecorationSet {
   // Image case). Such a widget covers text the tree parsed as separate inline
   // nodes, so we skip those to avoid overlapping replace decorations.
   let coveredTo = 0;
+  const renderedImageLines = new Set<number>();
 
   for (const { from, to } of view.visibleRanges) {
     tree.iterate({
@@ -648,9 +675,33 @@ function buildDecorations(view: EditorView): DecorationSet {
           }
         }
 
-        if (revealed) return; // show raw source on the active line(s)
+        // Images and local file links only reveal source through their button.
+        if (revealed && name !== "Image" && name !== "Link") return;
 
         switch (name) {
+          case "Link": {
+            const n = node.node;
+            const urlNode = n.getChildren("URL").find((url) =>
+              url.prevSibling?.name === "LinkMark" &&
+              state.sliceDoc(url.prevSibling.from, url.prevSibling.to) === "(",
+            );
+            if (!urlNode || state.doc.lineAt(nFrom).number !== state.doc.lineAt(nTo).number) break;
+            const url = state.sliceDoc(urlNode.from, urlNode.to);
+            if (!isResourceLink(url)) break;
+            if (resourceSourceVisible(state, nFrom)) return false;
+            const labelEnd = urlNode.prevSibling?.prevSibling;
+            if (!labelEnd || state.sliceDoc(labelEnd.from, labelEnd.to) !== "]") break;
+            const label = state.sliceDoc(nFrom + 1, labelEnd.from);
+            // Linked images retain the image preview instead of becoming a file chip.
+            if (n.getChild("Image")) break;
+            ranges.push(Decoration.replace({ widget: new ResourceWidget(
+              url, label, nFrom, nTo, resourceSelected(state, nFrom, nTo), state.readOnly,
+            ) }).range(nFrom, nTo));
+            const line = state.doc.lineAt(nFrom);
+            if (!state.sliceDoc(line.from, nFrom).trim() && !state.sliceDoc(nTo, line.to).trim())
+              ranges.push(Decoration.line({ class: "cm-md-resource-line" }).range(line.from));
+            return false;
+          }
           case "HeaderMark":
             hideMark(nFrom, nTo, true);
             break;
@@ -802,6 +853,7 @@ function buildDecorations(view: EditorView): DecorationSet {
             break;
           }
           case "Image": {
+            if (resourceSourceVisible(state, nFrom)) return false;
             const n = node.node;
             const titleNode = n.getChild("LinkTitle");
             // LinkTitle includes the surrounding quotes/parens; strip them.
@@ -815,9 +867,14 @@ function buildDecorations(view: EditorView): DecorationSet {
               if (url) {
                 ranges.push(
                   Decoration.replace({
-                    widget: new ImageWidget(url, alt, title),
+                    widget: new ImageWidget(
+                      url, alt, title, nFrom, nTo,
+                      resourceSelected(state, nFrom, nTo), state.readOnly,
+                    ),
                   }).range(nFrom, nTo),
                 );
+                renderedImageLines.add(state.doc.lineAt(nFrom).number);
+                return false;
               }
               break;
             }
@@ -839,6 +896,10 @@ function buildDecorations(view: EditorView): DecorationSet {
                     parsed.dest,
                     m[1],
                     parsed.title || title,
+                    nFrom,
+                    imgTo,
+                    resourceSelected(state, nFrom, imgTo),
+                    state.readOnly,
                     parsed.size,
                   ),
                 }).range(nFrom, imgTo),
@@ -846,6 +907,7 @@ function buildDecorations(view: EditorView): DecorationSet {
               // The widget covers the "![]" marks plus text the tree parsed as
               // separate inline nodes; skip them all to avoid overlap.
               coveredTo = imgTo;
+              renderedImageLines.add(state.doc.lineAt(nFrom).number);
               return false;
             }
             break;
@@ -921,8 +983,8 @@ function buildDecorations(view: EditorView): DecorationSet {
         // Image line: hide CodeMirror's widget-buffer <img>s (see editor.css).
         // They occupy an inline line box at the line's line-height, floating the
         // (block) image down by ~one line below the preceding text. Skipped while
-        // the cursor sits on the line — it shows raw source then, with no widget.
-        if (isImage && !active.has(n))
+        // the image's source is explicitly opened, with no widget.
+        if (isImage && renderedImageLines.has(n))
           ranges.push(
             Decoration.line({ class: "cm-md-image-line" }).range(line.from),
           );
@@ -1005,7 +1067,7 @@ const INLINE_CLASS: Record<string, string> = {
   Autolink: "cm-md-link",
 };
 
-export const livePreview = ViewPlugin.fromClass(
+const livePreviewPlugin = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
     constructor(view: EditorView) {
@@ -1022,7 +1084,7 @@ export const livePreview = ViewPlugin.fromClass(
         u.startState.readOnly !== u.state.readOnly ||
         u.startState.facet(presentationInteraction) !== u.state.facet(presentationInteraction) ||
         u.transactions.some((t) =>
-          t.effects.some((e) => e.is(parseAdvanced) || e.is(codeRunnersChanged)),
+          t.effects.some((e) => e.is(parseAdvanced) || e.is(codeRunnersChanged) || e.is(setResourceSource)),
         )
       ) {
         this.decorations = buildDecorations(u.view);
@@ -1033,6 +1095,8 @@ export const livePreview = ViewPlugin.fromClass(
     decorations: (v) => v.decorations,
   },
 );
+
+export const livePreview = [resourceSourceField, livePreviewPlugin];
 
 /**
  * Dispatched by {@link syntaxParseDriver} once async parsing has advanced, so

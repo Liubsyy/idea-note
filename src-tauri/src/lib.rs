@@ -135,6 +135,8 @@ pub fn run() {
             files::delete,
             files::show_file_info,
             clipboard::copy_files_to_clipboard,
+            clipboard::copy_image_to_clipboard,
+            clipboard::has_clipboard_image,
             clipboard::paste_from_clipboard,
             clipboard::list_clipboard_files,
             clipboard::save_clipboard_image_to_dir,

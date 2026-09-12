@@ -18,7 +18,7 @@ import {
   writeBinaryFile,
   saveFileToDir,
 } from "./fs";
-import { listClipboardFiles, saveClipboardImageToDir } from "./clipboard";
+import { hasClipboardImage, listClipboardFiles, readClipboardText, saveClipboardImageToDir } from "./clipboard";
 
 type Kind = "image" | "attachment";
 
@@ -262,20 +262,20 @@ function clipboardImageStem(blobs: File[]): string {
  *      last resort.
  * This is what keeps a large paste from freezing the app.
  */
-async function savePastedFiles(view: EditorView, blobs: File[]): Promise<void> {
+async function savePastedFiles(view: EditorView, blobs: File[]): Promise<boolean> {
   try {
     const paths = await listClipboardFiles();
     if (paths.length > 0) {
       await saveByPaths(view, paths);
-      return;
+      return true;
     }
   } catch {
     /* no native file paths available — fall through */
   }
 
-  if (blobs.some((b) => b.type.startsWith("image/"))) {
+  if (blobs.some((b) => b.type.startsWith("image/")) || await hasClipboardImage().catch(() => false)) {
     const target = resolveTarget("image");
-    if (!target) return;
+    if (!target) return true;
     try {
       const created = await saveClipboardImageToDir(target.dir, clipboardImageStem(blobs));
       if (created) {
@@ -283,7 +283,7 @@ async function savePastedFiles(view: EditorView, blobs: File[]): Promise<void> {
         insertRefs(view, [
           { link: target.makeLink(finalName), name: finalName, isImage: true },
         ]);
-        return;
+        return true;
       }
     } catch {
       /* clipboard read failed — fall back to the blob bytes below */
@@ -291,6 +291,19 @@ async function savePastedFiles(view: EditorView, blobs: File[]): Promise<void> {
   }
 
   if (blobs.length > 0) await saveBlobs(view, blobs);
+  return blobs.length > 0;
+}
+
+/** The context menu has no ClipboardEvent, so inspect native image/file data
+ * before falling back to text. Non-Markdown editors still paste only text. */
+export async function pasteEditorClipboard(view: EditorView): Promise<void> {
+  if (view.state.readOnly) return;
+  const path = useAppStore.getState().activeFilePath;
+  if (path && (isDraftPath(path) || isMarkdownFile(path)) && await savePastedFiles(view, [])) return;
+  const text = await readClipboardText();
+  if (text && !view.state.readOnly)
+    view.dispatch(view.state.replaceSelection(text), { scrollIntoView: true });
+  view.focus();
 }
 
 /**

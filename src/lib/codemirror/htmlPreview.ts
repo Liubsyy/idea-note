@@ -32,7 +32,22 @@ import {
 import { parseAdvanced } from "./livePreview";
 import { renderInlineHtml, sanitizeHtml } from "./inlineHtml";
 import { toDisplaySrc } from "../imagePath";
-import { cssLength } from "../imageSyntax";
+import { cssLength, getImgAttr, parseImgTag } from "../imageSyntax";
+import { bindResourcePreview, resourceSelected, resourceSourceVisible, setResourceSource } from "./resourcePreview";
+import { openImagePrompt } from "./markdownActions";
+
+type HtmlImage = { from: number; to: number; url: string; selected: boolean; readOnly: boolean };
+
+function singleImage(state: EditorState, from: number, to: number): HtmlImage | undefined {
+  const source = state.sliceDoc(from, to);
+  const tag = source.trim();
+  if (!/^<img\b[^<>]*>$/i.test(tag)) return;
+  const start = from + source.indexOf("<");
+  const end = start + tag.length;
+  const url = getImgAttr(parseImgTag(tag), "src");
+  if (!url) return;
+  return { from: start, to: end, url, selected: resourceSelected(state, start, end), readOnly: state.readOnly };
+}
 
 class HtmlWidget extends WidgetType {
   constructor(
@@ -42,11 +57,14 @@ class HtmlWidget extends WidgetType {
     // line (bullet, indent) is preserved; block HTML and top-level paragraphs
     // render as a <div>.
     readonly inline = false,
+    readonly image?: HtmlImage,
   ) {
     super();
   }
   eq(o: HtmlWidget) {
-    return o.html === this.html && o.from === this.from && o.inline === this.inline;
+    return o.html === this.html && o.from === this.from && o.inline === this.inline &&
+      o.image?.from === this.image?.from && o.image?.to === this.image?.to &&
+      o.image?.selected === this.image?.selected && o.image?.readOnly === this.image?.readOnly;
   }
   // Stand-in height until CodeMirror measures the real DOM; see blockHeight.ts.
   // Only the block form gets one — an inline widget is measured as part of its
@@ -64,6 +82,7 @@ class HtmlWidget extends WidgetType {
       // innerHTML keeps the src verbatim; rewrite local paths to the asset
       // protocol (remote URLs pass through) so <img> matches Markdown images.
       const raw = img.getAttribute("src");
+      if (this.image) img.draggable = false;
       if (raw) img.src = toDisplaySrc(raw);
       // width/height are presentational hints, which lose to Tailwind
       // preflight's `img { height: auto }`; restate them as inline styles so an
@@ -77,8 +96,11 @@ class HtmlWidget extends WidgetType {
       img.addEventListener("error", requestMeasure);
       if (img.complete) queueMicrotask(requestMeasure);
     });
-    // Click to edit: drop the caret into the source so it reveals.
-    el.addEventListener("mousedown", (e) => {
+    if (this.image) {
+      el.classList.add("cm-md-image-wrap");
+      bindResourcePreview(el, view, this.image, this.image.url, "图片", this.image.selected,
+        () => openImagePrompt(view));
+    } else el.addEventListener("mousedown", (e) => {
       // Let links/checkboxes inside the rendered HTML behave normally.
       if ((e.target as HTMLElement).closest("a")) return;
       e.preventDefault();
@@ -93,7 +115,7 @@ class HtmlWidget extends WidgetType {
     untrackBlockHeight(dom);
   }
   ignoreEvent() {
-    return false;
+    return !!this.image;
   }
 }
 
@@ -165,15 +187,16 @@ function buildHtml(state: EditorState): DecorationSet {
     // Snap to whole lines (block replacements must cover full lines).
     const from = state.doc.lineAt(nodeFrom).from;
     const to = state.doc.lineAt(nodeTo).to;
+    const image = singleImage(state, nodeFrom, nodeTo);
     // Keep the source visible while the cursor is inside the region — except in
     // read-only mode, where it always stays rendered.
     const inside =
       !state.readOnly &&
       state.selection.ranges.some((r) => r.from <= to && r.to >= from);
-    if (inside) return;
+    if (image ? resourceSourceVisible(state, image.from) : inside) return;
     ranges.push(
       Decoration.replace({
-        widget: new HtmlWidget(html, from),
+        widget: new HtmlWidget(html, from, false, image),
         block: true,
       }).range(from, to),
     );
@@ -194,12 +217,15 @@ function buildHtml(state: EditorState): DecorationSet {
       const to = Math.min(line.to, nodeTo);
       if (from >= to) continue;
       for (const region of inlineRegions(state.doc.sliceString(from, to), from)) {
+        const image = singleImage(state, region.from, region.to);
         const active =
           !state.readOnly &&
           state.selection.ranges.some(
             (r) => r.from <= region.to && r.to >= region.from,
           );
-        if (active) continue;
+        if (image ? resourceSourceVisible(state, image.from) : active) continue;
+        if (image && line.text.trim() === state.sliceDoc(region.from, region.to))
+          ranges.push(Decoration.line({ class: "cm-md-image-line" }).range(line.from));
         ranges.push(
           Decoration.replace({
             widget: new HtmlWidget(
@@ -208,6 +234,7 @@ function buildHtml(state: EditorState): DecorationSet {
               ),
               region.from,
               true,
+              image,
             ),
           }).range(region.from, region.to),
         );
@@ -245,7 +272,7 @@ export const htmlPreview = StateField.define<DecorationSet>({
       tr.docChanged ||
       tr.selection ||
       tr.startState.readOnly !== tr.state.readOnly ||
-      tr.effects.some((e) => e.is(parseAdvanced))
+      tr.effects.some((e) => e.is(parseAdvanced) || e.is(setResourceSource))
     )
       return buildHtml(tr.state);
     return deco.map(tr.changes);

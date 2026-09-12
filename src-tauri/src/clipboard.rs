@@ -8,6 +8,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use arboard::Clipboard;
+use std::borrow::Cow;
+use std::io::Cursor;
 
 /// Fresh clipboard handle per call — cheap everywhere. On X11/Wayland arboard
 /// hands the contents to a process-global server thread, so what we set stays
@@ -30,6 +32,62 @@ pub fn copy_files_to_clipboard(paths: Vec<String>) -> Result<(), String> {
         .set()
         .file_list(&paths)
         .map_err(|e| format!("复制文件失败: {e}"))
+}
+
+/// Decode the browser's PNG into the RGBA pixels expected by native clipboards.
+fn decode_clipboard_png(bytes: &[u8]) -> Result<arboard::ImageData<'static>, String> {
+    let mut decoder = png::Decoder::new(Cursor::new(bytes));
+    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+    let mut reader = decoder
+        .read_info()
+        .map_err(|e| format!("图片解码失败: {e}"))?;
+    let mut buffer = vec![0; reader.output_buffer_size()];
+    let info = reader
+        .next_frame(&mut buffer)
+        .map_err(|e| format!("图片解码失败: {e}"))?;
+    let pixels = &buffer[..info.buffer_size()];
+    let rgba = match info.color_type {
+        png::ColorType::Rgba => pixels.to_vec(),
+        png::ColorType::Rgb => pixels
+            .chunks_exact(3)
+            .flat_map(|p| [p[0], p[1], p[2], 255])
+            .collect(),
+        png::ColorType::Grayscale => pixels.iter().flat_map(|&v| [v, v, v, 255]).collect(),
+        png::ColorType::GrayscaleAlpha => pixels
+            .chunks_exact(2)
+            .flat_map(|p| [p[0], p[0], p[0], p[1]])
+            .collect(),
+        png::ColorType::Indexed => return Err("不支持的图片像素格式".to_string()),
+    };
+    Ok(arboard::ImageData {
+        width: info.width as usize,
+        height: info.height as usize,
+        bytes: Cow::Owned(rgba),
+    })
+}
+
+/// Set image data, so pasting into chat/image editors yields the image itself.
+#[tauri::command]
+pub async fn copy_image_to_clipboard(png: Vec<u8>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let image = decode_clipboard_png(&png)?;
+        clipboard()?
+            .set_image(image)
+            .map_err(|e| format!("复制图片失败: {e}"))
+    })
+    .await
+    .map_err(|e| format!("clipboard image task failed: {e}"))?
+}
+
+#[tauri::command]
+pub async fn has_clipboard_image() -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(|| match clipboard()?.get_image() {
+        Ok(_) => Ok(true),
+        Err(arboard::Error::ContentNotAvailable) => Ok(false),
+        Err(e) => Err(format!("读取剪贴板图片失败: {e}")),
+    })
+    .await
+    .map_err(|e| format!("clipboard image task failed: {e}"))?
 }
 
 /// Plain text currently on the system clipboard (empty string when none).
@@ -185,4 +243,43 @@ pub fn paste_from_clipboard(target_dir: String) -> Result<Vec<String>, String> {
         return Err("剪贴板中没有文件".to_string());
     }
     Ok(created)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_clipboard_png;
+
+    #[test]
+    fn clipboard_png_preserves_pixels_and_transparency() {
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut bytes, 2, 1);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            writer
+                .write_image_data(&[255, 0, 0, 128, 0, 255, 0, 0])
+                .unwrap();
+        }
+        let image = decode_clipboard_png(&bytes).unwrap();
+        assert_eq!((image.width, image.height), (2, 1));
+        assert_eq!(image.bytes.as_ref(), &[255, 0, 0, 128, 0, 255, 0, 0]);
+    }
+
+    #[test]
+    fn clipboard_png_expands_rgb_and_rejects_invalid_data() {
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut bytes, 1, 1);
+            encoder.set_color(png::ColorType::Rgb);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            writer.write_image_data(&[5, 10, 20]).unwrap();
+        }
+        assert_eq!(
+            decode_clipboard_png(&bytes).unwrap().bytes.as_ref(),
+            &[5, 10, 20, 255]
+        );
+        assert!(decode_clipboard_png(b"not an image").is_err());
+    }
 }

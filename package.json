@@ -17,6 +17,7 @@
     "test:workspace-path": "node --test --experimental-strip-types tests/workspacePath.test.mjs",
     "test:directory-tree": "node --test --experimental-strip-types tests/directoryTree.test.mjs tests/workspaceLoading.test.mjs",
     "test:sidebar-drop": "node --test --experimental-strip-types tests/sidebarDrop.test.mjs",
+    "test:resource-preview": "node --test tests/resourcePreview.test.mjs tests/resourceClipboard.test.mjs",
     "test:input-schema": "node --test --experimental-strip-types tests/inputSchema.test.mjs",
     "test:secret-block": "node --test --experimental-strip-types tests/secretBlock.test.mjs",
     "test:vault-setup-stage": "node --test --experimental-strip-types tests/vaultSetupStage.test.mjs",

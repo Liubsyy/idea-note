@@ -24,6 +24,7 @@ import { buildEditorKeymap, commandTitle } from "../../lib/codemirror/keybinding
 import { EditorContextMenu, type EditorMenuState } from "./EditorContextMenu";
 import { tablePreview } from "../../lib/codemirror/tablePreview";
 import { markdownLinkClick } from "../../lib/codemirror/linkClick";
+import { resourceClipboard } from "../../lib/codemirror/resourceClipboard";
 import { htmlPreview } from "../../lib/codemirror/htmlPreview";
 import { inlineMath, mathBlock } from "../../lib/codemirror/math";
 import { mermaidBlock } from "../../lib/codemirror/diagram";
@@ -233,6 +234,7 @@ export function CodeMirrorEditor() {
           // Cmd/Ctrl+click opens links: external URLs in the browser,
           // relative paths as editor tabs. Works in every view mode.
           markdownLinkClick,
+          resourceClipboard,
           previewCompartment.current.of(
             modeExtensions(
               useAppStore.getState().presentationActive
@@ -401,12 +403,19 @@ export function CodeMirrorEditor() {
     if (presentationActive) return;
     const view = getActiveView();
     if (!view) return;
-    const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+    const resource = (e.target as HTMLElement).closest?.(".cm-md-resource");
+    const resourceFrom = Number(resource?.getAttribute("data-resource-from"));
+    const resourceTo = Number(resource?.getAttribute("data-resource-to"));
+    const onResource = resource && Number.isInteger(resourceFrom) && Number.isInteger(resourceTo) &&
+      resourceFrom >= 0 && resourceTo > resourceFrom && resourceTo <= view.state.doc.length;
+    const pos = onResource ? resourceFrom : view.posAtCoords({ x: e.clientX, y: e.clientY });
     const inSelection =
       pos != null &&
-      view.state.selection.ranges.some((r) => !r.empty && pos >= r.from && pos <= r.to);
+      view.state.selection.ranges.some((r) => !r.empty && (onResource
+        ? resourceFrom >= r.from && resourceTo <= r.to
+        : pos >= r.from && pos <= r.to));
     if (pos != null && !inSelection) {
-      view.dispatch({ selection: { anchor: pos } });
+      view.dispatch({ selection: { anchor: pos, head: onResource ? resourceTo : pos } });
     }
     setMenu({
       x: e.clientX,
