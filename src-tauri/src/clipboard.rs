@@ -209,10 +209,49 @@ pub(crate) fn copy_recursively(src: &Path, dest: &Path) -> Result<(), String> {
     }
 }
 
-/// Copy the files on the system clipboard into `target_dir`, returning the
-/// created paths. Name clashes get a " 2"/" 3" suffix instead of overwriting.
+/// The clipboard's files that would land on an existing entry in `dir`:
+/// `(source path, destination path)` pairs. A source that already lives in
+/// `dir` is skipped — pasting it there always yields a " 2" copy, never a
+/// clash with itself.
+fn paste_conflicts_in(dir: &Path, sources: &[String]) -> Vec<(PathBuf, PathBuf)> {
+    sources
+        .iter()
+        .filter_map(|source| {
+            let src = PathBuf::from(source);
+            let dest = dir.join(src.file_name()?);
+            (src.exists() && dest.exists() && !same_path(&src, &dest)).then_some((src, dest))
+        })
+        .collect()
+}
+
+fn same_path(a: &Path, b: &Path) -> bool {
+    match (fs::canonicalize(a), fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
+/// Names of the clipboard files that already exist in `target_dir`, so the
+/// frontend can ask whether to overwrite them or keep both before pasting.
+/// Empty when nothing clashes (or the clipboard holds no files).
 #[tauri::command]
-pub fn paste_from_clipboard(target_dir: String) -> Result<Vec<String>, String> {
+pub fn list_paste_conflicts(target_dir: String) -> Result<Vec<String>, String> {
+    let dir = PathBuf::from(&target_dir);
+    if !dir.is_dir() {
+        return Err(format!("not a directory: {target_dir}"));
+    }
+    Ok(paste_conflicts_in(&dir, &clipboard_file_paths()?)
+        .into_iter()
+        .map(|(_, dest)| dest.file_name().unwrap_or_default().to_string_lossy().to_string())
+        .collect())
+}
+
+/// Copy the files on the system clipboard into `target_dir`, returning the
+/// created paths. Name clashes get a " 2"/" 3" suffix, or replace the existing
+/// entry (a folder is replaced whole, not merged) when `overwrite` is set.
+/// Pasting a file into its own folder always keeps both.
+#[tauri::command]
+pub fn paste_from_clipboard(target_dir: String, overwrite: bool) -> Result<Vec<String>, String> {
     let dir = PathBuf::from(&target_dir);
     if !dir.is_dir() {
         return Err(format!("not a directory: {target_dir}"));
@@ -221,9 +260,13 @@ pub fn paste_from_clipboard(target_dir: String) -> Result<Vec<String>, String> {
     if sources.is_empty() {
         return Err("剪贴板中没有文件".to_string());
     }
+    paste_files_into(&dir, &sources, overwrite)
+}
+
+fn paste_files_into(dir: &Path, sources: &[String], overwrite: bool) -> Result<Vec<String>, String> {
     let mut created = Vec::new();
     for source in sources {
-        let src = PathBuf::from(&source);
+        let src = PathBuf::from(source);
         if !src.exists() {
             continue;
         }
@@ -235,7 +278,13 @@ pub fn paste_from_clipboard(target_dir: String) -> Result<Vec<String>, String> {
             .ok_or_else(|| format!("invalid source: {source}"))?
             .to_string_lossy()
             .to_string();
-        let dest = unique_dest(&dir, &name);
+        let plain = dir.join(&name);
+        let dest = if overwrite && plain.exists() && !same_path(&src, &plain) {
+            remove_existing(&plain)?;
+            plain
+        } else {
+            unique_dest(dir, &name)
+        };
         copy_recursively(&src, &dest)?;
         created.push(dest.to_string_lossy().to_string());
     }
@@ -245,9 +294,86 @@ pub fn paste_from_clipboard(target_dir: String) -> Result<Vec<String>, String> {
     Ok(created)
 }
 
+fn remove_existing(path: &Path) -> Result<(), String> {
+    // `is_dir` follows symlinks; a symlink to a directory must be unlinked, not
+    // have its target's contents wiped.
+    let is_real_dir = fs::symlink_metadata(path)
+        .map(|m| m.is_dir())
+        .map_err(|e| format!("read metadata failed: {e}"))?;
+    if is_real_dir {
+        fs::remove_dir_all(path).map_err(|e| format!("覆盖失败: {e}"))
+    } else {
+        fs::remove_file(path).map_err(|e| format!("覆盖失败: {e}"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::decode_clipboard_png;
+    use super::{decode_clipboard_png, paste_conflicts_in, paste_files_into};
+    use std::fs;
+
+    fn temp_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "idea-note-paste-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn paste_keeps_both_by_default_and_overwrites_on_request() {
+        let root = temp_dir("overwrite");
+        let src_dir = root.join("src");
+        let target = root.join("target");
+        fs::create_dir_all(&src_dir).unwrap();
+        fs::create_dir_all(&target).unwrap();
+        fs::write(src_dir.join("a.md"), "new").unwrap();
+        fs::write(target.join("a.md"), "old").unwrap();
+        let sources = vec![src_dir.join("a.md").to_string_lossy().to_string()];
+
+        let conflicts = paste_conflicts_in(&target, &sources);
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].1, target.join("a.md"));
+
+        let created = paste_files_into(&target, &sources, false).unwrap();
+        assert_eq!(created, vec![target.join("a 2.md").to_string_lossy().to_string()]);
+        assert_eq!(fs::read_to_string(target.join("a.md")).unwrap(), "old");
+
+        let created = paste_files_into(&target, &sources, true).unwrap();
+        assert_eq!(created, vec![target.join("a.md").to_string_lossy().to_string()]);
+        assert_eq!(fs::read_to_string(target.join("a.md")).unwrap(), "new");
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn overwrite_replaces_a_folder_whole_and_never_deletes_the_source() {
+        let root = temp_dir("folder");
+        let src = root.join("src").join("notes");
+        let target = root.join("target");
+        fs::create_dir_all(&src).unwrap();
+        fs::create_dir_all(target.join("notes")).unwrap();
+        fs::write(src.join("keep.md"), "").unwrap();
+        fs::write(target.join("notes").join("stale.md"), "").unwrap();
+
+        let sources = vec![src.to_string_lossy().to_string()];
+        paste_files_into(&target, &sources, true).unwrap();
+        assert!(target.join("notes").join("keep.md").exists());
+        assert!(!target.join("notes").join("stale.md").exists());
+
+        // Pasting into the folder the source already lives in is never a
+        // conflict, and never removes the source even with overwrite on.
+        let own_dir = root.join("src");
+        assert!(paste_conflicts_in(&own_dir, &sources).is_empty());
+        let created = paste_files_into(&own_dir, &sources, true).unwrap();
+        assert_eq!(created, vec![own_dir.join("notes 2").to_string_lossy().to_string()]);
+        assert!(src.join("keep.md").exists());
+        fs::remove_dir_all(&root).unwrap();
+    }
 
     #[test]
     fn clipboard_png_preserves_pixels_and_transparency() {

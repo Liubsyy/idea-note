@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import {
   ChevronRight,
   ChevronDown,
+  FileSymlink,
   StickyNote,
   LayoutList,
   ListTree,
@@ -509,6 +510,7 @@ function NoteRow({
     : selectedPath === node.path;
   const isDragging = drag?.draggingPaths.includes(node.path) ?? false;
   const time = formatNoteTime(node.mtime);
+  const NoteIcon = node.is_symlink ? FileSymlink : StickyNote;
 
   return (
     <div
@@ -545,7 +547,7 @@ function NoteRow({
           paddingTop: compactSidebar ? "0.16em" : "0.22em",
         }}
       >
-        <StickyNote
+        <NoteIcon
           size="1.05em"
           style={{ color: isActive ? "var(--accent)" : "var(--note-icon)" }}
         />

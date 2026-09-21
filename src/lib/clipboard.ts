@@ -71,9 +71,15 @@ export async function copyImageToClipboard(source: string): Promise<void> {
   }
 }
 
-/** Copy the clipboard's files into `targetDir`; resolves to the created paths. */
-export const pasteFromClipboard = (targetDir: string) =>
-  invoke<string[]>("paste_from_clipboard", { targetDir });
+/** Copy the clipboard's files into `targetDir`; resolves to the created paths.
+ *  Same-name entries get a " 2" suffix, or are replaced when `overwrite` is set. */
+export const pasteFromClipboard = (targetDir: string, overwrite = false) =>
+  invoke<string[]>("paste_from_clipboard", { targetDir, overwrite });
+
+/** Names of the clipboard's files that already exist in `targetDir`, checked
+ *  before pasting so the user can choose between overwriting and keeping both. */
+export const listPasteConflicts = (targetDir: string) =>
+  invoke<string[]>("list_paste_conflicts", { targetDir });
 
 /** Absolute paths of the real files currently on the system clipboard (set by
  *  Finder/Explorer). Used by the editor's paste to route them into the

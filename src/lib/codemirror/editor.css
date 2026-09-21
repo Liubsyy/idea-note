@@ -382,7 +382,17 @@
 .cm-content .cm-code-line {
   position: relative;
   padding-left: 3.1em;
-  padding-right: 4.5em;
+  padding-right: 1em;
+}
+/* Only the first line runs under the action row, so only it reserves space:
+   copy alone (26px + 4px right inset + 4px breathing room) or the full
+   run/output/copy trio (3 × 26px + 2 × 4px gap + 4px inset + 4px breathing
+   room). Keep in sync with .cm-md-code-actions. */
+.cm-content .cm-code-first {
+  padding-right: 34px;
+}
+.cm-content .cm-code-first.cm-code-runnable {
+  padding-right: 94px;
 }
 .cm-content .cm-code-line::before {
   content: attr(data-ln);
@@ -426,10 +436,10 @@
 .cm-md-code-actions {
   position: absolute;
   top: 4px;
-  right: 6px;
+  right: 4px;
   z-index: 2;
   display: flex;
-  gap: 6px;
+  gap: 4px;
 }
 
 .cm-md-code-action-btn {

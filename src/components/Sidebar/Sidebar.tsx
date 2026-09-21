@@ -35,6 +35,7 @@ import {
 import {
   copyText,
   copyFilesToClipboard,
+  listPasteConflicts,
   pasteFromClipboard,
   relativePath,
 } from "../../lib/clipboard";
@@ -135,6 +136,7 @@ export function Sidebar() {
   const requestNewFolder = useAppStore((s) => s.requestNewFolder);
   const requestRename = useAppStore((s) => s.requestRename);
   const removeMany = useAppStore((s) => s.removeMany);
+  const openConfirm = useAppStore((s) => s.openConfirm);
   const openSettings = useAppStore((s) => s.openSettings);
   const openNewWindow = useAppStore((s) => s.openNewWindow);
   const compactSidebar = useAppStore((s) => s.compactSidebar);
@@ -278,9 +280,30 @@ export function Sidebar() {
   };
 
   const pasteInto = async (dir: string) => {
-    try {
-      await pasteFromClipboard(dir);
+    const paste = async (overwrite: boolean) => {
+      await pasteFromClipboard(dir, overwrite);
       await refreshTree();
+    };
+    try {
+      const conflicts = await listPasteConflicts(dir);
+      if (!conflicts.length) {
+        await paste(false);
+        return;
+      }
+      // Same-name entries: let the user choose instead of silently making a
+      // " 2" copy. Errors thrown by either action surface inside the dialog.
+      const listed = conflicts.slice(0, 3).map((name) => `「${name}」`).join("、");
+      openConfirm({
+        title: "存在同名项目",
+        message:
+          conflicts.length === 1
+            ? `目标文件夹中已有 ${listed}。覆盖会替换现有项目（文件夹整体替换），保留两份则以「${conflicts[0]} 2」这样的名称粘贴。`
+            : `目标文件夹中已有 ${conflicts.length} 个同名项目（${listed}${conflicts.length > 3 ? " 等" : ""}）。覆盖会替换现有项目（文件夹整体替换），保留两份则以「名称 2」这样的名称粘贴。`,
+        confirmLabel: "覆盖",
+        onConfirm: () => paste(true),
+        altLabel: "保留两份",
+        onAlt: () => paste(false),
+      });
     } catch (err) {
       window.alert(`粘贴失败：${err}`);
     }

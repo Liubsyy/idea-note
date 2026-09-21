@@ -138,6 +138,7 @@ pub fn run() {
             clipboard::copy_image_to_clipboard,
             clipboard::has_clipboard_image,
             clipboard::paste_from_clipboard,
+            clipboard::list_paste_conflicts,
             clipboard::list_clipboard_files,
             clipboard::save_clipboard_image_to_dir,
             clipboard::read_clipboard_text,

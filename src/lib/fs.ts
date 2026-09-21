@@ -14,6 +14,8 @@ export interface FileNode {
   mtime?: number | null;
   /** First content line of a markdown note (sidebar notes-mode preview). */
   excerpt?: string | null;
+  /** The entry itself is a symlink (`is_dir` describes its target). */
+  is_symlink?: boolean;
 }
 
 export const listDir = (path: string) =>

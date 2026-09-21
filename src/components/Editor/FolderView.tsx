@@ -1,4 +1,11 @@
-import { ChevronRight, FileText, Folder, Image as ImageIcon } from "lucide-react";
+import {
+  ChevronRight,
+  FileSymlink,
+  FileText,
+  Folder,
+  FolderSymlink,
+  Image as ImageIcon,
+} from "lucide-react";
 import { findNode, isImageFile, isMarkdownFile } from "../../lib/fs";
 import type { FileNode } from "../../lib/fs";
 import { useAppStore } from "../../store/useAppStore";
@@ -79,7 +86,16 @@ function ReadmeHint({ onCreate }: { onCreate: () => void }) {
 
 function Entry({ node, onOpen }: { node: FileNode; onOpen: () => void }) {
   const icon = node.is_dir ? (
-    <Folder size={18} style={{ color: "var(--accent)" }} />
+    node.is_symlink ? (
+      <FolderSymlink size={18} style={{ color: "var(--accent)" }} />
+    ) : (
+      <Folder size={18} style={{ color: "var(--accent)" }} />
+    )
+  ) : node.is_symlink ? (
+    <FileSymlink
+      size={18}
+      style={{ color: isMarkdownFile(node.name) ? "var(--accent)" : "var(--text-muted)" }}
+    />
   ) : isImageFile(node.name) ? (
     <ImageIcon size={18} style={{ color: "var(--text-muted)" }} />
   ) : (

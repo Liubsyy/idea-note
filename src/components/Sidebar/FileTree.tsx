@@ -4,9 +4,11 @@ import {
   ChevronDown,
   Braces,
   FileCode,
+  FileSymlink,
   FileText,
   Folder,
   FolderOpen,
+  FolderSymlink,
   Image,
   StickyNote,
 } from "lucide-react";
@@ -27,8 +29,14 @@ const CODE_EXT =
 const CONFIG_EXT =
   /\.(json|jsonc|ya?ml|toml|ini|conf|cfg|xml|plist|properties|lock|env)$/i;
 
-/** Per-type icon + low-saturation color (markdown reuses the notes amber). */
-function fileVisual(name: string): { Icon: LucideIcon; color: string } {
+/** Per-type icon + low-saturation color (markdown reuses the notes amber).
+ * A symlink swaps the glyph for the arrowed variant but keeps the type color. */
+function fileVisual(node: FileNode): { Icon: LucideIcon; color: string } {
+  const { Icon, color } = fileTypeVisual(node.name);
+  return { Icon: node.is_symlink ? FileSymlink : Icon, color };
+}
+
+function fileTypeVisual(name: string): { Icon: LucideIcon; color: string } {
   if (isMarkdownFile(name)) return { Icon: StickyNote, color: "var(--note-icon)" };
   if (IMAGE_EXT.test(name)) return { Icon: Image, color: "var(--file-image)" };
   if (CODE_EXT.test(name)) return { Icon: FileCode, color: "var(--file-code)" };
@@ -76,6 +84,8 @@ function TreeRow({
   const storedOpen = useAppStore((s) => s.expanded[node.path]);
   const setExpanded = useAppStore((s) => s.setExpanded);
   const open = storedOpen ?? false;
+  // A linked folder keeps the arrowed glyph whether open or closed.
+  const FolderIcon = node.is_symlink ? FolderSymlink : open ? FolderOpen : Folder;
   const loadDirectory = useAppStore((s) => s.loadDirectory);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
@@ -149,31 +159,17 @@ function TreeRow({
           >
             {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </span>
-          {open ? (
-            <FolderOpen
-              size={15}
-              className="shrink-0"
-              style={{
-                color: isActive
-                  ? "var(--accent)"
-                  : hidden
-                    ? "var(--text-muted)"
-                    : "var(--folder-icon)",
-              }}
-            />
-          ) : (
-            <Folder
-              size={15}
-              className="shrink-0"
-              style={{
-                color: isActive
-                  ? "var(--accent)"
-                  : hidden
-                    ? "var(--text-muted)"
-                    : "var(--folder-icon)",
-              }}
-            />
-          )}
+          <FolderIcon
+            size={15}
+            className="shrink-0"
+            style={{
+              color: isActive
+                ? "var(--accent)"
+                : hidden
+                  ? "var(--text-muted)"
+                  : "var(--folder-icon)",
+            }}
+          />
           <span className="truncate">{node.name}</span>
         </div>
         {open && node.children == null && (
@@ -198,7 +194,7 @@ function TreeRow({
     );
   }
 
-  const { Icon, color } = fileVisual(node.name);
+  const { Icon, color } = fileVisual(node);
   return (
     <div
       data-tree-path={node.path}

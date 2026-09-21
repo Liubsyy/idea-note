@@ -1,9 +1,9 @@
 // Workspace file tree and full-text search.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -112,6 +112,8 @@ pub struct FileNode {
     mtime: Option<u64>,
     /// First content line of a markdown note — the sidebar notes-mode preview.
     excerpt: Option<String>,
+    /// The entry itself is a symlink (`is_dir` describes its target).
+    is_symlink: bool,
 }
 
 /// Entries excluded from the tree and search. Hidden (dot) files are shown;
@@ -219,10 +221,37 @@ fn file_mtime_ms(metadata: &fs::Metadata) -> Option<u64> {
         .map(|d| d.as_millis() as u64)
 }
 
+/// Metadata for a tree entry, following symlinks so a linked folder shows up
+/// (and expands) like a real one. `DirEntry::metadata` never follows links,
+/// which used to turn `docs -> /elsewhere/docs` into an unopenable file row.
+/// A dangling link keeps its own metadata and is listed as a file so it
+/// stays visible rather than silently disappearing.
+fn entry_metadata(entry: &fs::DirEntry) -> Option<(fs::Metadata, bool)> {
+    let kind = entry.file_type().ok()?;
+    if kind.is_symlink() {
+        if let Ok(target) = fs::metadata(entry.path()) {
+            return Some((target, true));
+        }
+    }
+    entry.metadata().ok().map(|m| (m, kind.is_symlink()))
+}
+
 /// Recursively read a directory, keeping every sub-directory and every
 /// (non-excluded) file regardless of extension. Entries are sorted:
 /// directories first, then files, each alphabetically (case-insensitive).
 fn read_tree(dir: &Path) -> Result<Vec<FileNode>, String> {
+    let mut visited = HashSet::new();
+    if let Ok(root) = fs::canonicalize(dir) {
+        visited.insert(root);
+    }
+    read_tree_inner(dir, &mut visited)
+}
+
+/// `visited` holds the canonical path of every directory on the current
+/// descent. Directory symlinks are followed, so a link pointing back at an
+/// ancestor (`project/self -> project`) would otherwise recurse forever;
+/// such a link is kept as an empty folder instead.
+fn read_tree_inner(dir: &Path, visited: &mut HashSet<PathBuf>) -> Result<Vec<FileNode>, String> {
     let mut nodes: Vec<FileNode> = Vec::new();
 
     let entries = fs::read_dir(dir).map_err(|e| format!("read_dir failed: {e}"))?;
@@ -233,13 +262,25 @@ fn read_tree(dir: &Path) -> Result<Vec<FileNode>, String> {
         if is_excluded(&name) {
             continue;
         }
-        let metadata = match entry.metadata() {
-            Ok(m) => m,
-            Err(_) => continue,
+        let Some((metadata, is_symlink)) = entry_metadata(&entry) else {
+            continue;
         };
 
         if metadata.is_dir() {
-            let children = read_tree(&path)?;
+            let canonical = fs::canonicalize(&path).ok();
+            let cycles = canonical.as_ref().is_some_and(|c| visited.contains(c));
+            let children = if cycles {
+                Vec::new()
+            } else {
+                if let Some(c) = &canonical {
+                    visited.insert(c.clone());
+                }
+                let children = read_tree_inner(&path, visited)?;
+                if let Some(c) = &canonical {
+                    visited.remove(c);
+                }
+                children
+            };
             nodes.push(FileNode {
                 name,
                 path: path.to_string_lossy().to_string(),
@@ -247,6 +288,7 @@ fn read_tree(dir: &Path) -> Result<Vec<FileNode>, String> {
                 children: Some(children),
                 mtime: None,
                 excerpt: None,
+                is_symlink,
             });
         } else {
             let excerpt = if is_markdown(&name) {
@@ -261,6 +303,7 @@ fn read_tree(dir: &Path) -> Result<Vec<FileNode>, String> {
                 children: None,
                 mtime: file_mtime_ms(&metadata),
                 excerpt,
+                is_symlink,
             });
         }
     }
@@ -295,7 +338,7 @@ fn read_directory(dir: &Path) -> Result<Vec<FileNode>, String> {
         if is_excluded(&name) {
             continue;
         }
-        let Ok(metadata) = entry.metadata() else {
+        let Some((metadata, is_symlink)) = entry_metadata(&entry) else {
             continue;
         };
         nodes.push(FileNode {
@@ -309,6 +352,7 @@ fn read_directory(dir: &Path) -> Result<Vec<FileNode>, String> {
                 file_mtime_ms(&metadata)
             },
             excerpt: None,
+            is_symlink,
         });
     }
     nodes.sort_by_cached_key(|n| (!n.is_dir, n.name.to_lowercase()));
@@ -353,16 +397,25 @@ fn read_notes_index(dir: &Path, cancelled: &AtomicBool) -> Result<Vec<FileNode>,
                     children: Some(children),
                     mtime: None,
                     excerpt: None,
+                    is_symlink: false,
                 });
             }
-        } else if kind.is_file() && is_markdown(&name) {
+        } else if is_markdown(&name) && (kind.is_file() || kind.is_symlink()) {
+            // A symlinked note is indexed when its target is a file.
+            let Ok(metadata) = fs::metadata(&path) else {
+                continue;
+            };
+            if !metadata.is_file() {
+                continue;
+            }
             nodes.push(FileNode {
                 name,
                 path: path.to_string_lossy().into_owned(),
                 is_dir: false,
                 children: None,
-                mtime: entry.metadata().ok().and_then(|m| file_mtime_ms(&m)),
+                mtime: file_mtime_ms(&metadata),
                 excerpt: None,
+                is_symlink: kind.is_symlink(),
             });
         }
     }
@@ -790,6 +843,60 @@ mod browsing_tests {
         assert!(nodes[1].mtime.is_some());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn directory_symlinks_are_listed_as_expandable_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = tempfile::tempdir().unwrap();
+        fs::write(target.path().join("linked.md"), "body").unwrap();
+        fs::write(dir.path().join("real.md"), "body").unwrap();
+        std::os::unix::fs::symlink(target.path(), dir.path().join("link-dir")).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("real.md"), dir.path().join("link.md")).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("missing"), dir.path().join("dangling"))
+            .unwrap();
+
+        let nodes = read_directory(dir.path()).unwrap();
+        let names: Vec<_> = nodes.iter().map(|n| n.name.as_str()).collect();
+        assert_eq!(names, ["link-dir", "dangling", "link.md", "real.md"]);
+        assert!(nodes[0].is_dir);
+        assert!(nodes.iter().skip(1).all(|n| !n.is_dir));
+        let links: Vec<_> = nodes.iter().map(|n| n.is_symlink).collect();
+        assert_eq!(links, [true, true, true, false]);
+        // The link keeps its own (link) path so the frontend cache key stays
+        // under the workspace root; expanding it reads through the link.
+        assert_eq!(nodes[0].path, dir.path().join("link-dir").to_string_lossy());
+        let inside = read_directory(Path::new(&nodes[0].path)).unwrap();
+        assert_eq!(inside.len(), 1);
+        assert_eq!(inside[0].name, "linked.md");
+        assert!(inside[0].mtime.is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn full_tree_follows_directory_symlinks_but_not_cycles() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = tempfile::tempdir().unwrap();
+        fs::write(target.path().join("linked.md"), "# Linked\n\npreview").unwrap();
+        fs::create_dir(dir.path().join("sub")).unwrap();
+        std::os::unix::fs::symlink(target.path(), dir.path().join("link-dir")).unwrap();
+        // Points back at the workspace root: must not recurse forever.
+        std::os::unix::fs::symlink(dir.path(), dir.path().join("sub/self")).unwrap();
+
+        let nodes = read_tree(dir.path()).unwrap();
+        let link = nodes.iter().find(|n| n.name == "link-dir").unwrap();
+        assert!(link.is_dir);
+        assert!(link.is_symlink);
+        let children = link.children.as_ref().unwrap();
+        assert_eq!(children.len(), 1);
+        assert!(!children[0].is_symlink);
+        assert_eq!(children[0].excerpt.as_deref(), Some("preview"));
+        let sub = nodes.iter().find(|n| n.name == "sub").unwrap();
+        let cycle = &sub.children.as_ref().unwrap()[0];
+        assert_eq!(cycle.name, "self");
+        assert!(cycle.is_dir);
+        assert!(cycle.children.as_ref().unwrap().is_empty());
+    }
+
     #[test]
     fn notes_index_keeps_nested_notes_without_opening_contents() {
         let dir = tempfile::tempdir().unwrap();
@@ -814,6 +921,28 @@ mod browsing_tests {
         assert_eq!(deep.name, "note.MD");
         assert!(deep.excerpt.is_none());
         assert!(read_notes_index(dir.path(), &AtomicBool::new(true)).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn notes_index_keeps_symlinked_notes_but_skips_symlinked_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = tempfile::tempdir().unwrap();
+        fs::write(target.path().join("linked.md"), "body").unwrap();
+        std::os::unix::fs::symlink(target.path(), dir.path().join("link-dir")).unwrap();
+        std::os::unix::fs::symlink(target.path().join("linked.md"), dir.path().join("link.md"))
+            .unwrap();
+        std::os::unix::fs::symlink(
+            dir.path().join("missing.md"),
+            dir.path().join("dangling.md"),
+        )
+        .unwrap();
+
+        let nodes = read_notes_index(dir.path(), &AtomicBool::new(false)).unwrap();
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].name, "link.md");
+        assert!(nodes[0].is_symlink);
+        assert!(nodes[0].mtime.is_some());
     }
 
     #[test]

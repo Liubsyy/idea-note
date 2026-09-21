@@ -630,13 +630,25 @@ function buildDecorations(view: EditorView): DecorationSet {
                 codeLines.push(n);
               }
             }
+            // Presentation permits execution while keeping the source locked.
+            // Ordinary read-only preview still never offers to run.
+            const runnable =
+              canInteract(state) &&
+              fenceInfo.lang.length > 0 &&
+              resolveRunner(
+                fenceInfo.lang,
+                useAppStore.getState().codeRunConfig,
+              ) !== null;
             // Number the real code lines (1-based, per block) for the gutter.
+            // Only the first line sits under the action buttons, so only it
+            // reserves right padding — wider when run/output join copy.
             codeLines.forEach((n, i) => {
               const ln = state.doc.line(n);
               const cls =
                 "cm-md-codeblock cm-code-line" +
                 (plain ? " cm-code-plain" : "") +
                 (i === 0 ? " cm-code-first" : "") +
+                (i === 0 && runnable ? " cm-code-runnable" : "") +
                 (i === codeLines.length - 1 ? " cm-code-last" : "");
               ranges.push(
                 Decoration.line({
@@ -655,15 +667,6 @@ function buildDecorations(view: EditorView): DecorationSet {
                   return fenced ? t : t.replace(/^( {1,4}|\t)/, "");
                 })
                 .join("\n");
-              // Presentation permits execution while keeping the source locked.
-              // Ordinary read-only preview still never offers to run.
-              const runnable =
-                canInteract(state) &&
-                fenceInfo.lang &&
-                resolveRunner(
-                  fenceInfo.lang,
-                  useAppStore.getState().codeRunConfig,
-                ) !== null;
               ranges.push(
                 Decoration.widget({
                   widget: new CodeActionsWidget(code, runnable ? rawInfo : null),
