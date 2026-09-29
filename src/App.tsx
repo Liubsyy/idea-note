@@ -49,6 +49,7 @@ import {
   takePendingOpenFiles,
 } from "./lib/fs";
 import { runScopeHandlers, type EditorView } from "@codemirror/view";
+import { matchesAppCommand } from "./lib/codemirror/keybindings";
 import { getActiveView } from "./lib/codemirror/activeView";
 import { handleEditorDrop } from "./lib/attachments";
 import { setFileDropCursor } from "./lib/codemirror/fileDropCursor";
@@ -66,6 +67,13 @@ const EDITOR_MIN_W = 180;
 async function openExternalFile(path: string) {
   if (await pathIsDir(path)) return;
   await useAppStore.getState().openFile(path);
+}
+
+/** Close the active tab (or a folder listing). Once none is left the editor
+ *  just stays blank: the shortcut never closes the window. */
+function closeActiveTab() {
+  const s = useAppStore.getState();
+  if (s.activeFilePath || s.folderViewPath) void s.closeFile();
 }
 
 /**
@@ -431,6 +439,16 @@ function App() {
       // keeping a second fixed shortcut list in the app-level handler.
       if (view && !inOtherInput && !modalOpen && runScopeHandlers(view, e, "search-open")) {
         e.preventDefault();
+        return;
+      }
+      // Close tab (设置 › 快捷键, default ⌘W / Ctrl+W). The terminal keeps
+      // its Ctrl combos: Ctrl+W deletes a word there.
+      if (
+        matchesAppCommand("closeTab", e, state.editorKeybindings) &&
+        !(e.ctrlKey && target?.closest(".xterm"))
+      ) {
+        e.preventDefault();
+        if (!modalOpen) closeActiveTab();
         return;
       }
       if (

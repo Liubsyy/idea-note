@@ -9,6 +9,7 @@ import {
 import { findNode, isImageFile, isMarkdownFile } from "../../lib/fs";
 import type { FileNode } from "../../lib/fs";
 import { useAppStore } from "../../store/useAppStore";
+import { DirectoryEntries } from "../DirectoryEntries";
 
 /**
  * Right-pane listing of a folder's contents, shown when a folder is selected
@@ -50,18 +51,22 @@ export function FolderView({ path }: { path: string }) {
           </div>
           <ReadmeHint onCreate={createReadme} />
         </div>
-        <div
-          className="overflow-hidden rounded-xl [&>*+*]:border-t"
-          style={{ background: "var(--bg-elev)", border: "1px solid var(--border)" }}
-        >
-          {children.map((child) => (
-            <Entry
-              key={child.path}
-              node={child}
-              onOpen={() => (child.is_dir ? openFolder(child) : openFile(child.path))}
-            />
-          ))}
-        </div>
+        <DirectoryEntries directory={path} entries={children}>
+          {(visible) => (
+            <div
+              className="overflow-hidden rounded-xl [&>*+*]:border-t"
+              style={{ background: "var(--bg-elev)", border: "1px solid var(--border)" }}
+            >
+              {visible.map((child) => (
+                <Entry
+                  key={child.path}
+                  node={child}
+                  onOpen={() => (child.is_dir ? openFolder(child) : openFile(child.path))}
+                />
+              ))}
+            </div>
+          )}
+        </DirectoryEntries>
       </div>
     </div>
   );

@@ -12,6 +12,8 @@ mod encoding;
 mod files;
 mod fix_path;
 mod git;
+#[cfg(target_os = "macos")]
+mod menu;
 mod open_with;
 mod print;
 mod proc;
@@ -71,6 +73,13 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init());
+
+    // macOS: free ⌘W from the native Close Window for the close-tab shortcut
+    // (see menu.rs).
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .menu(menu::build)
+        .on_menu_event(menu::handle_event);
 
     // Persist and restore window size/position across launches (desktop only).
     // DECORATIONS is excluded: chrome is fixed per platform by the config

@@ -48,7 +48,8 @@ const PLATFORM: Platform =
 
 const IS_MAC = PLATFORM === "mac";
 
-export interface EditorCommandDef {
+/** A rebindable shortcut as shown in Settings (快捷键 tab). */
+export interface ShortcutDef {
   /** Stable id, used as the key in the persisted override map. */
   id: string;
   /** Chinese label shown in Settings. */
@@ -61,6 +62,9 @@ export interface EditorCommandDef {
   mac?: string;
   win?: string;
   linux?: string;
+}
+
+export interface EditorCommandDef extends ShortcutDef {
   /** The command to run. */
   run: Command;
   /** Settings section and whether the binding only applies to Markdown. */
@@ -129,17 +133,26 @@ export const EDITOR_COMMANDS: EditorCommandDef[] = [
   { id: "markdownMermaidState", label: "Mermaid 状态图", desc: "插入 Mermaid 状态图模板", defaultKey: "Mod-Alt-6", run: MARKDOWN_ACTIONS.markdownMermaidState, group: "markdown" },
 ];
 
+/**
+ * Shortcuts the app handles itself, outside the editor keymap: a window-level
+ * keydown listener matches them with matchesAppCommand. They share the
+ * override map (and conflict checks) with the editor commands.
+ */
+export const APP_COMMANDS: ShortcutDef[] = [
+  { id: "closeTab", label: "关闭标签页", desc: "关闭当前标签页，不会关闭窗口", defaultKey: "Mod-w" },
+];
+
 /** Run-functions the registry owns, so we can strip their stock bindings. */
 const managedRuns = new Set<Command>(EDITOR_COMMANDS.map((c) => c.run));
 
 /** This platform's built-in default for a command. */
-export function platformDefault(cmd: EditorCommandDef): string {
+export function platformDefault(cmd: ShortcutDef): string {
   return cmd[PLATFORM] ?? cmd.defaultKey;
 }
 
 /** The effective key for a command: a user override if present, else default. */
 export function effectiveKey(
-  cmd: EditorCommandDef,
+  cmd: ShortcutDef,
   overrides: Record<string, string>,
 ): string {
   const o = overrides[cmd.id];
@@ -291,6 +304,17 @@ export function keyFromEvent(e: KeyboardEvent): string | null {
 
   parts.push(base);
   return parts.join("-");
+}
+
+/** Whether a keydown event is the current binding of an APP_COMMANDS entry. */
+export function matchesAppCommand(
+  id: string,
+  e: KeyboardEvent,
+  overrides: Record<string, string>,
+): boolean {
+  const cmd = APP_COMMANDS.find((item) => item.id === id);
+  const pressed = cmd && keyFromEvent(e);
+  return !!pressed && canonicalKey(pressed) === canonicalKey(effectiveKey(cmd, overrides));
 }
 
 /** Canonicalise modifier aliases/order so equivalent bindings conflict. */

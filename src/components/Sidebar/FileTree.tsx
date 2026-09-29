@@ -16,6 +16,7 @@ import type { LucideIcon } from "lucide-react";
 import { isMarkdownFile, dirname, type FileNode } from "../../lib/fs";
 import { useAppStore } from "../../store/useAppStore";
 import { TreeDragProvider, useTreeDrag } from "./treeDrag";
+import { DirectoryEntries } from "../DirectoryEntries";
 
 interface Props {
   nodes: FileNode[];
@@ -44,22 +45,24 @@ function fileTypeVisual(name: string): { Icon: LucideIcon; color: string } {
   return { Icon: FileText, color: "var(--tree-icon)" };
 }
 
-function Rows({ nodes, depth, onContextMenu }: Required<Pick<Props, "nodes" | "depth">> & {
+function Rows({ nodes, directory, depth, onContextMenu }: Required<Pick<Props, "nodes" | "depth">> & {
+  directory: string;
   onContextMenu: Props["onContextMenu"];
 }) {
   return (
-    <>
-      {nodes.map((node) => (
+    <DirectoryEntries directory={directory} entries={nodes}>
+      {(visible) => visible.map((node) => (
         <TreeRow key={node.path} node={node} depth={depth} onContextMenu={onContextMenu} />
       ))}
-    </>
+    </DirectoryEntries>
   );
 }
 
 export function FileTree({ nodes, onContextMenu }: Props) {
+  const workspacePath = useAppStore((s) => s.workspacePath);
   return (
     <TreeDragProvider className="px-1.5">
-      <Rows nodes={nodes} depth={0} onContextMenu={onContextMenu} />
+      <Rows nodes={nodes} directory={workspacePath ?? ""} depth={0} onContextMenu={onContextMenu} />
     </TreeDragProvider>
   );
 }
@@ -187,7 +190,7 @@ function TreeRow({
               borderLeft: "1px solid var(--border)",
             }}
           >
-            <Rows nodes={node.children} depth={depth + 1} onContextMenu={onContextMenu} />
+            <Rows nodes={node.children} directory={node.path} depth={depth + 1} onContextMenu={onContextMenu} />
           </div>
         )}
       </div>
@@ -206,11 +209,11 @@ function TreeRow({
         openFile(node.path);
       }}
       onContextMenu={(e) => onContextMenu(e, node)}
-      className={`flex cursor-pointer items-center gap-1.5 rounded-md pr-2 transition-colors ${
+      className={`flex cursor-pointer items-center gap-1 rounded-md pr-2 transition-colors ${
         compactSidebar ? "py-0.5" : "py-1"
       }`}
       style={{
-        paddingLeft: 8,
+        paddingLeft: 4,
         opacity: isDragging ? 0.5 : 1,
         background: isActive ? "var(--active)" : "transparent",
         color: isActive
@@ -226,6 +229,8 @@ function TreeRow({
         if (!isActive) e.currentTarget.style.background = "transparent";
       }}
     >
+      {/* Reserve the folder chevron's slot so sibling icons and names align. */}
+      <span aria-hidden="true" className="-m-0.5 h-5 w-5 shrink-0" />
       <Icon
         size={15}
         className="shrink-0"

@@ -123,11 +123,14 @@ import {
   type ThemeDef,
 } from "../themes";
 import {
+  APP_COMMANDS,
   canonicalKey,
   EDITOR_COMMANDS,
   effectiveKey,
   formatKey,
   keyFromEvent,
+  matchesAppCommand,
+  type ShortcutDef,
 } from "../lib/codemirror/keybindings";
 
 type TabId =
@@ -217,6 +220,19 @@ export function SettingsWindow() {
 
   const [activeTab, setActiveTab] = useState<TabId>(readInitialTab);
   const active = tabs.find((t) => t.id === activeTab)!;
+
+  // The settings window has no tabs, so the close-tab shortcut closes the
+  // window itself. A key being recorded never gets here (the recorder stops it).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (!matchesAppCommand("closeTab", e, useAppStore.getState().editorKeybindings)) return;
+      e.preventDefault();
+      void getCurrentWindow().close();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // When an already-open settings window is reopened on a specific tab (e.g. the
   // empty-state 远程同步 button), switch to it.
@@ -622,12 +638,13 @@ function ShortcutsTab({
 }) {
   // Effective key -> command ids, so a combo bound to two commands is flagged.
   const keyUsers = new Map<string, string[]>();
-  for (const cmd of EDITOR_COMMANDS) {
+  for (const cmd of [...APP_COMMANDS, ...EDITOR_COMMANDS]) {
     const k = canonicalKey(effectiveKey(cmd, overrides));
     keyUsers.set(k, [...(keyUsers.get(k) ?? []), cmd.id]);
   }
   const hasOverrides = Object.keys(overrides).length > 0;
-  const groups = [
+  const groups: { id: string; label: string; commands: ShortcutDef[] }[] = [
+    { id: "app", label: "标签页", commands: APP_COMMANDS },
     {
       id: "general" as const,
       label: "通用编辑",
