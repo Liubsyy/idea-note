@@ -4,9 +4,12 @@ import { toDisplaySrc } from "../../lib/imagePath";
 /** Read-only viewer for image files opened from the sidebar. */
 export function ImageView({
   path,
+  src,
   presentationScale,
 }: {
   path: string;
+  /** In-memory SVG preview; other images keep using their disk URL. */
+  src?: string;
   /** Omitted in the normal editor; supplied by immersive presentation mode. */
   presentationScale?: number;
 }) {
@@ -28,7 +31,7 @@ export function ImageView({
         }}
       >
         <img
-          src={toDisplaySrc(path)}
+          src={src ?? toDisplaySrc(path)}
           alt={basename(path)}
           className="object-contain"
           style={{

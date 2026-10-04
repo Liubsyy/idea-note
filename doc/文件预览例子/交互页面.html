@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>今日小目标 · HTML 预览例子</title>
+  <link rel="stylesheet" href="./assets/page.css">
+</head>
+<body>
+  <main class="card">
+    <img class="icon" src="./assets/小目标 图标.svg" alt="小目标图标" width="56" height="56">
+    <p class="eyebrow">IDEA NOTE · HTML 预览</p>
+    <h1>今日小目标</h1>
+    <p class="intro">先完成一件小事，再开始下一件。</p>
+    <div class="progress" role="status" aria-live="polite">
+      <strong id="count">0</strong><span> 项已完成</span>
+    </div>
+    <div class="actions">
+      <button id="increment" type="button">完成一项</button>
+      <button id="reset" class="secondary" type="button">重新开始</button>
+    </div>
+    <p id="message" class="message">正在加载模块…</p>
+    <footer>
+      <span id="inline-status">内嵌脚本待加载</span>
+      <span id="external-status">外部脚本待加载</span>
+      <span id="module-status">ES 模块待加载</span>
+    </footer>
+  </main>
+  <script>
+    document.getElementById("inline-status").textContent = "✓ 内嵌脚本";
+  </script>
+  <script src="./assets/classic.js"></script>
+  <script type="module" src="./assets/page.js"></script>
+</body>
+</html>

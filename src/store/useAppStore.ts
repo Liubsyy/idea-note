@@ -30,7 +30,7 @@ import {
   movePath,
   dirname,
   basename,
-  isImageFile,
+  isBinaryImageFile,
 } from "../lib/fs";
 import { DirectoryTree } from "../lib/directoryTree";
 import { clearNoteExcerpts } from "../lib/noteExcerpts";
@@ -2070,8 +2070,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
       return;
     }
-    // Images are shown in an <img>, not read as text.
-    if (isImageFile(path)) {
+    // Binary images have no text buffer. SVG uses the normal read/save lifecycle.
+    if (isBinaryImageFile(path)) {
       set((s) => ({
         activeFilePath: path,
         openTabs: addTab(s.openTabs, path, get().editorMaxTabs, s.activeFilePath),
@@ -2357,7 +2357,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (
       !activeFilePath ||
       isDraftPath(activeFilePath) ||
-      isImageFile(activeFilePath) ||
+      isBinaryImageFile(activeFilePath) ||
       // No snapshot yet (still loading, or a previous stat failed).
       !diskStat
     )
@@ -3323,7 +3323,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           activeFilePath &&
           !isDraftPath(activeFilePath) &&
           !get().isDirty &&
-          !isImageFile(activeFilePath)
+          !isBinaryImageFile(activeFilePath)
         ) {
           try {
             const fresh = await readFile(activeFilePath);
@@ -3687,7 +3687,7 @@ if (!isSettingsWindow) {
     void (async () => {
       try {
         const active = useAppStore.getState().activeFilePath;
-        if (payload.reload && active && !isDraftPath(active) && !isImageFile(active)) {
+        if (payload.reload && active && !isDraftPath(active) && !isBinaryImageFile(active)) {
           try {
             const content = await readFile(active);
             if (useAppStore.getState().activeFilePath === active) {

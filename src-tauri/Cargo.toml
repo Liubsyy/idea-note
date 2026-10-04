@@ -1,6 +1,6 @@
 [package]
 name = "idea-note"
-version = "1.2.4"
+version = "1.2.6"
 description = "Idea Note - a Typora-like Markdown notebook"
 authors = ["liubsyy"]
 edition = "2021"
@@ -31,6 +31,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 portable-pty = "0.9.0"
 regex = "1"
+percent-encoding = "2"
 tempfile = "3"
 # Restore the user's login-shell PATH for GUI launches (see fix_path.rs).
 dirs = "6"

@@ -112,8 +112,11 @@ const viewStateCache = new Map<
  * markdown, the cursor's line shows source, every other line renders. Mounted
  * fresh per file (App keys it on docKey).
  */
-export function CodeMirrorEditor() {
+export function CodeMirrorEditor({ active = true }: { active?: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<EditorView | null>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const [menu, setMenu] = useState<EditorMenuState | null>(null);
   const setContent = useAppStore((s) => s.setContent);
   const setActiveFormats = useAppStore((s) => s.setActiveFormats);
@@ -252,7 +255,8 @@ export function CodeMirrorEditor() {
     });
 
     const view = new EditorView({ state, parent: hostRef.current });
-    setActiveView(view);
+    viewRef.current = view;
+    if (activeRef.current) setActiveView(view);
     // Intentionally not focused on open: the whole document stays rendered and
     // no caret shows until the user clicks into the text.
 
@@ -294,9 +298,10 @@ export function CodeMirrorEditor() {
       if (desc) {
         desc
           .load()
-          .then((lang) =>
-            view.dispatch({ effects: langCompartment.reconfigure(lang) }),
-          )
+          .then((lang) => {
+            if (viewRef.current === view)
+              view.dispatch({ effects: langCompartment.reconfigure(lang) });
+          })
           .catch(() => {});
       }
     }
@@ -304,7 +309,8 @@ export function CodeMirrorEditor() {
     return () => {
       scroller.removeEventListener("scroll", onScroll);
       window.clearTimeout(scrollTimer);
-      setActiveView(null);
+      if (getActiveView() === view) setActiveView(null);
+      viewRef.current = null;
       view.destroy();
       // Revealing a block is scoped to this viewing of the note, not to the
       // session: closing it re-seals every block, so coming back shows locked
@@ -324,15 +330,29 @@ export function CodeMirrorEditor() {
     vaultRotationBusy,
   ]);
 
+  // SVG's image mode hides this editor without losing its history. Global
+  // commands must not target that invisible buffer; remeasure when shown again.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    if (active) {
+      setActiveView(view);
+      view.requestMeasure();
+    } else {
+      if (getActiveView() === view) setActiveView(null);
+      setMenu(null);
+    }
+  }, [active]);
+
   // Swap view-mode extensions when the user switches the editor mode tab,
   // reconfiguring in place so the cursor, scroll position and history survive.
   useEffect(() => {
-    const view = getActiveView();
+    const view = viewRef.current;
     if (!view) return;
     const path = useAppStore.getState().activeFilePath;
     if (!path || (!isMarkdownFile(path) && !isDraftPath(path))) return;
     const applyMode = () => {
-      if (getActiveView() !== view) return;
+      if (viewRef.current !== view) return;
       view.dispatch({
         effects: previewCompartment.current.reconfigure(
           modeExtensions(
@@ -376,7 +396,7 @@ export function CodeMirrorEditor() {
   // Lock/unlock the underlying editor without remounting it. This preserves
   // the current buffer, cursor, history and scroll position across presentation.
   useEffect(() => {
-    const view = getActiveView();
+    const view = viewRef.current;
     if (!view) return;
     view.dispatch({
       effects: presentationCompartment.current.reconfigure(
@@ -392,7 +412,7 @@ export function CodeMirrorEditor() {
   // buttons appear without reopening the file. Decorations only rebuild on
   // doc/selection changes, so nudge them.
   useEffect(() => {
-    getActiveView()?.dispatch({ effects: codeRunnersChanged.of(null) });
+    viewRef.current?.dispatch({ effects: codeRunnersChanged.of(null) });
   }, [codeRunConfig]);
 
   // Right-click: keep the selection when clicking inside it, otherwise move
@@ -401,7 +421,7 @@ export function CodeMirrorEditor() {
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     if (presentationActive) return;
-    const view = getActiveView();
+    const view = viewRef.current;
     if (!view) return;
     const resource = (e.target as HTMLElement).closest?.(".cm-md-resource");
     const resourceFrom = Number(resource?.getAttribute("data-resource-from"));

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:preview-tests": "vite --config tests/vite.preview.config.ts --port 1427 --cors",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "mock:ai": "node mock-ai/server.mjs",
@@ -18,6 +19,8 @@
     "test:directory-tree": "node --test --experimental-strip-types tests/directoryTree.test.mjs tests/workspaceLoading.test.mjs tests/directoryEntries.test.mjs",
     "test:sidebar-drop": "node --test --experimental-strip-types tests/sidebarDrop.test.mjs",
     "test:resource-preview": "node --test tests/resourcePreview.test.mjs tests/resourceClipboard.test.mjs",
+    "test:svg-preview": "node --test tests/svgPreview.test.mjs",
+    "test:file-preview": "node --test --experimental-strip-types tests/structuredPreview.test.mjs tests/svgPreview.test.mjs",
     "test:input-schema": "node --test --experimental-strip-types tests/inputSchema.test.mjs",
     "test:secret-block": "node --test --experimental-strip-types tests/secretBlock.test.mjs",
     "test:vault-setup-stage": "node --test --experimental-strip-types tests/vaultSetupStage.test.mjs",
@@ -47,12 +50,14 @@
     "construct-style-sheets-polyfill": "^3.1.0",
     "diff": "^9.0.0",
     "dompurify": "^3.4.8",
+    "jsonc-parser": "^3.3.1",
     "katex": "^0.17.0",
     "lucide-react": "^0.469.0",
     "markdown-it": "^14.2.0",
     "mermaid": "10.9.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "yaml": "^2.9.1",
     "zustand": "^5.0.2"
   },
   "devDependencies": {

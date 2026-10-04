@@ -1,0 +1,19 @@
+{
+  "name": "我的小项目",
+  "version": "1.2.6",
+  "enabled": true,
+  "description": null,
+  "largeInteger": 900719925474099312345,
+  "settings": {
+    "theme": "light",
+    "autosave": false,
+    "tags": ["笔记", "预览", "中文路径"]
+  },
+  "tasks": [
+    { "id": 1, "title": "打开分屏模式", "done": true },
+    { "id": 2, "title": "在源码中修改这个标题", "done": false },
+    { "id": 3, "title": "试试格式化源码与撤销", "done": false }
+  ],
+  "emptyObject": {},
+  "emptyArray": []
+}

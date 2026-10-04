@@ -1,0 +1,93 @@
+.svg-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+.svg-editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--toolbar-bg);
+}
+.svg-editor-status { color: var(--text-muted); font-size: 12px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.preview-editor-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.preview-editor-source-actions { display: flex; justify-content: flex-end; flex-shrink: 0; gap: 6px; padding: 4px 12px; border-bottom: 1px solid var(--border); background: var(--toolbar-bg); }
+.preview-editor-refresh { padding: 4px; color: var(--text-muted); }
+.preview-editor-refresh:hover { color: var(--accent); }
+.preview-editor-narrow .svg-editor-split { flex-direction: column; }
+.preview-editor-narrow .svg-editor-split .svg-editor-source { border-right: 0; border-bottom: 1px solid var(--border); }
+.preview-editor-narrow .svg-editor-status { display: none; }
+.preview-editor-narrow .svg-editor-toolbar { justify-content: flex-end; padding-inline: 4px; }
+.preview-editor-narrow .preview-editor-source-actions { padding-inline: 4px; }
+.preview-editor-narrow .svg-editor-modes button { padding-inline: 4px; gap: 3px; }
+.preview-editor-compact .svg-editor-modes button span { display: none; }
+.preview-editor-compact .svg-editor-modes button { padding: 5px; }
+.html-file-preview { width: 100%; height: 100%; border: 0; background: white; }
+.html-preview-container { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.html-preview-stage { position: relative; flex: 1; min-height: 0; }
+.html-preview-loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 16px; background: var(--bg); color: var(--text-muted); font-size: 13px; text-align: center; }
+.html-preview-spinner { flex-shrink: 0; color: var(--accent); animation: html-preview-spin 1s linear infinite; will-change: transform; }
+.html-preview-loading-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.html-preview-loading-actions button { padding: 5px 12px; border: 1px solid var(--border); border-radius: 5px; color: var(--text); }
+.html-preview-loading-actions button:hover { background: var(--hover); }
+@keyframes html-preview-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .html-preview-spinner { animation: none; } }
+.structured-format-source { display: flex; align-items: center; gap: 5px; padding: 4px 7px; border-radius: 5px; color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+.structured-format-source:hover { color: var(--accent); background: var(--hover); }
+.svg-editor-modes {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-elev);
+}
+.svg-editor-modes button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.svg-editor-modes button:hover { background: var(--hover); color: var(--text); }
+.svg-editor-modes button[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--bg);
+  box-shadow: 0 1px 2px var(--shadow);
+}
+.svg-editor-panes { display: flex; flex: 1; min-height: 0; min-width: 0; }
+.svg-editor-source, .svg-editor-preview { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.svg-editor [hidden] { display: none; }
+.svg-editor-split .svg-editor-source { border-right: 1px solid var(--border); }
+.svg-editor-error {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  max-height: 100px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  background: var(--bg-elev);
+  font-size: 12px;
+}
+.svg-editor-error span:last-child { color: var(--text-muted); }
+.svg-editor-placeholder { display: grid; place-items: center; height: 100%; color: var(--text-muted); font-size: 13px; }
+@media (max-width: 640px) {
+  .svg-editor-split { flex-direction: column; }
+  .svg-editor-split .svg-editor-source { border-right: 0; border-bottom: 1px solid var(--border); }
+  .svg-editor-status { display: none; }
+  .svg-editor-toolbar { justify-content: flex-end; }
+}

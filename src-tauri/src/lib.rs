@@ -12,6 +12,7 @@ mod encoding;
 mod files;
 mod fix_path;
 mod git;
+mod html_preview;
 #[cfg(target_os = "macos")]
 mod menu;
 mod open_with;
@@ -112,6 +113,19 @@ pub fn run() {
     vault.start_expiry_watchdog();
 
     builder
+        .manage(html_preview::PreviewState::default())
+        .register_asynchronous_uri_scheme_protocol("note-preview", |context, request, responder| {
+            use tauri::Manager;
+            let state = context.app_handle().state::<html_preview::PreviewState>().inner().clone();
+            let owner = context.webview_label().to_owned();
+            std::thread::spawn(move || responder.respond(state.respond(&owner, request)));
+        })
+        .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                use tauri::Manager;
+                window.state::<html_preview::PreviewState>().remove_owner(window.label());
+            }
+        })
         .manage(TerminalState::default())
         .manage(CodeRunState::default())
         .manage(tree::NoteSearchState::default())
@@ -119,6 +133,8 @@ pub fn run() {
         .manage(vault)
         .manage(pending)
         .invoke_handler(tauri::generate_handler![
+            html_preview::create_preview_session,
+            html_preview::close_preview_session,
             open_with::take_pending_open_files,
             tree::list_dir,
             tree::list_directory,

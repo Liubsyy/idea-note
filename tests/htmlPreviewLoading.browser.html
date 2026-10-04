@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HTML 按需加载与慢资源测试</title></head>
+<body>
+  <div style="padding:12px;display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+    <button id="slow-example">打开慢加载例子</button>
+    <button id="error-example">打开加载失败例子</button>
+    <button id="run-tests">运行自动测试</button>
+    <span id="activity" role="status">尚未创建预览</span>
+  </div>
+  <div id="test-result" style="padding:12px">默认源码不运行脚本。点击预览或分屏：资源会延迟 9 秒加载，可观察动画、取消和重试。</div>
+  <div id="test-editor" style="height:560px;border:1px solid var(--border)"></div>
+  <script type="module" src="./htmlPreviewLoading.browser.tsx"></script>
+</body>
+</html>

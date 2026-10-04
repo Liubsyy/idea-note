@@ -1,0 +1,4 @@
+body { font-family: sans-serif; background: rgb(241, 246, 252); }
+h1 { color: rgb(47, 85, 136); }
+#counter { padding: 8px 22px; }
+#icon { width: 40px; height: 40px; }

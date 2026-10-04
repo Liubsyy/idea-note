@@ -1,0 +1,34 @@
+# 格式化视图只读；点击「格式化源码」才会调整原文。
+name: 我的小项目
+version: "1.2.6"
+enabled: true
+description: null
+largeInteger: 900719925474099312345
+
+settings: &defaults
+  theme: light
+  autosave: false
+  tags:
+    - 笔记
+    - 预览
+
+# 格式化保留别名引用，不会复制或递归展开内容。
+development: *defaults
+
+tasks:
+  - id: 1
+    title: 打开分屏模式
+    done: true
+  - id: 2
+    title: 在源码中修改这个标题
+    done: false
+
+emptyObject: {}
+emptyArray: []
+
+---
+# 第二份文档：循环别名也保留为引用。
+name: 引用示例
+node: &self
+  title: 循环引用节点
+  next: *self

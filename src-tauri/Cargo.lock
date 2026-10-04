@@ -1959,7 +1959,7 @@ checksum = "3d3067d79b975e8844ca9eb072e16b31c3c1c36928edf9c6789548c524d0d954"
 
 [[package]]
 name = "idea-note"
-version = "1.2.4"
+version = "1.2.6"
 dependencies = [
  "arboard",
  "argon2",
@@ -1975,6 +1975,7 @@ dependencies = [
  "objc2-foundation",
  "objc2-pdf-kit",
  "objc2-web-kit",
+ "percent-encoding",
  "png 0.17.16",
  "portable-pty",
  "rand 0.8.8",

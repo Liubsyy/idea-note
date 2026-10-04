@@ -188,6 +188,12 @@ export const isMarkdownFile = (path: string) => /\.(md|markdown)$/i.test(path);
 export const isImageFile = (path: string) =>
   /\.(png|jpe?g|gif|webp|bmp|svg|avif|ico)$/i.test(path);
 
+export const isSvgFile = (path: string) => /\.svg$/i.test(path);
+
+/** SVG remains an image for embeds/icons, but its document is editable text. */
+export const isBinaryImageFile = (path: string) =>
+  isImageFile(path) && !isSvgFile(path);
+
 /** Basename helper that works for both `/` and `\` separators. */
 export function basename(path: string): string {
   const parts = path.split(/[\\/]/);

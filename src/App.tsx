@@ -21,6 +21,8 @@ import {
   EmptyEditor,
 } from "./components/Editor/CodeMirrorEditor";
 import { ImageView } from "./components/Editor/ImageView";
+import { FilePreviewEditor } from "./components/Editor/FilePreviewEditor";
+import { filePreviewKind } from "./lib/filePreview";
 import { FolderView } from "./components/Editor/FolderView";
 import { PresentationControls } from "./components/Editor/PresentationControls";
 import { SlidePresentation } from "./components/Editor/SlidePresentation";
@@ -874,7 +876,11 @@ function App() {
             <div className="relative min-h-0 flex-1 overflow-hidden">
               {/* Both presentation modes display this same mounted editor. */}
               <div className="presentation-editor h-full">
-                {isImageFile(activeFilePath) ? (
+                {filePreviewKind(activeFilePath) ? (
+                  <ErrorBoundary resetKey={docKey}>
+                    <FilePreviewEditor key={docKey} path={activeFilePath} kind={filePreviewKind(activeFilePath)!} />
+                  </ErrorBoundary>
+                ) : isImageFile(activeFilePath) ? (
                   <ImageView
                     path={activeFilePath}
                     presentationScale={

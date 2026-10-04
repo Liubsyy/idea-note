@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HTML 按需运行与延迟初始化</title>
+  <style>
+    body { margin: 0; padding: 32px; font: 16px/1.7 system-ui, "Microsoft YaHei", sans-serif; color: #273b32; background: #f2f6f3; }
+    main { max-width: 600px; margin: auto; padding: 28px; border-radius: 16px; background: white; }
+    h1 { font-size: 24px; margin-top: 0; }
+    .waiting { display: flex; align-items: center; gap: 12px; }
+    .spinner { width: 20px; height: 20px; border: 3px solid #dce9df; border-top-color: #39755b; border-radius: 50%; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media(prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+    button { padding: 8px 16px; font: inherit; border: 1px solid #39755b; border-radius: 6px; color: #39755b; background: white; cursor: pointer; }
+    [hidden] { display: none; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>按需运行测试</h1>
+    <p id="started">脚本尚未执行</p>
+    <div id="waiting" class="waiting" role="status"><span class="spinner" aria-hidden="true"></span><span>正在模拟 5 秒异步初始化…</span></div>
+    <p id="ready" hidden>初始化完成，可以点击按钮。</p>
+    <button id="count" disabled>点击次数：0</button>
+    <p id="alive">页面运行：0 秒</p>
+    <p>切回源码会销毁本页面；再次点击预览或分屏时，开始时间和计数会重置。</p>
+  </main>
+  <script>
+    document.getElementById('started').textContent = '脚本开始执行：' + new Date().toLocaleTimeString();
+    let elapsed = 0;
+    let count = 0;
+    setInterval(() => {
+      elapsed++;
+      document.getElementById('alive').textContent = '页面运行：' + elapsed + ' 秒';
+    }, 1000);
+    // Asynchronous waiting keeps the UI responsive. Do not use a busy loop.
+    setTimeout(() => {
+      document.getElementById('waiting').hidden = true;
+      document.getElementById('ready').hidden = false;
+      document.getElementById('count').disabled = false;
+    }, 5000);
+    document.getElementById('count').onclick = event => {
+      count++;
+      event.target.textContent = '点击次数：' + count;
+    };
+  </script>
+</body>
+</html>

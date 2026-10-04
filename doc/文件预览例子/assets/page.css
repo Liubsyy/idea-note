@@ -1,0 +1,21 @@
+:root {
+  --accent: #39755b;
+  font-family: system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+  color: #243c32;
+  background: #f3f6f1;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 32px 20px; }
+.card { max-width: 540px; margin: 0 auto; padding: 32px; border: 1px solid #dce5db; border-radius: 20px; background: #fff; }
+.icon { display: block; margin-bottom: 24px; }
+.eyebrow { color: var(--accent); font-size: 12px; letter-spacing: 2px; }
+h1 { margin: 12px 0; font-size: clamp(26px, 6vw, 36px); }
+.intro, .message { color: #62766c; line-height: 1.7; }
+.progress { margin: 28px 0; padding: 20px; border-radius: 12px; background: #f3f6f1; }
+.progress strong { font-size: 40px; color: var(--accent); }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; }
+button { padding: 12px 18px; border: 1px solid var(--accent); border-radius: 10px; color: #fff; background: var(--accent); font: inherit; cursor: pointer; }
+button:hover { filter: brightness(1.08); }
+button:focus-visible { outline: 3px solid #e3b855; outline-offset: 3px; }
+.secondary { color: var(--accent); background: #fff; }
+footer { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; padding-top: 20px; border-top: 1px solid #e6ece5; color: #62766c; font-size: 12px; }
