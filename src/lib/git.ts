@@ -228,7 +228,11 @@ export interface FileCommit {
  * pathspec prefix makes git resolve it against cwd, not the repo root.
  */
 export async function listFileHistory(dir: string, relPath: string): Promise<FileCommit[]> {
+  const rel = relPath.replace(/\\/g, "/");
+  if (!rel || rel.startsWith("/") || /^[a-zA-Z]:/.test(rel) || rel.split("/").some(part => !part || part === "." || part === ".."))
+    throw new GitError("文件历史需要项目内的有效文件路径", relPath);
   const out = await gitRun(dir, [
+    "--literal-pathspecs",
     // Keep CJK filenames readable instead of octal-escaped.
     "-c",
     "core.quotepath=false",
@@ -241,7 +245,7 @@ export async function listFileHistory(dir: string, relPath: string): Promise<Fil
     // the fixed fields, with the free-form subject last.
     "--format=%x01%H%x09%h%x09%an%x09%at%x09%s",
     "--",
-    "./" + relPath.replace(/\\/g, "/"),
+    "./" + rel,
   ]);
   if (out.code !== 0) {
     // Fresh repo with an unborn HEAD simply has no history yet.
@@ -347,7 +351,7 @@ export async function listWorkingChanges(dir: string, relPath = ""): Promise<Com
   const rel = relPath.replace(/\\/g, "/");
   // -uall lists files inside untracked directories individually instead of
   // collapsing them to "dir/".
-  const args = ["-c", "core.quotepath=false", "status", "--porcelain", "-uall"];
+  const args = ["--literal-pathspecs", "-c", "core.quotepath=false", "status", "--porcelain", "-uall"];
   if (rel) args.push("--", "./" + rel);
   const out = await gitOk(dir, args);
 

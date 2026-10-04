@@ -46,6 +46,21 @@ function toNativeSeparators(path: string, separator: "/" | "\\"): string {
   return separator === "\\" ? path.replace(/\//g, "\\") : path;
 }
 
+/** Relative path for an existing absolute path, or null outside the workspace.
+ * Empty string means the workspace itself; it must never mean an external file.
+ */
+export function relativePathWithinWorkspace(workspacePath: string, path: string): string | null {
+  if (!isAbsolutePath(workspacePath.replace(/\\/g, "/")) || !isAbsolutePath(path.replace(/\\/g, "/"))) return null;
+  const workspace = normalizePath(workspacePath);
+  const candidate = normalizePath(path);
+  const insensitive = usesCaseInsensitivePaths(workspace);
+  const root = insensitive ? workspace.toLowerCase() : workspace;
+  const target = insensitive ? candidate.toLowerCase() : candidate;
+  const boundary = root.endsWith("/") ? root : `${root}/`;
+  if (target !== root && !target.startsWith(boundary)) return null;
+  return candidate.slice(workspace.length).replace(/^\//, "");
+}
+
 /**
  * Resolve a user/model-provided path inside a workspace without touching the
  * filesystem. Both slash styles are accepted on every platform; the returned

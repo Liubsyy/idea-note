@@ -11,6 +11,7 @@ import { useAppStore } from "../store/useAppStore";
 import { basename, isImageFile, isMarkdownFile, readFile } from "../lib/fs";
 import { inlineMath } from "../lib/codemirror/math";
 import { cmHighlighting, cmHistoryDiffTheme } from "../lib/codemirror/theme";
+import { relativePathWithinWorkspace } from "../lib/workspacePath";
 import {
   listFileHistory,
   listDirHistory,
@@ -56,10 +57,6 @@ function formatRelTime(ts: number): string {
 
 const errMessage = (e: unknown) =>
   e instanceof GitError || e instanceof Error ? e.message : String(e);
-
-/** Workspace-relative path ("" when `path` IS the workspace). */
-const relativeTo = (workspacePath: string, path: string) =>
-  path.slice(workspacePath.length).replace(/^[\\/]/, "");
 
 /* --------------------------------- shell -------------------------------- */
 
@@ -306,6 +303,14 @@ function TabbedHistoryDialog({ path }: { path: string }) {
 
 function FileHistoryContent({ path }: { path: string }) {
   const workspacePath = useAppStore((s) => s.workspacePath);
+  if (!workspacePath) return <CenterNote>还没有打开工作区</CenterNote>;
+  const relPath = relativePathWithinWorkspace(workspacePath, path);
+  if (!relPath) return <CenterNote>当前文件不属于此项目，无法查看文件历史。可切换到「全局历史」查看项目记录。</CenterNote>;
+  return <ScopedFileHistoryContent key={JSON.stringify([workspacePath, path])}
+    path={path} workspacePath={workspacePath} relPath={relPath} />;
+}
+
+function ScopedFileHistoryContent({ path, workspacePath, relPath }: { path: string; workspacePath: string; relPath: string }) {
   const activeFilePath = useAppStore((s) => s.activeFilePath);
   const editorContent = useAppStore((s) => s.content);
   const openConfirm = useAppStore((s) => s.openConfirm);
@@ -343,10 +348,9 @@ function FileHistoryContent({ path }: { path: string }) {
   useEffect(() => {
     if (!workspacePath) return;
     let cancelled = false;
-    const rel = relativeTo(workspacePath, path);
     Promise.all([
-      listFileHistory(workspacePath, rel),
-      listWorkingChanges(workspacePath, rel).catch(() => []),
+      listFileHistory(workspacePath, relPath),
+      listWorkingChanges(workspacePath, relPath).catch(() => []),
     ])
       .then(([list, working]) => {
         if (cancelled) return;
@@ -364,7 +368,7 @@ function FileHistoryContent({ path }: { path: string }) {
     return () => {
       cancelled = true;
     };
-  }, [workspacePath, path, reloadToken]);
+  }, [workspacePath, relPath, reloadToken]);
 
   // Load the comparison pair. Normal commits show what that commit changed:
   // parent version -> selected version. The working entry shows the last
@@ -517,7 +521,7 @@ function DirHistoryDialog({ path }: { path: string }) {
   const workspacePath = useAppStore((s) => s.workspacePath);
   const closeHistory = useAppStore((s) => s.closeHistory);
 
-  const relPath = workspacePath ? relativeTo(workspacePath, path) : "";
+  const relPath = workspacePath ? relativePathWithinWorkspace(workspacePath, path) : null;
   const title = relPath
     ? `文件夹历史 — ${basename(path)}`
     : `全局历史 — ${basename(path)}`;
@@ -531,11 +535,17 @@ function DirHistoryDialog({ path }: { path: string }) {
 
 function DirHistoryContent({ path }: { path: string }) {
   const workspacePath = useAppStore((s) => s.workspacePath);
+  if (!workspacePath) return <CenterNote>还没有打开工作区</CenterNote>;
+  const relPath = relativePathWithinWorkspace(workspacePath, path);
+  if (relPath === null) return <CenterNote>此文件夹不属于当前项目，无法查看项目内的历史记录。</CenterNote>;
+  return <ScopedDirHistoryContent key={JSON.stringify([workspacePath, path])}
+    workspacePath={workspacePath} relPath={relPath} />;
+}
+
+function ScopedDirHistoryContent({ workspacePath, relPath }: { workspacePath: string; relPath: string }) {
   const openConfirm = useAppStore((s) => s.openConfirm);
   const rollbackWorkspaceToVersion = useAppStore((s) => s.rollbackWorkspaceToVersion);
   const discardHistoryChanges = useAppStore((s) => s.discardHistoryChanges);
-
-  const relPath = workspacePath ? relativeTo(workspacePath, path) : "";
 
   const [commits, setCommits] = useState<FileCommit[] | null>(null);
   const [error, setError] = useState<string | null>(null);

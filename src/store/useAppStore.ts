@@ -33,6 +33,7 @@ import {
   isBinaryImageFile,
 } from "../lib/fs";
 import { DirectoryTree } from "../lib/directoryTree";
+import { relativePathWithinWorkspace } from "../lib/workspacePath";
 import { clearNoteExcerpts } from "../lib/noteExcerpts";
 import { abortable } from "../lib/ai/cancellation";
 import {
@@ -3395,6 +3396,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   rollbackToVersion: async (commit, oldContent) => {
     const { workspacePath, history, isDirty } = get();
     if (!workspacePath || !history) return;
+    if (history.kind !== "file" || !relativePathWithinWorkspace(workspacePath, history.path)) {
+      get().showToast("当前文件不属于此项目，无法回退版本", "error");
+      return;
+    }
     if (isDirty) {
       get().showToast("当前文件有未保存更改，请先同步后再回退", "error");
       return;
@@ -3403,6 +3408,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().showToast("当前有未提交更改，请先同步后再回退", "error");
       return;
     }
+    // A confirmation or pending Git query must not restore a different target
+    // after the user switches workspace or closes/reopens the history dialog.
+    if (get().workspacePath !== workspacePath || get().history !== history) return;
     await writeFile(history.path, oldContent);
     if (get().activeFilePath === history.path) {
       set((s) => ({
