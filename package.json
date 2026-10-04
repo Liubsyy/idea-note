@@ -16,6 +16,7 @@
     "test:fence-attrs": "node --test tests/fenceAttrs.test.mjs",
     "test:result-protocol": "node --test tests/resultProtocol.test.mjs",
     "test:workspace-path": "node --test --experimental-strip-types tests/workspacePath.test.mjs",
+    "test:history": "node --test --experimental-strip-types tests/historyPath.test.mjs tests/workspacePath.test.mjs",
     "test:directory-tree": "node --test --experimental-strip-types tests/directoryTree.test.mjs tests/workspaceLoading.test.mjs tests/directoryEntries.test.mjs",
     "test:sidebar-drop": "node --test --experimental-strip-types tests/sidebarDrop.test.mjs",
     "test:resource-preview": "node --test tests/resourcePreview.test.mjs tests/resourceClipboard.test.mjs",
