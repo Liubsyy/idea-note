@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowRight, Sparkles } from "lucide-react";
@@ -24,10 +26,10 @@ import {
  */
 
 const SOURCES: { value: ComponentSource; label: string; hint: string }[] = [
-  { value: "none", label: "无", hint: "不读取任何输入" },
-  { value: "input", label: "参数控件", hint: "生成一个 input 块，渲染成滑块/输入框" },
-  { value: "table", label: "文档表格", hint: "读取本笔记里某张 Markdown 表格" },
-  { value: "file", label: "外部文件", hint: "读取笔记同目录下的 CSV / JSON" },
+  { value: "none", get label() { return tr("无"); }, get hint() { return tr("不读取任何输入"); } },
+  { value: "input", get label() { return tr("参数控件"); }, get hint() { return tr("生成一个 input 块，渲染成滑块/输入框"); } },
+  { value: "table", get label() { return tr("文档表格"); }, get hint() { return tr("读取本笔记里某张 Markdown 表格"); } },
+  { value: "file", get label() { return tr("外部文件"); }, get hint() { return tr("读取笔记同目录下的 CSV / JSON"); } },
 ];
 
 /** `watch` needs an input block to watch; `open` works with any source. */
@@ -36,17 +38,17 @@ const TRIGGERS: {
   label: string;
   hint: string;
 }[] = [
-  { value: "watch", label: "监听输入", hint: "参数控件一变就重新运行" },
-  { value: "open", label: "打开时触发", hint: "每次会话里第一次打开这篇笔记时运行一次" },
+  { value: "watch", get label() { return tr("监听输入"); }, get hint() { return tr("参数控件一变就重新运行"); } },
+  { value: "open", get label() { return tr("打开时触发"); }, get hint() { return tr("每次会话里第一次打开这篇笔记时运行一次"); } },
 ];
 
 const OUTS: { value: OutKind; label: string }[] = [
-  { value: "text", label: "文本" },
-  { value: "table", label: "表格" },
+  { value: "text", get label() { return tr("文本"); } },
+  { value: "table", get label() { return tr("表格"); } },
   { value: "json", label: "JSON" },
-  { value: "mermaid", label: "流程图" },
+  { value: "mermaid", get label() { return tr("流程图"); } },
   { value: "html", label: "HTML" },
-  { value: "image", label: "图片" },
+  { value: "image", get label() { return tr("图片"); } },
   { value: "markdown", label: "Markdown" },
 ];
 
@@ -56,9 +58,9 @@ const NAME_FIELD: Record<
   { label: string; value: string; placeholder: string } | null
 > = {
   none: null,
-  input: { label: "参数块名称", value: "params", placeholder: "params" },
-  table: { label: "表格名称（上方标题）", value: "销售数据", placeholder: "销售数据" },
-  file: { label: "文件路径", value: "./data.csv", placeholder: "./data.csv" },
+  input: { get label() { return tr("参数块名称"); }, value: "params", placeholder: "params" },
+  table: { get label() { return tr("表格名称（上方标题）"); }, get value() { return tr("销售数据"); }, get placeholder() { return tr("销售数据"); } },
+  file: { get label() { return tr("文件路径"); }, value: "./data.csv", placeholder: "./data.csv" },
 };
 
 const selectStyle = {
@@ -74,6 +76,7 @@ export function CodeComponentModal({
   onInsert: (snippet: string) => void;
   onClose: () => void;
 }) {
+  useLanguage();
   const runners = useAppStore((s) => s.codeRunConfig.runners);
   // Only languages that can actually run — an example in a disabled runner's
   // language would insert a block with no run button. With every runner off,
@@ -166,13 +169,12 @@ export function CodeComponentModal({
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="mb-3 text-sm font-semibold" style={{ color: "var(--text)" }}>
-          插入可交互组件
-        </div>
+          {tr("插入可交互组件")}</div>
 
         <button
           type="button"
           onClick={() => {
-            useChatStore.getState().openWithPrompt("帮我在当前笔记中插入一个可交互组件：");
+            useChatStore.getState().openWithPrompt(tr("帮我在当前笔记中插入一个可交互组件："));
             onClose();
           }}
           className="mb-4 flex w-full items-center gap-2.5 rounded-lg p-3 text-left transition-colors hover:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
@@ -180,10 +182,9 @@ export function CodeComponentModal({
         >
           <Sparkles size={18} className="shrink-0" />
           <span className="min-w-0 flex-1">
-            <span className="block text-sm font-medium">试试 AI 笔记助手</span>
+            <span className="block text-sm font-medium">{tr("试试 AI 笔记助手")}</span>
             <span className="mt-0.5 block text-xs" style={{ color: "var(--text-soft)" }}>
-              用自然语言描述需求，让 AI 帮你生成。
-            </span>
+              {tr("用自然语言描述需求，让 AI 帮你生成。")}</span>
           </span>
           <ArrowRight size={16} className="shrink-0" />
         </button>
@@ -192,7 +193,7 @@ export function CodeComponentModal({
           <div className="flex gap-3">
             <div className="flex-1">
               {row(
-                "语言",
+                tr("语言"),
                 <select
                   value={lang}
                   onChange={(e) => setLang(e.target.value)}
@@ -209,7 +210,7 @@ export function CodeComponentModal({
             </div>
             <div className="flex-1">
               {row(
-                "输出渲染",
+                tr("输出渲染"),
                 <select
                   value={out}
                   onChange={(e) => setOut(e.target.value as OutKind)}
@@ -227,7 +228,7 @@ export function CodeComponentModal({
           </div>
 
           {row(
-            "输入来源",
+            tr("输入来源"),
             <select
               value={source}
               onChange={(e) => changeSource(e.target.value as ComponentSource)}
@@ -254,16 +255,16 @@ export function CodeComponentModal({
                 style={selectStyle}
               />,
               source === "file"
-                ? "相对于本笔记，且必须在工作区内；这个文件需要事先存在"
+                ? tr("相对于本笔记，且必须在工作区内；这个文件需要事先存在")
                 : source === "table"
-                  ? "会一并插入一张同名的示例表格，插入后即可直接运行"
+                  ? tr("会一并插入一张同名的示例表格，插入后即可直接运行")
                   : undefined,
             )}
 
           <div className="flex gap-3">
             <div className="flex-1">
               {row(
-                "触发（可多选）",
+                tr("触发（可多选）"),
                 <div
                   className="space-y-1 rounded px-2 py-1.5"
                   style={selectStyle}
@@ -295,30 +296,30 @@ export function CodeComponentModal({
                     );
                   })}
                 </div>,
-                triggers.length === 0 ? "未选择时只有点运行按钮才执行" : undefined,
+                triggers.length === 0 ? tr("未选择时只有点运行按钮才执行") : undefined,
               )}
             </div>
             <div className="flex-1">
               {row(
-                "结果位置",
+                tr("结果位置"),
                 <select
                   value={placement}
                   onChange={(e) => setPlacement(e.target.value as ResultPlacement)}
                   className="w-full rounded px-2 py-1 text-sm outline-none"
                   style={selectStyle}
                 >
-                  <option value="above">代码块上方</option>
-                  <option value="below">代码块下方</option>
+                  <option value="above">{tr("代码块上方")}</option>
+                  <option value="below">{tr("代码块下方")}</option>
                 </select>,
                 triggers.includes("open")
-                  ? "自动运行会先问一次；本次会话内不再询问"
+                  ? tr("自动运行会先问一次；本次会话内不再询问")
                   : undefined,
               )}
             </div>
           </div>
 
           {row(
-            "预览",
+            tr("预览"),
             <pre
               className="max-h-52 overflow-auto rounded p-2 text-[11px] leading-relaxed"
               style={{
@@ -338,15 +339,13 @@ export function CodeComponentModal({
             className="rounded px-3 py-1 text-sm"
             style={{ color: "var(--text)", border: "1px solid var(--border)" }}
           >
-            取消
-          </button>
+            {tr("取消")}</button>
           <button
             onClick={() => onInsert(snippet)}
             className="rounded px-3 py-1 text-sm"
             style={{ color: "#fff", background: "var(--accent)" }}
           >
-            插入
-          </button>
+            {tr("插入")}</button>
         </div>
       </div>
     </div>

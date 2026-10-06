@@ -1,3 +1,5 @@
+import { tr, currentLanguage } from "../i18n/core.ts";
+import { useLanguage } from "../i18n/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Bot,
@@ -31,6 +33,7 @@ function countWords(text: string): number {
  * two zones line up with the panes below.
  */
 export function TitleBar({ leftWidth }: { leftWidth: number }) {
+  useLanguage();
   const activeFilePath = useAppStore((s) => s.activeFilePath);
   const content = useAppStore((s) => s.content);
   const bottomPanelOpen = useAppStore((s) => s.bottomPanelOpen);
@@ -113,7 +116,7 @@ export function TitleBar({ leftWidth }: { leftWidth: number }) {
       >
         {/* Sidebar toggle lives up here so the editor toolbar row stays clean. */}
         <button
-          title={sidebarOpen ? "收起侧栏" : "展开侧栏"}
+          title={sidebarOpen ? tr("收起侧栏") : tr("展开侧栏")}
           onClick={toggleSidebar}
           className="ml-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors"
           style={{ color: "var(--text-muted)" }}
@@ -131,8 +134,7 @@ export function TitleBar({ leftWidth }: { leftWidth: number }) {
             className="ml-auto whitespace-nowrap pl-3 pr-3 text-xs"
             style={{ color: "var(--text-muted)" }}
           >
-            {words} 词
-          </span>
+            {words} {" "}{tr("词")}</span>
         )}
 
         {/* Panel toggles live over the editor area, left of the right-panel
@@ -155,8 +157,8 @@ export function TitleBar({ leftWidth }: { leftWidth: number }) {
               <PanelToggle
                 title={
                   activeFilePath
-                    ? "历史记录"
-                    : "全局历史"
+                    ? tr("历史记录")
+                    : tr("全局历史")
                 }
                 active={false}
                 onClick={openHistory}
@@ -177,7 +179,7 @@ export function TitleBar({ leftWidth }: { leftWidth: number }) {
           )}
           {showTerminalBtn && (
             <PanelToggle
-              title={bottomPanelOpen ? "关闭终端" : "打开终端"}
+              title={bottomPanelOpen ? tr("关闭终端") : tr("打开终端")}
               active={bottomPanelOpen}
               onClick={toggleBottomPanel}
             >
@@ -185,7 +187,7 @@ export function TitleBar({ leftWidth }: { leftWidth: number }) {
             </PanelToggle>
           )}
           <PanelToggle
-            title={rightPanelOpen ? "关闭 AI 笔记助手" : "打开 AI 笔记助手"}
+            title={rightPanelOpen ? tr("关闭 AI 笔记助手") : tr("打开 AI 笔记助手")}
             active={rightPanelOpen}
             onClick={toggleRightPanel}
           >
@@ -230,6 +232,7 @@ export function TitleBar({ leftWidth }: { leftWidth: number }) {
 /** Windows-style minimize / maximize-restore / close buttons, flush to the
  *  top-right corner. macOS never renders these (traffic lights instead). */
 function WindowControls() {
+  useLanguage();
   const [maximized, setMaximized] = useState(false);
 
   // Track maximize state so the middle button shows the right glyph, whether
@@ -272,13 +275,13 @@ function WindowControls() {
   };
   return (
     <div className="ml-1 flex shrink-0 self-stretch">
-      <CaptionButton title="最小化" onClick={() => withWin((w) => w.minimize())}>
+      <CaptionButton title={tr("最小化")} onClick={() => withWin((w) => w.minimize())}>
         <svg width="10" height="10" viewBox="0 0 10 10">
           <path d="M0 5h10" stroke="currentColor" strokeWidth="1" />
         </svg>
       </CaptionButton>
       <CaptionButton
-        title={maximized ? "还原" : "最大化"}
+        title={maximized ? tr("还原") : tr("最大化")}
         onClick={() => withWin((w) => w.toggleMaximize())}
       >
         {maximized ? (
@@ -292,7 +295,7 @@ function WindowControls() {
           </svg>
         )}
       </CaptionButton>
-      <CaptionButton title="关闭" danger onClick={() => withWin((w) => w.close())}>
+      <CaptionButton title={tr("关闭")} danger onClick={() => withWin((w) => w.close())}>
         <svg width="10" height="10" viewBox="0 0 10 10">
           <path d="M0 0l10 10M10 0L0 10" stroke="currentColor" strokeWidth="1" />
         </svg>
@@ -312,6 +315,7 @@ function CaptionButton({
   onClick: () => void;
   children: React.ReactNode;
 }) {
+  useLanguage();
   return (
     <button
       title={title}
@@ -349,6 +353,7 @@ function SyncButton({
   hasRemote: boolean;
   onClick: () => void;
 }) {
+  useLanguage();
   const syncing = syncState === "syncing";
   const color = syncing
     ? "var(--accent)"
@@ -358,17 +363,17 @@ function SyncButton({
         ? "#d97706"
         : "var(--text-muted)";
   const title = syncing
-    ? "同步中…"
+    ? tr("同步中…")
     : lastSyncMessage
       ? lastSyncMessage +
-        (lastSyncAt ? `（${new Date(lastSyncAt).toLocaleTimeString("zh-CN", { hour12: false })}）` : "")
+        (lastSyncAt ? `（${new Date(lastSyncAt).toLocaleTimeString(currentLanguage(), { hour12: false })}）` : "")
       : hasRemote
-        ? "同步到远程仓库"
-        : "同步到本地仓库";
+        ? tr("同步到远程仓库")
+        : tr("同步到本地仓库");
   const timeLabel = syncing
-    ? "同步中…"
+    ? tr("同步中…")
     : lastSyncAt
-      ? new Date(lastSyncAt).toLocaleTimeString("zh-CN", {
+      ? new Date(lastSyncAt).toLocaleTimeString(currentLanguage(), {
           hour12: false,
           hour: "2-digit",
           minute: "2-digit",
@@ -412,6 +417,7 @@ function SyncButton({
  * upward, each fading at the edges (transfer feel, not a refresh spin).
  */
 function SyncIcon({ size, active }: { size: number; active: boolean }) {
+  useLanguage();
   return (
     <svg
       width={size}
@@ -446,6 +452,7 @@ function PanelToggle({
   onClick: () => void;
   children: React.ReactNode;
 }) {
+  useLanguage();
   return (
     <button
       title={title}

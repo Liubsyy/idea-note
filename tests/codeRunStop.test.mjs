@@ -1,3 +1,4 @@
+import { i18nDependency } from './i18nHarness.mjs';
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -59,6 +60,7 @@ function harness({ listenerGate, startGate, stopError } = {}) {
   vm.runInNewContext(compiled, {
     exports,
     require(name) {
+      if (name.includes('/i18n/')) return i18nDependency(name);
       assert.ok(name in dependencies, `unexpected dependency: ${name}`);
       return dependencies[name];
     },

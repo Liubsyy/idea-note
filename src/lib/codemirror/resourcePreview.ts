@@ -1,3 +1,5 @@
+import { localizeElement } from "../../i18n/dom.ts";
+import { tr } from "../../i18n/core.ts";
 import { EditorState, StateEffect, StateField } from "@codemirror/state";
 import { EditorView, WidgetType } from "@codemirror/view";
 import { renderInlineHtml, sanitizeHtml } from "./inlineHtml";
@@ -78,7 +80,7 @@ export function bindResourcePreview(
   const button = document.createElement("button");
   button.type = "button";
   button.className = "cm-md-resource-source";
-  button.title = `显示${label}源码`;
+  localizeElement(button, "title", () => tr("显示{{0}}源码", { 0: label }));
   button.setAttribute("aria-label", button.title);
   button.innerHTML = SOURCE_ICON;
   button.addEventListener("dblclick", (event) => event.stopPropagation());
@@ -111,17 +113,17 @@ export function isResourceLink(raw: string): boolean {
 
 const FILE_OUTLINE = '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z M14 2v6h6"/>';
 const FILE_TYPES = [
-  { kind: "pdf", label: "PDF 文档", ext: /^(pdf)$/, glyph: '<path d="M8 16h8M8 12h5M8 19h5"/>' },
-  { kind: "document", label: "文档", ext: /^(docx?|odt|rtf|pages)$/, glyph: '<path d="m7 12 2 7 3-5 3 5 2-7"/>' },
-  { kind: "spreadsheet", label: "表格", ext: /^(xlsx?|xlsm|xlsb|csv|tsv|ods|numbers)$/, glyph: '<path d="M8 12h8v7H8zM8 15h8M12 12v7"/>' },
-  { kind: "presentation", label: "演示文稿", ext: /^(pptx?|pptm|odp|key)$/, glyph: '<path d="M8 12h8v5H8zM12 17v3m-3 0h6"/>' },
-  { kind: "archive", label: "压缩包", ext: /^(zip|rar|7z|tar|gz|bz2|xz|tgz|zst)$/, glyph: '<path d="M10 3h2m-2 3h2m-2 3h2m-2 3h2m-2 3h2v4h-2z"/>' },
-  { kind: "image", label: "图片", ext: /^(png|jpe?g|gif|svg|webp|bmp|ico|avif|heic|tiff?|psd)$/, glyph: '<circle cx="9" cy="12" r="1"/><path d="m7 19 4-4 2 2 2-3 3 5"/>' },
-  { kind: "audio", label: "音频", ext: /^(mp3|wav|flac|aac|ogg|m4a|wma|opus|aiff)$/, glyph: '<path d="M14 17v-6l3-1v6"/><circle cx="12" cy="18" r="2"/>' },
-  { kind: "video", label: "视频", ext: /^(mp4|mkv|mov|avi|webm|wmv|m4v|mpeg|mpg)$/, glyph: '<path d="m10 12 6 4-6 4z"/>' },
-  { kind: "code", label: "代码", ext: /^(ts|tsx|js|jsx|mjs|cjs|py|rs|go|java|c|h|cpp|hpp|cs|rb|php|swift|kt|sh|bat|ps1|sql|html?|css|scss|vue|lua)$/, glyph: '<path d="m9 12-3 3 3 3m6-6 3 3-3 3"/>' },
-  { kind: "config", label: "配置文件", ext: /^(json|jsonc|ya?ml|toml|ini|conf|cfg|xml|env|properties|lock)$/, glyph: '<path d="M10 11H9v3l-2 1 2 1v3h1m4-8h1v3l2 1-2 1v3h-1"/>' },
-  { kind: "text", label: "文本", ext: /^(txt|md|markdown|mdx|log|tex)$/, glyph: '<path d="M8 12h8M8 15h8M8 18h5"/>' },
+  { kind: "pdf", get label() { return tr("PDF 文档"); }, ext: /^(pdf)$/, glyph: '<path d="M8 16h8M8 12h5M8 19h5"/>' },
+  { kind: "document", get label() { return tr("文档"); }, ext: /^(docx?|odt|rtf|pages)$/, glyph: '<path d="m7 12 2 7 3-5 3 5 2-7"/>' },
+  { kind: "spreadsheet", get label() { return tr("表格"); }, ext: /^(xlsx?|xlsm|xlsb|csv|tsv|ods|numbers)$/, glyph: '<path d="M8 12h8v7H8zM8 15h8M12 12v7"/>' },
+  { kind: "presentation", get label() { return tr("演示文稿"); }, ext: /^(pptx?|pptm|odp|key)$/, glyph: '<path d="M8 12h8v5H8zM12 17v3m-3 0h6"/>' },
+  { kind: "archive", get label() { return tr("压缩包"); }, ext: /^(zip|rar|7z|tar|gz|bz2|xz|tgz|zst)$/, glyph: '<path d="M10 3h2m-2 3h2m-2 3h2m-2 3h2m-2 3h2v4h-2z"/>' },
+  { kind: "image", get label() { return tr("图片"); }, ext: /^(png|jpe?g|gif|svg|webp|bmp|ico|avif|heic|tiff?|psd)$/, glyph: '<circle cx="9" cy="12" r="1"/><path d="m7 19 4-4 2 2 2-3 3 5"/>' },
+  { kind: "audio", get label() { return tr("音频"); }, ext: /^(mp3|wav|flac|aac|ogg|m4a|wma|opus|aiff)$/, glyph: '<path d="M14 17v-6l3-1v6"/><circle cx="12" cy="18" r="2"/>' },
+  { kind: "video", get label() { return tr("视频"); }, ext: /^(mp4|mkv|mov|avi|webm|wmv|m4v|mpeg|mpg)$/, glyph: '<path d="m10 12 6 4-6 4z"/>' },
+  { kind: "code", get label() { return tr("代码"); }, ext: /^(ts|tsx|js|jsx|mjs|cjs|py|rs|go|java|c|h|cpp|hpp|cs|rb|php|swift|kt|sh|bat|ps1|sql|html?|css|scss|vue|lua)$/, glyph: '<path d="m9 12-3 3 3 3m6-6 3 3-3 3"/>' },
+  { kind: "config", get label() { return tr("配置文件"); }, ext: /^(json|jsonc|ya?ml|toml|ini|conf|cfg|xml|env|properties|lock)$/, glyph: '<path d="M10 11H9v3l-2 1 2 1v3h1m4-8h1v3l2 1-2 1v3h-1"/>' },
+  { kind: "text", get label() { return tr("文本"); }, ext: /^(txt|md|markdown|mdx|log|tex)$/, glyph: '<path d="M8 12h8M8 15h8M8 18h5"/>' },
 ];
 
 export function resourceFileIcon(raw: string): { kind: string; label: string; svg: string } {
@@ -132,7 +134,7 @@ export function resourceFileIcon(raw: string): { kind: string; label: string; sv
   const type = FILE_TYPES.find((type) => type.ext.test(ext));
   return {
     kind: type?.kind ?? "file",
-    label: type?.label ?? "文件",
+    label: type?.label ?? tr("文件"),
     svg: `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${FILE_OUTLINE}${type?.glyph ?? ""}</svg>`,
   };
 }
@@ -150,7 +152,7 @@ export class ResourceWidget extends WidgetType {
   toDOM(view: EditorView) {
     const wrap = document.createElement("span");
     wrap.className = "cm-md-resource-file";
-    wrap.title = `${this.url}（双击编辑，Ctrl/Cmd+点击打开）`;
+    localizeElement(wrap, "title", () => tr("{{0}}（双击编辑，Ctrl/Cmd+点击打开）", { 0: this.url }));
     const type = resourceFileIcon(this.url);
     const icon = document.createElement("span");
     icon.className = "cm-md-resource-icon";
@@ -161,7 +163,7 @@ export class ResourceWidget extends WidgetType {
     text.className = "cm-md-resource-label";
     text.innerHTML = sanitizeHtml(renderInlineHtml(this.label || this.url));
     wrap.append(icon, text);
-    bindResourcePreview(wrap, view, this, this.url, "资源文件", this.selected,
+    bindResourcePreview(wrap, view, this, this.url, tr("资源文件"), this.selected,
       () => openResourcePrompt(view, this.url, this.label));
     return wrap;
   }

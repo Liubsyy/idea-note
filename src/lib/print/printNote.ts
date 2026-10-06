@@ -1,3 +1,4 @@
+import { tr } from "../../i18n/core.ts";
 // Print / export the active markdown note.
 //
 // Both paths render the note into an isolated #print-root container that
@@ -104,7 +105,7 @@ export function prepareOutlineForExport(): PdfOutlineEntry[] {
 function activeNote(verb: string): { content: string; title: string } | null {
   const { activeFilePath, content, showToast } = useAppStore.getState();
   if (!activeFilePath || !isMarkdownFile(activeFilePath)) {
-    showToast(`请先打开一篇 Markdown 笔记再${verb}`, "error");
+    showToast(tr("请先打开一篇 Markdown 笔记再{{0}}", { 0: verb }), "error");
     return null;
   }
   return { content, title: stripMdExt(basename(activeFilePath)) };
@@ -112,13 +113,13 @@ function activeNote(verb: string): { content: string; title: string } | null {
 
 export async function printCurrentNote(): Promise<void> {
   const { showToast } = useAppStore.getState();
-  const note = activeNote("打印");
+  const note = activeNote(tr("打印"));
   if (!note) return;
 
   try {
     await fillPrintRoot(note.content);
   } catch {
-    showToast("生成打印内容失败", "error");
+    showToast(tr("生成打印内容失败"), "error");
     return;
   }
 
@@ -146,7 +147,7 @@ export async function printCurrentNote(): Promise<void> {
     await invoke("print_page");
   } catch {
     restoreTitle();
-    showToast("打印失败，请重试", "error");
+    showToast(tr("打印失败，请重试"), "error");
     return;
   }
   // Safety net in case `afterprint` never fires.
@@ -155,7 +156,7 @@ export async function printCurrentNote(): Promise<void> {
 
 export async function exportCurrentNoteAsPdf(): Promise<void> {
   const { showToast } = useAppStore.getState();
-  const note = activeNote("导出");
+  const note = activeNote(tr("导出"));
   if (!note) return;
 
   const path = await save({
@@ -167,14 +168,14 @@ export async function exportCurrentNoteAsPdf(): Promise<void> {
   try {
     await fillPrintRoot(note.content);
   } catch {
-    showToast("生成导出内容失败", "error");
+    showToast(tr("生成导出内容失败"), "error");
     return;
   }
 
   try {
     await invoke("export_pdf", { path, outline: prepareOutlineForExport() });
-    showToast("已导出 PDF", "success");
+    showToast(tr("已导出 PDF"), "success");
   } catch (e) {
-    showToast(typeof e === "string" ? e : "导出 PDF 失败", "error");
+    showToast(typeof e === "string" ? e : tr("导出 PDF 失败"), "error");
   }
 }

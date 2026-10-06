@@ -1,3 +1,4 @@
+import { tr } from "../i18n/core.ts";
 // Clipboard helpers for the file tree context menu.
 
 import { invoke } from "@tauri-apps/api/core";
@@ -50,7 +51,7 @@ export async function copyImageToClipboard(source: string): Promise<void> {
   const response = await (/^https?:/i.test(src) && !src.includes("asset.localhost")
     ? nativeFetch(src)
     : fetch(src));
-  if (!response.ok) throw new Error(`图片读取失败（${response.status}）`);
+  if (!response.ok) throw new Error(tr("图片读取失败（{{0}}）", { 0: response.status }));
   const objectUrl = URL.createObjectURL(await response.blob());
   try {
     const image = new Image();
@@ -60,10 +61,10 @@ export async function copyImageToClipboard(source: string): Promise<void> {
     canvas.width = image.naturalWidth;
     canvas.height = image.naturalHeight;
     const context = canvas.getContext("2d");
-    if (!context || !canvas.width || !canvas.height) throw new Error("无法读取图片内容");
+    if (!context || !canvas.width || !canvas.height) throw new Error(tr("无法读取图片内容"));
     context.drawImage(image, 0, 0);
     const png = await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("图片转换失败")), "image/png"),
+      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error(tr("图片转换失败"))), "image/png"),
     );
     await invoke<void>("copy_image_to_clipboard", { png: Array.from(new Uint8Array(await png.arrayBuffer())) });
   } finally {

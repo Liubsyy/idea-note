@@ -1,3 +1,4 @@
+import { tr } from "../../i18n/core.ts";
 import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import type { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
@@ -40,9 +41,9 @@ export function resolveClipboardFilePath(raw: string, base: string | null): stri
   let path = unwrapImageDest(raw).split(/[?#]/)[0];
   try { path = decodeURIComponent(path); } catch { /* Keep literal percent signs. */ }
   path = path.replace(/\\/g, "/");
-  if (!path) throw new Error("文件路径为空");
+  if (!path) throw new Error(tr("文件路径为空"));
   if (!path.startsWith("/") && !/^[a-z]:\//i.test(path)) {
-    if (!base) throw new Error("无法解析文件路径，请先保存笔记或打开工程");
+    if (!base) throw new Error(tr("无法解析文件路径，请先保存笔记或打开工程"));
     path = `${base.replace(/\\/g, "/")}/${path}`;
   }
   const unc = path.startsWith("//");
@@ -73,7 +74,7 @@ export async function copyEditorSelection(view: EditorView, textOnly = false): P
 
 export function copyEditorSelectionSafe(view: EditorView, textOnly = false): void {
   void copyEditorSelection(view, textOnly).catch((error) =>
-    useAppStore.getState().showToast(`复制失败：${String(error)}`, "error"),
+    useAppStore.getState().showToast(tr("复制失败：{{0}}", { 0: String(error) }), "error"),
   );
 }
 

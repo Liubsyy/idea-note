@@ -1,3 +1,4 @@
+import { tr } from "../i18n/core.ts";
 // Theme system. The per-theme colour palettes live in builtins.json (data,
 // no logic) so the "差异化" between themes is a plain editable file. This module
 // adds the types, the editor metadata (Chinese labels + grouping), and the
@@ -36,53 +37,53 @@ export const THEME_TOKEN_GROUPS: {
   tokens: { key: string; label: string }[];
 }[] = [
   {
-    group: "基础",
+    get group() { return tr("基础"); },
     tokens: [
-      { key: "--bg", label: "背景" },
-      { key: "--bg-elev", label: "次级背景" },
-      { key: "--sidebar-bg", label: "侧边栏背景" },
-      { key: "--border", label: "边框" },
-      { key: "--shadow", label: "阴影" },
-      { key: "--toolbar-bg", label: "工具栏背景" },
+      { key: "--bg", get label() { return tr("背景"); } },
+      { key: "--bg-elev", get label() { return tr("次级背景"); } },
+      { key: "--sidebar-bg", get label() { return tr("侧边栏背景"); } },
+      { key: "--border", get label() { return tr("边框"); } },
+      { key: "--shadow", get label() { return tr("阴影"); } },
+      { key: "--toolbar-bg", get label() { return tr("工具栏背景"); } },
     ],
   },
   {
-    group: "文字",
+    get group() { return tr("文字"); },
     tokens: [
-      { key: "--text", label: "正文" },
-      { key: "--text-soft", label: "次要文字" },
-      { key: "--text-muted", label: "弱化文字" },
+      { key: "--text", get label() { return tr("正文"); } },
+      { key: "--text-soft", get label() { return tr("次要文字"); } },
+      { key: "--text-muted", get label() { return tr("弱化文字"); } },
     ],
   },
   {
-    group: "强调与交互",
+    get group() { return tr("强调与交互"); },
     tokens: [
-      { key: "--accent", label: "主题色" },
-      { key: "--hover", label: "悬停" },
-      { key: "--active", label: "选中" },
-      { key: "--selection", label: "文本选区" },
-      { key: "--search-mark", label: "搜索高亮" },
+      { key: "--accent", get label() { return tr("主题色"); } },
+      { key: "--hover", get label() { return tr("悬停"); } },
+      { key: "--active", get label() { return tr("选中"); } },
+      { key: "--selection", get label() { return tr("文本选区"); } },
+      { key: "--search-mark", get label() { return tr("搜索高亮"); } },
     ],
   },
   {
-    group: "列表与图标",
+    get group() { return tr("列表与图标"); },
     tokens: [
-      { key: "--tree-text", label: "列表文字" },
-      { key: "--tree-icon", label: "列表图标" },
-      { key: "--note-icon", label: "笔记图标" },
-      { key: "--folder-icon", label: "文件夹图标" },
-      { key: "--card-border", label: "卡片边框" },
-      { key: "--file-image", label: "图片文件" },
-      { key: "--file-code", label: "代码文件" },
-      { key: "--file-config", label: "配置文件" },
+      { key: "--tree-text", get label() { return tr("列表文字"); } },
+      { key: "--tree-icon", get label() { return tr("列表图标"); } },
+      { key: "--note-icon", get label() { return tr("笔记图标"); } },
+      { key: "--folder-icon", get label() { return tr("文件夹图标"); } },
+      { key: "--card-border", get label() { return tr("卡片边框"); } },
+      { key: "--file-image", get label() { return tr("图片文件"); } },
+      { key: "--file-code", get label() { return tr("代码文件"); } },
+      { key: "--file-config", get label() { return tr("配置文件"); } },
     ],
   },
   {
-    group: "代码",
+    get group() { return tr("代码"); },
     tokens: [
-      { key: "--code-bg", label: "代码块背景" },
-      { key: "--code-text", label: "代码块文字" },
-      { key: "--inline-code-bg", label: "行内代码背景" },
+      { key: "--code-bg", get label() { return tr("代码块背景"); } },
+      { key: "--code-text", get label() { return tr("代码块文字"); } },
+      { key: "--inline-code-bg", get label() { return tr("行内代码背景"); } },
     ],
   },
 ];
@@ -151,7 +152,7 @@ export function normalizeCustomTheme(
   if (!id) return null;
   const dark = typeof o.dark === "boolean" ? o.dark : false;
   const name =
-    typeof o.name === "string" && o.name.trim() ? o.name.trim() : "自定义主题";
+    typeof o.name === "string" && o.name.trim() ? o.name.trim() : tr("自定义主题");
   const base = (dark ? DARK_BASE : LIGHT_BASE).colors;
   const colors: ThemeColors = { ...base };
   if (o.colors && typeof o.colors === "object") {

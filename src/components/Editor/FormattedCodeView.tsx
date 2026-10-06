@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import { useEffect, useRef } from "react";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
@@ -12,6 +14,7 @@ import { getSearchView, setPreviewSearchView } from "../../lib/codemirror/active
 
 /** A separate read-only document, never registered as the source editor. */
 export function FormattedCodeView({ text, kind, active = true }: { text: string; kind: StructuredKind; active?: boolean }) {
+  useLanguage();
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const initialText = useRef(text);
@@ -24,8 +27,8 @@ export function FormattedCodeView({ text, kind, active = true }: { text: string;
       doc: initialText.current,
       extensions: [cmPlainTextTheme, cmTheme, cmHighlighting, lineNumbers(),
         EditorView.lineWrapping, EditorState.readOnly.of(true), EditorView.editable.of(false),
-        EditorView.contentAttributes.of({ "aria-label": `${kind.toUpperCase()} 格式化视图（只读）`, tabindex: "0" }),
-        editorSearch(commandTitle("切换替换", "replace", useAppStore.getState().editorKeybindings)),
+        EditorView.contentAttributes.of({ "aria-label": tr("{{0}} 格式化视图（只读）", { 0: kind.toUpperCase() }), tabindex: "0" }),
+        editorSearch(() => commandTitle(tr("切换替换"), "replace", useAppStore.getState().editorKeybindings)),
         searchBindings.current.of(buildEditorKeymap(useAppStore.getState().editorKeybindings)),
         language.of([])],
     }) });

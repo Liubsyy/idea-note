@@ -1,3 +1,4 @@
+import { tr } from "../i18n/core.ts";
 import { applyEdits, format, parseTree, printParseErrorCode, type ParseError } from "jsonc-parser";
 import { parseAllDocuments } from "yaml";
 
@@ -13,7 +14,7 @@ export function formatStructured(source: string, kind: StructuredKind): Structur
       if (errors.length || !tree) {
         const error = errors[0];
         const before = source.slice(0, error?.offset ?? 0).split("\n");
-        return { text: null, error: `JSON 第 ${before.length} 行，第 ${before[before.length - 1].length + 1} 列：${error ? printParseErrorCode(error.error) : "缺少内容"}` };
+        return { text: null, error: tr("JSON 第 {{0}} 行，第 {{1}} 列：{{2}}", { 0: before.length, 1: before[before.length - 1].length + 1, 2: error ? printParseErrorCode(error.error) : tr("缺少内容") }) };
       }
       // Whitespace edits preserve number lexemes, duplicate keys and string escapes.
       return { text: applyEdits(source, format(source, undefined, {
@@ -43,6 +44,6 @@ export function formatStructured(source: string, kind: StructuredKind): Structur
     }).join("");
     return { text: source.includes("\r\n") ? text.replace(/\n/g, "\r\n") : text, error: null };
   } catch (error) {
-    return { text: null, error: `无法格式化：${String(error)}` };
+    return { text: null, error: tr("无法格式化：{{0}}", { 0: String(error) }) };
   }
 }

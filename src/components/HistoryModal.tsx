@@ -1,3 +1,5 @@
+import { tr, currentLanguage } from "../i18n/core.ts";
+import { useLanguage } from "../i18n/react";
 import { useEffect, useRef, useState } from "react";
 import { History, X } from "lucide-react";
 import { MergeView } from "@codemirror/merge";
@@ -33,6 +35,7 @@ import {
  * keep their scoped folder/project history view.
  */
 export function HistoryModal() {
+  useLanguage();
   const history = useAppStore((s) => s.history);
   if (!history) return null;
   // Key on the path so every open starts with fresh state.
@@ -46,13 +49,13 @@ export function HistoryModal() {
 function formatRelTime(ts: number): string {
   const diff = Date.now() - ts;
   const min = Math.floor(diff / 60_000);
-  if (min < 1) return "刚刚";
-  if (min < 60) return `${min} 分钟前`;
+  if (min < 1) return tr("刚刚");
+  if (min < 60) return tr("{{0}} 分钟前", { 0: min });
   const hours = Math.floor(min / 60);
-  if (hours < 24) return `${hours} 小时前`;
+  if (hours < 24) return tr("{{0}} 小时前", { 0: hours });
   const days = Math.floor(hours / 24);
-  if (days < 30) return `${days} 天前`;
-  return new Date(ts).toLocaleDateString("zh-CN");
+  if (days < 30) return tr("{{0}} 天前", { 0: days });
+  return new Date(ts).toLocaleDateString(currentLanguage());
 }
 
 const errMessage = (e: unknown) =>
@@ -69,6 +72,7 @@ function HistoryShell({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  useLanguage();
   // Escape closes the dialog — unless a confirmation is stacked on top
   // (z-60), which owns Escape at that moment.
   useEffect(() => {
@@ -107,7 +111,7 @@ function HistoryShell({
             onClick={onClose}
             className="flex h-7 w-7 items-center justify-center rounded-md"
             style={{ color: "var(--text-muted)" }}
-            title="关闭"
+            title={tr("关闭")}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = "var(--hover)";
               e.currentTarget.style.color = "var(--text)";
@@ -127,6 +131,7 @@ function HistoryShell({
 }
 
 function CenterNote({ children, color }: { children: React.ReactNode; color?: string }) {
+  useLanguage();
   return (
     <div
       className="flex flex-1 items-center justify-center px-8 text-center text-[12.5px]"
@@ -146,6 +151,7 @@ function HistoryTabButton({
   children: React.ReactNode;
   onClick: () => void;
 }) {
+  useLanguage();
   return (
     <button
       onClick={onClick}
@@ -179,6 +185,7 @@ function HistoryActionButton({
   tone?: "neutral" | "primary" | "danger";
   title?: string;
 }) {
+  useLanguage();
   const danger = tone === "danger";
   const primary = tone === "primary";
   return (
@@ -218,6 +225,7 @@ function CommitList({
   selected: FileCommit | null;
   onSelect: (c: FileCommit) => void;
 }) {
+  useLanguage();
   return (
     <div
       className="w-72 shrink-0 overflow-y-auto py-1"
@@ -247,11 +255,11 @@ function CommitList({
               }}
               title={c.subject}
             >
-              {c.subject || "（无提交说明）"}
+              {c.subject || tr("（无提交说明）")}
             </div>
             <div className="mt-0.5 truncate text-[11px]" style={{ color: "var(--text-muted)" }}>
               {working ? (
-                "当前工作区 · 尚未提交"
+                tr("当前工作区 · 尚未提交")
               ) : (
                 <>
                   {formatRelTime(c.timestamp)} · {c.author} ·{" "}
@@ -269,23 +277,22 @@ function CommitList({
 /* ----------------------------- file history ----------------------------- */
 
 function TabbedHistoryDialog({ path }: { path: string }) {
+  useLanguage();
   const workspacePath = useAppStore((s) => s.workspacePath);
   const closeHistory = useAppStore((s) => s.closeHistory);
   const [tab, setTab] = useState<"file" | "global">("file");
 
   return (
-    <HistoryShell title={`历史记录 — ${basename(path)}`} onClose={closeHistory}>
+    <HistoryShell title={tr("历史记录 — {{0}}", { 0: basename(path) })} onClose={closeHistory}>
       <div className="flex min-h-0 flex-1 flex-col">
         <div
           className="flex h-10 shrink-0 items-center gap-1 px-3"
           style={{ borderBottom: "1px solid var(--border)" }}
         >
           <HistoryTabButton active={tab === "file"} onClick={() => setTab("file")}>
-            当前文件
-          </HistoryTabButton>
+            {tr("当前文件")}</HistoryTabButton>
           <HistoryTabButton active={tab === "global"} onClick={() => setTab("global")}>
-            全局历史
-          </HistoryTabButton>
+            {tr("全局历史")}</HistoryTabButton>
         </div>
         <div className="flex min-h-0 flex-1">
           {tab === "file" ? (
@@ -293,7 +300,7 @@ function TabbedHistoryDialog({ path }: { path: string }) {
           ) : workspacePath ? (
             <DirHistoryContent key={workspacePath} path={workspacePath} />
           ) : (
-            <CenterNote>还没有打开工作区</CenterNote>
+            <CenterNote>{tr("还没有打开工作区")}</CenterNote>
           )}
         </div>
       </div>
@@ -302,15 +309,17 @@ function TabbedHistoryDialog({ path }: { path: string }) {
 }
 
 function FileHistoryContent({ path }: { path: string }) {
+  useLanguage();
   const workspacePath = useAppStore((s) => s.workspacePath);
-  if (!workspacePath) return <CenterNote>还没有打开工作区</CenterNote>;
+  if (!workspacePath) return <CenterNote>{tr("还没有打开工作区")}</CenterNote>;
   const relPath = relativePathWithinWorkspace(workspacePath, path);
-  if (!relPath) return <CenterNote>当前文件不属于此项目，无法查看文件历史。可切换到「全局历史」查看项目记录。</CenterNote>;
+  if (!relPath) return <CenterNote>{tr("当前文件不属于此项目，无法查看文件历史。可切换到「全局历史」查看项目记录。")}</CenterNote>;
   return <ScopedFileHistoryContent key={JSON.stringify([workspacePath, path])}
     path={path} workspacePath={workspacePath} relPath={relPath} />;
 }
 
 function ScopedFileHistoryContent({ path, workspacePath, relPath }: { path: string; workspacePath: string; relPath: string }) {
+  useLanguage();
   const activeFilePath = useAppStore((s) => s.activeFilePath);
   const editorContent = useAppStore((s) => s.content);
   const openConfirm = useAppStore((s) => s.openConfirm);
@@ -359,7 +368,7 @@ function ScopedFileHistoryContent({ path, workspacePath, relPath }: { path: stri
         // The entry carries the file's HEAD-side path so `show HEAD:path`
         // works even across an uncommitted rename.
         const all = w
-          ? [workingEntry(w.oldPath ?? w.path, "未提交的更改"), ...list]
+          ? [workingEntry(w.oldPath ?? w.path, tr("未提交的更改")), ...list]
           : list;
         setCommits(all);
         setSelected(all[0] ?? null);
@@ -406,12 +415,12 @@ function ScopedFileHistoryContent({ path, workspacePath, relPath }: { path: stri
   const requestRollback = () => {
     if (!selected || selectedContent === null || isWorkingCommit(selected)) return;
     openConfirm({
-      title: "回退版本",
+      title: tr("回退版本"),
       message:
-        `将把「${basename(path)}」恢复为 ${selected.shortHash}` +
-        `（${formatRelTime(selected.timestamp)}）的内容。` +
-        "回退会作为未提交更改保留，请通过同步提交；若当前有未提交更改，请先同步。",
-      confirmLabel: "回退",
+        tr("将把「{{0}}」恢复为 {{1}}", { 0: basename(path), 1: selected.shortHash }) +
+        tr("（{{0}}）的内容。", { 0: formatRelTime(selected.timestamp) }) +
+        tr("回退会作为未提交更改保留，请通过同步提交；若当前有未提交更改，请先同步。"),
+      confirmLabel: tr("回退"),
       tone: "primary",
       onConfirm: () => rollbackToVersion(selected, selectedContent),
     });
@@ -420,11 +429,11 @@ function ScopedFileHistoryContent({ path, workspacePath, relPath }: { path: stri
   const requestDiscardWorking = () => {
     if (!workingFile) return;
     openConfirm({
-      title: "撤销未提交更改",
+      title: tr("撤销未提交更改"),
       message:
-        `将丢弃「${basename(path)}」尚未提交的更改，恢复到上次提交（HEAD）的状态。` +
-        "此操作不可恢复。",
-      confirmLabel: "撤销",
+        tr("将丢弃「{{0}}」尚未提交的更改，恢复到上次提交（HEAD）的状态。", { 0: basename(path) }) +
+        tr("此操作不可恢复。"),
+      confirmLabel: tr("撤销"),
       onConfirm: async () => {
         await discardHistoryChanges([workingFile]);
         setReloadToken((v) => v + 1);
@@ -448,9 +457,9 @@ function ScopedFileHistoryContent({ path, workspacePath, relPath }: { path: stri
       {error ? (
         <CenterNote color="var(--danger, #e5484d)">{error}</CenterNote>
       ) : commits === null ? (
-        <CenterNote>加载历史…</CenterNote>
+        <CenterNote>{tr("加载历史…")}</CenterNote>
       ) : commits.length === 0 ? (
-        <CenterNote>该文件还没有提交记录</CenterNote>
+        <CenterNote>{tr("该文件还没有提交记录")}</CenterNote>
       ) : (
         <div className="flex min-h-0 flex-1">
           <CommitList commits={commits} selected={selected} onSelect={setSelected} />
@@ -463,8 +472,8 @@ function ScopedFileHistoryContent({ path, workspacePath, relPath }: { path: stri
             >
               <span className="min-w-0 flex-1 truncate">
                 {workingSelected
-                  ? "上次提交（HEAD） / 当前内容"
-                  : `上一版本 / 选中版本（${selected ? selected.shortHash : "—"}）`}
+                  ? tr("上次提交（HEAD） / 当前内容")
+                  : tr("上一版本 / 选中版本（{{0}}）", { 0: selected ? selected.shortHash : "—" })}
               </span>
               <HistoryActionButton
                 onClick={workingSelected ? requestDiscardWorking : requestRollback}
@@ -472,13 +481,13 @@ function ScopedFileHistoryContent({ path, workspacePath, relPath }: { path: stri
                 tone={workingSelected ? "danger" : "primary"}
                 title={
                   workingSelected
-                    ? "丢弃这个文件尚未提交的更改"
+                    ? tr("丢弃这个文件尚未提交的更改")
                     : sameAsCurrent
-                      ? "与当前内容一致"
+                      ? tr("与当前内容一致")
                       : undefined
                 }
               >
-                {workingSelected ? "撤销未提交更改" : "回退到此版本"}
+                {workingSelected ? tr("撤销未提交更改") : tr("回退到此版本")}
               </HistoryActionButton>
             </div>
             {diffError || currentError ? (
@@ -486,7 +495,7 @@ function ScopedFileHistoryContent({ path, workspacePath, relPath }: { path: stri
                 {diffError ?? currentError}
               </CenterNote>
             ) : baseContent === null || diffNewContent === null ? (
-              <CenterNote>加载版本内容…</CenterNote>
+              <CenterNote>{tr("加载版本内容…")}</CenterNote>
             ) : (
               <DiffView oldText={baseContent} newText={diffNewContent} path={path} />
             )}
@@ -500,12 +509,12 @@ function ScopedFileHistoryContent({ path, workspacePath, relPath }: { path: stri
 /* --------------------------- folder / project --------------------------- */
 
 const STATUS_LABEL: Record<string, string> = {
-  A: "新增",
-  M: "修改",
-  D: "删除",
-  R: "改名",
-  C: "复制",
-  U: "冲突",
+  get A() { return tr("新增"); },
+  get M() { return tr("修改"); },
+  get D() { return tr("删除"); },
+  get R() { return tr("改名"); },
+  get C() { return tr("复制"); },
+  get U() { return tr("冲突"); },
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -518,13 +527,14 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 function DirHistoryDialog({ path }: { path: string }) {
+  useLanguage();
   const workspacePath = useAppStore((s) => s.workspacePath);
   const closeHistory = useAppStore((s) => s.closeHistory);
 
   const relPath = workspacePath ? relativePathWithinWorkspace(workspacePath, path) : null;
   const title = relPath
-    ? `文件夹历史 — ${basename(path)}`
-    : `全局历史 — ${basename(path)}`;
+    ? tr("文件夹历史 — {{0}}", { 0: basename(path) })
+    : tr("全局历史 — {{0}}", { 0: basename(path) });
 
   return (
     <HistoryShell title={title} onClose={closeHistory}>
@@ -534,15 +544,17 @@ function DirHistoryDialog({ path }: { path: string }) {
 }
 
 function DirHistoryContent({ path }: { path: string }) {
+  useLanguage();
   const workspacePath = useAppStore((s) => s.workspacePath);
-  if (!workspacePath) return <CenterNote>还没有打开工作区</CenterNote>;
+  if (!workspacePath) return <CenterNote>{tr("还没有打开工作区")}</CenterNote>;
   const relPath = relativePathWithinWorkspace(workspacePath, path);
-  if (relPath === null) return <CenterNote>此文件夹不属于当前项目，无法查看项目内的历史记录。</CenterNote>;
+  if (relPath === null) return <CenterNote>{tr("此文件夹不属于当前项目，无法查看项目内的历史记录。")}</CenterNote>;
   return <ScopedDirHistoryContent key={JSON.stringify([workspacePath, path])}
     workspacePath={workspacePath} relPath={relPath} />;
 }
 
 function ScopedDirHistoryContent({ workspacePath, relPath }: { workspacePath: string; relPath: string }) {
+  useLanguage();
   const openConfirm = useAppStore((s) => s.openConfirm);
   const rollbackWorkspaceToVersion = useAppStore((s) => s.rollbackWorkspaceToVersion);
   const discardHistoryChanges = useAppStore((s) => s.discardHistoryChanges);
@@ -572,7 +584,7 @@ function ScopedDirHistoryContent({ workspacePath, relPath }: { workspacePath: st
         setWorkingFiles(working);
         const all =
           working.length > 0
-            ? [workingEntry(relPath, `未提交的更改（${working.length} 个文件）`), ...list]
+            ? [workingEntry(relPath, tr("未提交的更改（{{0}} 个文件）", { 0: working.length })), ...list]
             : list;
         setCommits(all);
         setSelected(all[0] ?? null);
@@ -657,11 +669,11 @@ function ScopedDirHistoryContent({ workspacePath, relPath }: { workspacePath: st
   const requestRollbackWorkspace = () => {
     if (!selected || !canRollbackWorkspace) return;
     openConfirm({
-      title: "回退项目版本",
+      title: tr("回退项目版本"),
       message:
-        `将把整个项目恢复为 ${selected.shortHash}（${formatRelTime(selected.timestamp)}）的内容。` +
-        "回退会作为未提交更改保留，请通过同步提交；不会改写已有历史。",
-      confirmLabel: "回退",
+        tr("将把整个项目恢复为 {{0}}（{{1}}）的内容。", { 0: selected.shortHash, 1: formatRelTime(selected.timestamp) }) +
+        tr("回退会作为未提交更改保留，请通过同步提交；不会改写已有历史。"),
+      confirmLabel: tr("回退"),
       tone: "primary",
       onConfirm: () => rollbackWorkspaceToVersion(selected),
     });
@@ -670,11 +682,11 @@ function ScopedDirHistoryContent({ workspacePath, relPath }: { workspacePath: st
   const requestDiscardFiles = (targets: CommitFile[], label: string) => {
     if (targets.length === 0) return;
     openConfirm({
-      title: "撤销未提交更改",
+      title: tr("撤销未提交更改"),
       message:
-        `将丢弃${label}尚未提交的更改，恢复到上次提交（HEAD）的状态。` +
-        "此操作不可恢复。",
-      confirmLabel: "撤销",
+        tr("将丢弃{{0}}尚未提交的更改，恢复到上次提交（HEAD）的状态。", { 0: label }) +
+        tr("此操作不可恢复。"),
+      confirmLabel: tr("撤销"),
       onConfirm: async () => {
         await discardHistoryChanges(targets);
         setReloadToken((v) => v + 1);
@@ -687,9 +699,9 @@ function ScopedDirHistoryContent({ workspacePath, relPath }: { workspacePath: st
       {error ? (
         <CenterNote color="var(--danger, #e5484d)">{error}</CenterNote>
       ) : commits === null ? (
-        <CenterNote>加载历史…</CenterNote>
+        <CenterNote>{tr("加载历史…")}</CenterNote>
       ) : commits.length === 0 ? (
-        <CenterNote>还没有提交记录</CenterNote>
+        <CenterNote>{tr("还没有提交记录")}</CenterNote>
       ) : (
         <div className="flex min-h-0 flex-1">
           <CommitList commits={commits} selected={selected} onSelect={setSelected} />
@@ -702,9 +714,9 @@ function ScopedDirHistoryContent({ workspacePath, relPath }: { workspacePath: st
             {filesError ? (
               <CenterNote color="var(--danger, #e5484d)">{filesError}</CenterNote>
             ) : files === null ? (
-              <CenterNote>加载文件列表…</CenterNote>
+              <CenterNote>{tr("加载文件列表…")}</CenterNote>
             ) : files.length === 0 ? (
-              <CenterNote>该提交没有文件变更</CenterNote>
+              <CenterNote>{tr("该提交没有文件变更")}</CenterNote>
             ) : (
               files.map((f) => {
                 const active = selectedFile?.path === f.path;
@@ -764,10 +776,10 @@ function ScopedDirHistoryContent({ workspacePath, relPath }: { workspacePath: st
               >
                 <span className="min-w-0 flex-1 truncate">
                   {!selectedFile
-                    ? "选择左侧文件查看差异"
+                    ? tr("选择左侧文件查看差异")
                     : workingSelected
-                      ? `${basename(selectedFile.path)} — 未提交的更改，与上次提交（HEAD）对比`
-                      : `${basename(selectedFile.path)} — ${selected?.shortHash} 与上一版本对比`}
+                      ? tr("{{0}} — 未提交的更改，与上次提交（HEAD）对比", { 0: basename(selectedFile.path) })
+                      : tr("{{0}} — {{1}} 与上一版本对比", { 0: basename(selectedFile.path), 1: selected?.shortHash })}
                 </span>
                 {showRollbackWorkspace && (
                   <HistoryActionButton
@@ -776,12 +788,11 @@ function ScopedDirHistoryContent({ workspacePath, relPath }: { workspacePath: st
                     tone="primary"
                     title={
                       selectedIsLatestCommit
-                        ? "已经是当前版本"
-                        : "恢复整个项目到此提交的内容，不改写历史"
+                        ? tr("已经是当前版本")
+                        : tr("恢复整个项目到此提交的内容，不改写历史")
                     }
                   >
-                    回退到此版本
-                  </HistoryActionButton>
+                    {tr("回退到此版本")}</HistoryActionButton>
                 )}
               </div>
               {workingSelected && (
@@ -793,28 +804,26 @@ function ScopedDirHistoryContent({ workspacePath, relPath }: { workspacePath: st
                     onClick={() => selectedFile && requestDiscardFiles([selectedFile], `「${basename(selectedFile.path)}」`)}
                     disabled={!selectedFile}
                     tone="danger"
-                    title="撤销此文件尚未提交的更改"
+                    title={tr("撤销此文件尚未提交的更改")}
                   >
-                    撤销此文件
-                  </HistoryActionButton>
+                    {tr("撤销此文件")}</HistoryActionButton>
                   <HistoryActionButton
-                    onClick={() => requestDiscardFiles(workingFiles, `全部 ${workingFiles.length} 个文件`)}
+                    onClick={() => requestDiscardFiles(workingFiles, tr("全部 {{0}} 个文件", { 0: workingFiles.length }))}
                     disabled={workingFiles.length === 0}
-                    title="撤销全部未提交更改"
+                    title={tr("撤销全部未提交更改")}
                   >
-                    撤销全部
-                  </HistoryActionButton>
+                    {tr("撤销全部")}</HistoryActionButton>
                 </div>
               )}
             </div>
             {!selectedFile ? (
-              <CenterNote>该提交没有可显示的文件</CenterNote>
+              <CenterNote>{tr("该提交没有可显示的文件")}</CenterNote>
             ) : isImageFile(selectedFile.path) ? (
-              <CenterNote>图片等二进制文件无法显示差异</CenterNote>
+              <CenterNote>{tr("图片等二进制文件无法显示差异")}</CenterNote>
             ) : diffError ? (
               <CenterNote color="var(--danger, #e5484d)">{diffError}</CenterNote>
             ) : diff === null ? (
-              <CenterNote>加载差异…</CenterNote>
+              <CenterNote>{tr("加载差异…")}</CenterNote>
             ) : (
               <DiffView oldText={diff.oldText} newText={diff.newText} path={selectedFile.path} />
             )}
@@ -835,6 +844,7 @@ function DiffView({
   newText: string;
   path: string;
 }) {
+  useLanguage();
   const ref = useRef<HTMLDivElement>(null);
   const markdownFile = isMarkdownFile(path);
   const [languageExt, setLanguageExt] = useState<Extension[]>(() =>

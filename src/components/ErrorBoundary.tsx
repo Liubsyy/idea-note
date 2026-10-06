@@ -1,3 +1,4 @@
+import { tr } from "../i18n/core.ts";
 import { Component, type ReactNode } from "react";
 
 interface Props {
@@ -35,8 +36,7 @@ export class ErrorBoundary extends Component<Props, State> {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
         <p className="text-sm font-medium" style={{ color: "var(--text)" }}>
-          这个文件无法渲染
-        </p>
+          {tr("这个文件无法渲染")}</p>
         <pre
           className="max-h-48 max-w-full overflow-auto rounded-lg p-3 text-left text-xs"
           style={{ background: "var(--bg-elev)", border: "1px solid var(--border)", color: "var(--text-muted)" }}

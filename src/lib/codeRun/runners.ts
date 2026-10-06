@@ -1,3 +1,4 @@
+import { tr } from "../../i18n/core.ts";
 // Runner table for executable fenced code blocks. The config file is owned by
 // Rust (app config dir, `code-runners.json` — see `code_runners_load/save`);
 // this module is the only place the frontend touches it.
@@ -341,14 +342,14 @@ export function parseRunnerDraft(
   editing: CodeRunner | null,
 ): { runner: CodeRunner } | { error: string } {
   const lang = draft.lang.trim().toLowerCase();
-  if (!lang) return { error: "请填写语言标识" };
-  if (/[\s`]/.test(lang)) return { error: "语言标识不能包含空格或反引号" };
-  if (HARD_EXCLUDED.has(lang)) return { error: `${lang} 是保留标识，不能作为运行器` };
-  if (isBuiltinLang(lang)) return { error: `${lang} 是内置运行器，请在上面直接修改` };
+  if (!lang) return { error: tr("请填写语言标识") };
+  if (/[\s`]/.test(lang)) return { error: tr("语言标识不能包含空格或反引号") };
+  if (HARD_EXCLUDED.has(lang)) return { error: tr("{{0}} 是保留标识，不能作为运行器", { 0: lang }) };
+  if (isBuiltinLang(lang)) return { error: tr("{{0}} 是内置运行器，请在上面直接修改", { 0: lang }) };
 
   const aliases = splitIds(draft.aliases).filter((a) => a !== lang);
   for (const alias of aliases) {
-    if (HARD_EXCLUDED.has(alias)) return { error: `${alias} 是保留标识，不能作为别名` };
+    if (HARD_EXCLUDED.has(alias)) return { error: tr("{{0}} 是保留标识，不能作为别名", { 0: alias }) };
   }
 
   // Every id this runner would answer to, checked against every other runner's.
@@ -359,16 +360,16 @@ export function parseRunnerDraft(
   }
   for (const id of [lang, ...aliases]) {
     const owner = taken.get(id);
-    if (owner) return { error: `${id} 已被运行器「${owner}」占用` };
+    if (owner) return { error: tr("{{0}} 已被运行器「{{1}}」占用", { 0: id, 1: owner }) };
   }
 
   const command = draft.command.trim();
-  if (!command) return { error: "请填写命令" };
+  if (!command) return { error: tr("请填写命令") };
 
   const raw = draft.ext.trim();
   const ext = !raw || raw.startsWith(".") ? raw : `.${raw}`;
-  if (!ext || ext === ".") return { error: "请填写代码文件扩展名，例如 .rb" };
-  if (/[\s/\\]/.test(ext)) return { error: "扩展名不能包含空格或路径分隔符" };
+  if (!ext || ext === ".") return { error: tr("请填写代码文件扩展名，例如 .rb") };
+  if (/[\s/\\]/.test(ext)) return { error: tr("扩展名不能包含空格或路径分隔符") };
 
   return {
     runner: {

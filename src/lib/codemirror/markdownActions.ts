@@ -1,3 +1,4 @@
+import { tr } from "../../i18n/core.ts";
 // Shared actions behind the Markdown toolbar and its keyboard shortcuts.
 // Keeping prompts, templates and scratch colour state here ensures a toolbar
 // click and the matching key binding always produce the same edit.
@@ -47,33 +48,33 @@ export const MERMAID_TYPES: {
 }[] = [
   {
     commandId: "markdownMermaidFlowchart",
-    label: "流程图",
-    body: "flowchart TD\n    A[开始] --> B{判断}\n    B -->|是| C[执行]\n    B -->|否| D[结束]",
+    get label() { return tr("流程图"); },
+    get body() { return tr("flowchart TD\n    A[开始] --> B{判断}\n    B -->|是| C[执行]\n    B -->|否| D[结束]"); },
   },
   {
     commandId: "markdownMermaidSequence",
-    label: "时序图",
-    body: "sequenceDiagram\n    participant A as 用户\n    participant B as 服务器\n    A->>B: 请求\n    B-->>A: 响应",
+    get label() { return tr("时序图"); },
+    get body() { return tr("sequenceDiagram\n    participant A as 用户\n    participant B as 服务器\n    A->>B: 请求\n    B-->>A: 响应"); },
   },
   {
     commandId: "markdownMermaidGantt",
-    label: "甘特图",
-    body: "gantt\n    title 项目计划\n    dateFormat YYYY-MM-DD\n    section 阶段一\n    需求分析 :a1, 2024-01-01, 7d\n    设计     :after a1, 5d",
+    get label() { return tr("甘特图"); },
+    get body() { return tr("gantt\n    title 项目计划\n    dateFormat YYYY-MM-DD\n    section 阶段一\n    需求分析 :a1, 2024-01-01, 7d\n    设计     :after a1, 5d"); },
   },
   {
     commandId: "markdownMermaidPie",
-    label: "饼图",
-    body: 'pie title 占比\n    "A" : 40\n    "B" : 35\n    "C" : 25',
+    get label() { return tr("饼图"); },
+    get body() { return tr("pie title 占比\n    \"A\" : 40\n    \"B\" : 35\n    \"C\" : 25"); },
   },
   {
     commandId: "markdownMermaidClass",
-    label: "类图",
+    get label() { return tr("类图"); },
     body: "classDiagram\n    class Animal {\n      +String name\n      +eat()\n    }\n    Animal <|-- Dog",
   },
   {
     commandId: "markdownMermaidState",
-    label: "状态图",
-    body: "stateDiagram-v2\n    [*] --> 待机\n    待机 --> 运行 : 启动\n    运行 --> [*] : 停止",
+    get label() { return tr("状态图"); },
+    get body() { return tr("stateDiagram-v2\n    [*] --> 待机\n    待机 --> 运行 : 启动\n    运行 --> [*] : 停止"); },
   },
 ];
 
@@ -92,31 +93,31 @@ function editableAction(action: (view: EditorView) => void): Command {
 
 function activeEditableView(): EditorView {
   const view = getActiveView();
-  if (!view || view.state.readOnly) throw "当前文档不可编辑";
+  if (!view || view.state.readOnly) throw tr("当前文档不可编辑");
   return view;
 }
 
 const openLinkPrompt = editableAction((view) => {
   useAppStore.getState().openPrompt({
-    title: "插入链接",
+    title: tr("插入链接"),
     defaultValue: "https://",
     fields: [
       {
         name: "label",
-        label: "显示文本",
+        label: tr("显示文本"),
         defaultValue: selectedText(view),
-        placeholder: "链接",
+        placeholder: tr("链接"),
       },
       {
         name: "href",
-        label: "链接地址",
+        label: tr("链接地址"),
         defaultValue: "https://",
         placeholder: "https://example.com",
       },
     ],
     onSubmit: (_value, values) => {
       const href = values.href?.trim();
-      if (!href) throw "请填写链接地址";
+      if (!href) throw tr("请填写链接地址");
       md.link(activeEditableView(), href, values.label);
     },
   });
@@ -130,47 +131,47 @@ export const openImagePrompt = editableAction((view) => {
   const current = imageAt(view.state, view.state.selection.main.head);
   const size = current?.size ?? NO_IMAGE_SIZE;
   useAppStore.getState().openPrompt({
-    title: current ? "编辑图片" : "插入图片",
+    title: current ? tr("编辑图片") : tr("插入图片"),
     defaultValue: "",
     fields: [
       {
         name: "alt",
-        label: "替代文本",
+        label: tr("替代文本"),
         defaultValue: current?.alt ?? selectedText(view),
-        placeholder: "图片说明",
+        placeholder: tr("图片说明"),
       },
       {
         name: "src",
-        label: "图片地址或本地路径",
+        label: tr("图片地址或本地路径"),
         defaultValue: current?.url ?? "",
         placeholder: "https://example.com/image.png",
-        actionLabel: "选择本地图片",
+        actionLabel: tr("选择本地图片"),
         onAction: pickImage,
       },
       {
         name: "width",
-        label: "显示尺寸",
+        label: tr("显示尺寸"),
         defaultValue: size.width,
-        placeholder: "宽",
+        placeholder: tr("宽"),
         group: "size",
-        hint: "留空为原始尺寸；只填一边时另一边按比例缩放，可用像素或百分比（如 300、50%）",
+        hint: tr("留空为原始尺寸；只填一边时另一边按比例缩放，可用像素或百分比（如 300、50%）"),
       },
       {
         name: "height",
-        label: "高度",
+        label: tr("高度"),
         defaultValue: size.height,
-        placeholder: "高",
+        placeholder: tr("高"),
         group: "size",
         prefix: "×",
       },
     ],
     onSubmit: (_value, values) => {
       const src = values.src?.trim();
-      if (!src) throw "请选择本地图片或填写图片地址";
+      if (!src) throw tr("请选择本地图片或填写图片地址");
       const width = parseImageDimension(values.width ?? "");
       const height = parseImageDimension(values.height ?? "");
       if (width === null || height === null)
-        throw "尺寸只能填数字或百分比，如 300、50%";
+        throw tr("尺寸只能填数字或百分比，如 300、50%");
       md.image(activeEditableView(), src, values.alt, { width, height });
     },
   });
@@ -190,19 +191,19 @@ export function openResourcePrompt(view: EditorView, url: string, label: string)
   if (node.name !== "Link" || !destination) return;
   const suffix = source.slice(destination.to - range.from);
   useAppStore.getState().openPrompt({
-    title: "编辑资源文件",
+    title: tr("编辑资源文件"),
     defaultValue: "",
     fields: [
-      { name: "label", label: "显示名称", defaultValue: label, placeholder: "文件名称" },
-      { name: "href", label: "文件路径或链接地址", defaultValue: unwrapImageDest(url), placeholder: "assets/file.pdf" },
+      { name: "label", label: tr("显示名称"), defaultValue: label, placeholder: tr("文件名称") },
+      { name: "href", label: tr("文件路径或链接地址"), defaultValue: unwrapImageDest(url), placeholder: "assets/file.pdf" },
     ],
     onSubmit: (_value, values) => {
       const href = values.href?.trim();
-      if (!href) throw "请填写文件路径或链接地址";
-      if (activeEditableView() !== view) throw "当前文档已切换，请重新打开编辑框";
+      if (!href) throw tr("请填写文件路径或链接地址");
+      if (activeEditableView() !== view) throw tr("当前文档已切换，请重新打开编辑框");
       const target = view.state.selection.main;
       if (view.state.sliceDoc(target.from, target.to) !== source)
-        throw "资源内容已变化，请重新打开编辑框";
+        throw tr("资源内容已变化，请重新打开编辑框");
       const text = values.label?.trim() || label;
       // Preserve formatting and escapes in existing labels; protect newly typed brackets.
       const safeLabel = text.replace(/\\.|[\[\]]/g, (part) => part.startsWith("\\") ? part : `\\${part}`);

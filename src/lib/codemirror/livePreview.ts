@@ -1,3 +1,5 @@
+import { localizeElement } from "../../i18n/dom.ts";
+import { tr } from "../../i18n/core.ts";
 // Typora/Obsidian-style live preview for CodeMirror 6.
 //
 // The document is always markdown source. We walk the Lezer syntax tree and,
@@ -182,7 +184,7 @@ class ImageWidget extends WidgetType {
 
     const fallback = document.createElement("span");
     fallback.className = "cm-md-image-error";
-    fallback.textContent = `图片加载失败：${this.url}`;
+    localizeElement(fallback, "textContent", () => tr("图片加载失败：{{0}}", { 0: this.url }));
     fallback.hidden = true;
 
     const requestMeasure = () => view.requestMeasure();
@@ -205,7 +207,7 @@ class ImageWidget extends WidgetType {
       wrap.append(cap);
     }
 
-    bindResourcePreview(wrap, view, this, this.url, "图片", this.selected,
+    bindResourcePreview(wrap, view, this, this.url, tr("图片"), this.selected,
       () => openImagePrompt(view));
     return wrap;
   }
@@ -316,9 +318,9 @@ function setCodeActionIcon(button: HTMLButtonElement, icon: CodeActionIcon): voi
 }
 
 function setRunPanelButtonState(button: HTMLButtonElement, open: boolean): void {
-  const label = open ? "隐藏代码运行面板" : "打开代码运行面板";
-  button.title = label;
-  button.setAttribute("aria-label", label);
+  const label = () => open ? tr("隐藏代码运行面板") : tr("打开代码运行面板");
+  localizeElement(button, "title", label);
+  localizeElement(button, "ariaLabel", label);
   setCodeActionIcon(button, open ? "panelClose" : "panelOpen");
 }
 
@@ -349,8 +351,8 @@ class CodeActionsWidget extends WidgetType {
       const run = document.createElement("button");
       run.type = "button";
       run.className = "cm-md-code-action-btn cm-md-run-btn";
-      run.title = "运行代码块";
-      run.setAttribute("aria-label", "运行代码块");
+      localizeElement(run, "title", () => tr("运行代码块"));
+      localizeElement(run, "ariaLabel", () => tr("运行代码块"));
       setCodeActionIcon(run, "play");
       run.addEventListener("click", (e) => {
         e.preventDefault();
@@ -381,26 +383,26 @@ class CodeActionsWidget extends WidgetType {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "cm-md-code-action-btn";
-    btn.title = "复制代码";
-    btn.setAttribute("aria-label", "复制代码");
+    localizeElement(btn, "title", () => tr("复制代码"));
+    localizeElement(btn, "ariaLabel", () => tr("复制代码"));
     setCodeActionIcon(btn, "copy");
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       void copyText(this.code)
         .then(() => {
-          useAppStore.getState().showToast("已复制到剪贴板", "success");
-          btn.title = "已复制";
-          btn.setAttribute("aria-label", "已复制");
+          useAppStore.getState().showToast(tr("已复制到剪贴板"), "success");
+          localizeElement(btn, "title", () => tr("已复制"));
+          localizeElement(btn, "ariaLabel", () => tr("已复制"));
           setCodeActionIcon(btn, "check");
           btn.classList.add("cm-md-code-action-done");
           window.setTimeout(() => {
-            btn.title = "复制代码";
-            btn.setAttribute("aria-label", "复制代码");
+            localizeElement(btn, "title", () => tr("复制代码"));
+            localizeElement(btn, "ariaLabel", () => tr("复制代码"));
             setCodeActionIcon(btn, "copy");
             btn.classList.remove("cm-md-code-action-done");
           }, 1200);
         })
-        .catch(() => useAppStore.getState().showToast("复制失败", "error"));
+        .catch(() => useAppStore.getState().showToast(tr("复制失败"), "error"));
     });
     wrap.append(btn);
     return wrap;

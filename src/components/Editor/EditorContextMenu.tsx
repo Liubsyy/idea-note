@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 // Right-click menu for the editor surface: clipboard actions plus shortcuts
 // into find/replace. Styled to match the sidebar's context menu.
 
@@ -48,6 +50,7 @@ export function EditorContextMenu({
   menu: EditorMenuState;
   onClose: () => void;
 }) {
+  useLanguage();
   const panelRef = useRef<HTMLDivElement>(null);
   const editorKeybindings = useAppStore((s) => s.editorKeybindings);
   // The right-click already moved the caret (see CodeMirrorEditor), so the
@@ -111,7 +114,7 @@ export function EditorContextMenu({
   };
   const paste = (view: EditorView) => {
     void pasteEditorClipboard(view).catch((error) =>
-      useAppStore.getState().showToast(`粘贴失败：${String(error)}`, "error"),
+      useAppStore.getState().showToast(tr("粘贴失败：{{0}}", { 0: String(error) }), "error"),
     );
   };
 
@@ -133,48 +136,38 @@ export function EditorContextMenu({
       onContextMenu={(e) => e.preventDefault()}
     >
       <Item hint={`${mod}X`} disabled={!menu.hasSelection} onClick={() => run(cut)}>
-        剪切
-      </Item>
+        {tr("剪切")}</Item>
       <Item hint={`${mod}C`} disabled={!menu.hasSelection} onClick={() => run(copy)}>
-        复制
-      </Item>
+        {tr("复制")}</Item>
       <Item disabled={!menu.hasSelection} onClick={() => run(copyTextOnly)}>
-        仅复制文本
-      </Item>
+        {tr("仅复制文本")}</Item>
       <Item hint={`${mod}V`} onClick={() => run(paste)}>
-        粘贴
-      </Item>
+        {tr("粘贴")}</Item>
       <Item hint={`${mod}A`} onClick={() => run((v) => { selectAll(v); v.focus(); })}>
-        全选
-      </Item>
+        {tr("全选")}</Item>
       <div className="my-1" style={{ borderTop: "1px solid var(--border)" }} />
       <Item hint={commandKeyLabel("find", editorKeybindings)} onClick={() => run((v) => openSearchPanel(v))}>
-        查找
-      </Item>
+        {tr("查找")}</Item>
       <Item hint={commandKeyLabel("replace", editorKeybindings)} onClick={() => run((v) => openSearchWithReplace(v))}>
-        替换
-      </Item>
+        {tr("替换")}</Item>
       <div className="my-1" style={{ borderTop: "1px solid var(--border)" }} />
       {/* One row for the whole feature. The encryption entries laid out inline
           would outweigh cut/copy/paste in a menu that is mostly about the
           clipboard. */}
-      <SubMenuItem label="加密">
+      <SubMenuItem label={tr("加密")}>
         <Item
           disabled={!menu.hasSelection}
           onClick={() => run((v) => void encryptSelection(v))}
         >
-          整块加密
-        </Item>
+          {tr("整块加密")}</Item>
         <Item
           disabled={!canEncryptInline}
           onClick={() => run((v) => void encryptInlineSelection(v))}
         >
-          行内加密
-        </Item>
+          {tr("行内加密")}</Item>
         <div className="my-1" style={{ borderTop: "1px solid var(--border)" }} />
         <Item disabled={!vaultOpen} onClick={() => run((v) => void lockNow(v))}>
-          立即上锁
-        </Item>
+          {tr("立即上锁")}</Item>
       </SubMenuItem>
       {block && (
         <>
@@ -182,8 +175,7 @@ export function EditorContextMenu({
           {/* The escape hatch for code the run pipeline can't host: anything
               needing stdin, a TTY, or a process that outlives the timeout. */}
           <Item onClick={() => run(() => void runInTerminal(block.info, block.code))}>
-            在终端运行
-          </Item>
+            {tr("在终端运行")}</Item>
         </>
       )}
     </div>
@@ -201,6 +193,7 @@ function Item({
   hint?: string;
   disabled?: boolean;
 }) {
+  useLanguage();
   return (
     <button
       onClick={onClick}

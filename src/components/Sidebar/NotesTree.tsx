@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import { useMemo } from "react";
 import {
   ChevronRight,
@@ -51,9 +53,9 @@ function formatNoteTime(mtime?: number | null): string | null {
   const dayDiff = Math.round((dayStart(now) - dayStart(d)) / 86_400_000);
   const hm = `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
   if (dayDiff === 0) return hm;
-  if (dayDiff === 1) return `昨天 ${hm}`;
+  if (dayDiff === 1) return tr("昨天 {{0}}", { 0: hm });
   if (d.getFullYear() === now.getFullYear())
-    return `${d.getMonth() + 1}月${d.getDate()}日`;
+    return tr("{{0}}月{{1}}日", { 0: d.getMonth() + 1, 1: d.getDate() });
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 }
 
@@ -89,6 +91,7 @@ function foldSingleFolderChain(node: FileNode): FoldedFolder {
  *  - "tree": the folder hierarchy, each note as a two-line row.
  */
 export function NotesTree({ nodes, onContextMenu }: Props) {
+  useLanguage();
   const filtered = useMemo(() => filterNotesTree(nodes), [nodes]);
   const view = useAppStore((s) => s.notesViewMode);
   const setView = useAppStore((s) => s.setNotesViewMode);
@@ -97,8 +100,7 @@ export function NotesTree({ nodes, onContextMenu }: Props) {
   if (!filtered.length) {
     return (
       <p className="px-4 py-6 text-center text-xs" style={{ color: "var(--text-muted)" }}>
-        这个文件夹里还没有 Markdown 笔记。
-      </p>
+        {tr("这个文件夹里还没有 Markdown 笔记。")}</p>
     );
   }
 
@@ -107,8 +109,7 @@ export function NotesTree({ nodes, onContextMenu }: Props) {
       {/* Sub-mode header: note count + cards/tree switcher */}
       <div className="flex items-center justify-between px-2.5 pb-1.5 pt-0.5 select-none">
         <span style={{ fontSize: "max(0.8em, 11px)", color: "var(--text-muted)" }}>
-          {total} 篇笔记
-        </span>
+          {total} {" "}{tr("篇笔记")}</span>
         <div
           className="flex items-center overflow-hidden rounded-md"
           style={{ border: "1px solid var(--border)", background: "var(--bg)" }}
@@ -116,7 +117,7 @@ export function NotesTree({ nodes, onContextMenu }: Props) {
           <ViewButton
             mode="cards"
             active={view === "cards"}
-            title="卡片视图"
+            title={tr("卡片视图")}
             onSelect={setView}
           >
             <LayoutList size={12} />
@@ -124,7 +125,7 @@ export function NotesTree({ nodes, onContextMenu }: Props) {
           <ViewButton
             mode="tree"
             active={view === "tree"}
-            title="树形视图"
+            title={tr("树形视图")}
             onSelect={setView}
             withDivider
           >
@@ -158,6 +159,7 @@ function ViewButton({
   onSelect: (mode: NotesViewMode) => void;
   children: React.ReactNode;
 }) {
+  useLanguage();
   return (
     <button
       title={title}
@@ -197,6 +199,7 @@ function CardList({
   depth: number;
   onContextMenu: Props["onContextMenu"];
 }) {
+  useLanguage();
   // Same order as the file tree: folders first, then files, alphabetically.
   return (
     <div
@@ -223,6 +226,7 @@ function CardGroup({
   depth: number;
   onContextMenu: Props["onContextMenu"];
 }) {
+  useLanguage();
   const folded = foldSingleFolderChain(node);
   const folderNode = folded.node;
   const selectedPath = useAppStore((s) => s.selectedPath);
@@ -283,7 +287,7 @@ function CardGroup({
             setExpanded(folderNode.path, !open);
           }}
           className="flex h-4 w-4 shrink-0 items-center justify-center"
-          title={open ? "收起" : "展开"}
+          title={open ? tr("收起") : tr("展开")}
         >
           {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         </span>
@@ -311,6 +315,7 @@ function NoteCard({
   node: FileNode;
   onContextMenu: Props["onContextMenu"];
 }) {
+  useLanguage();
   const { ref, excerpt } = useNoteExcerpt(node);
   const selectedPath = useAppStore((s) => s.selectedPath);
   const selectedPaths = useAppStore((s) => s.selectedPaths);
@@ -394,6 +399,7 @@ function NoteList({
   depth: number;
   onContextMenu: Props["onContextMenu"];
 }) {
+  useLanguage();
   return (
     <div className="space-y-px px-1.5">
       {nodes.map((node) =>
@@ -416,6 +422,7 @@ function FolderRow({
   depth: number;
   onContextMenu: Props["onContextMenu"];
 }) {
+  useLanguage();
   const folded = foldSingleFolderChain(node);
   const folderNode = folded.node;
   const selectedPath = useAppStore((s) => s.selectedPath);
@@ -475,7 +482,7 @@ function FolderRow({
             setExpanded(folderNode.path, !open);
           }}
           className="flex h-4 w-4 shrink-0 items-center justify-center"
-          title={open ? "收起" : "展开"}
+          title={open ? tr("收起") : tr("展开")}
         >
           {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         </span>
@@ -499,6 +506,7 @@ function NoteRow({
   depth: number;
   onContextMenu: Props["onContextMenu"];
 }) {
+  useLanguage();
   const { ref, excerpt } = useNoteExcerpt(node);
   const selectedPath = useAppStore((s) => s.selectedPath);
   const selectedPaths = useAppStore((s) => s.selectedPaths);

@@ -1,3 +1,5 @@
+import { tr } from "./i18n/core.ts";
+import { useLanguage } from "./i18n/react";
 import {
   useEffect,
   useRef,
@@ -122,6 +124,7 @@ function editorAtDrop(el: Element | null): EditorView | null {
 }
 
 function App() {
+  useLanguage();
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const activeFilePath = useAppStore((s) => s.activeFilePath);
@@ -246,7 +249,7 @@ function App() {
     } catch {
       useAppStore
         .getState()
-        .showToast("无法进入系统全屏，已使用窗口内演示", "error");
+        .showToast(tr("无法进入系统全屏，已使用窗口内演示"), "error");
       return;
     }
 
@@ -272,7 +275,7 @@ function App() {
         if (!disposed)
           useAppStore
             .getState()
-            .showToast("无法进入系统全屏，已使用窗口内演示", "error");
+            .showToast(tr("无法进入系统全屏，已使用窗口内演示"), "error");
         return;
       }
 
@@ -548,7 +551,7 @@ function App() {
           const failures: string[] = [];
           for (const path of paths) {
             try {
-              if (await pathIsDir(path)) throw new Error("请拖入文件，暂不支持拷贝文件夹");
+              if (await pathIsDir(path)) throw new Error(tr("请拖入文件，暂不支持拷贝文件夹"));
               await saveFileToDir(path, target.dir, basename(path));
               copied += 1;
             } catch (error) {
@@ -562,13 +565,13 @@ function App() {
             try {
               await store.refreshTree();
             } catch (error) {
-              failures.push(`目录刷新失败：${error}`);
+              failures.push(tr("目录刷新失败：{{0}}", { 0: error }));
             }
           }
           store.showToast(
             failures.length
-              ? `已拷贝 ${copied} 个文件；${failures.join("；")}`
-              : `已拷贝 ${copied} 个文件到「${basename(target.dir)}」`,
+              ? tr("已拷贝 {{0}} 个文件；{{1}}", { 0: copied, 1: failures.join("；") })
+              : tr("已拷贝 {{0}} 个文件到「{{1}}」", { 0: copied, 1: basename(target.dir) }),
             failures.length ? "error" : "success",
           );
           return;
@@ -589,7 +592,7 @@ function App() {
         const files: string[] = [];
         for (const p of paths) if (!(await pathIsDir(p))) files.push(p);
         if (files.length === 0) {
-          window.alert(`「${basename(paths[0])}」是文件夹，请拖入文件。`);
+          window.alert(tr("「{{0}}」是文件夹，请拖入文件。", { 0: basename(paths[0]) }));
           return;
         }
 
@@ -801,7 +804,7 @@ function App() {
           onMouseDown={onMouseDown}
           className="absolute bottom-0 top-0 z-20 w-[6px] -translate-x-1/2 cursor-col-resize"
           style={{ left: leftWidth }}
-          title="拖拽调整宽度"
+          title={tr("拖拽调整宽度")}
         />
       )}
 
@@ -828,7 +831,7 @@ function App() {
                 background: "var(--bg)",
               }}
             >
-              {dropHint === "insert" ? "松开以插入引用" : "松开以打开文件"}
+              {dropHint === "insert" ? tr("松开以插入引用") : tr("松开以打开文件")}
             </span>
           </div>
         )}
@@ -921,7 +924,7 @@ function App() {
           <div
             onMouseDown={startRunPanelResize}
             className="absolute bottom-0 left-0 top-0 z-30 w-[7px] -translate-x-1/2 cursor-col-resize"
-            title="拖动调整运行输出宽度"
+            title={tr("拖动调整运行输出宽度")}
           />
           <RunPanel />
         </div>
@@ -931,7 +934,7 @@ function App() {
           <div
             onMouseDown={startRightPanelResize}
             className="absolute bottom-0 left-0 top-0 z-30 w-[7px] -translate-x-1/2 cursor-col-resize"
-            title="拖动调整笔记助手宽度"
+            title={tr("拖动调整笔记助手宽度")}
           />
           <RightPanel />
         </div>

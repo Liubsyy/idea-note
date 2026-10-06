@@ -1,3 +1,4 @@
+import { i18nDependency } from './i18nHarness.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -13,6 +14,7 @@ function load(path, dependencies) {
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText, { exports, require: (name) => {
+      if (name.includes('/i18n/')) return i18nDependency(name);
     assert.ok(name in dependencies, `unexpected dependency: ${name}`);
     return dependencies[name];
   } });

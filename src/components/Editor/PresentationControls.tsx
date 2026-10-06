@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, GalleryVerticalEnd, Maximize2, Minus, Plus, RotateCcw, X } from "lucide-react";
 
@@ -15,6 +17,7 @@ const HIDE_AFTER_MS = 2500;
 
 /** Floating controls for the immersive current-file presentation. */
 export function PresentationControls() {
+  useLanguage();
   const activeFilePath = useAppStore((s) => s.activeFilePath);
   const scale = useAppStore((s) => s.presentationScale);
   const setScale = useAppStore((s) => s.setPresentationScale);
@@ -62,26 +65,26 @@ export function PresentationControls() {
         {slides ? <GalleryVerticalEnd size={15} className="ml-1 shrink-0" style={{ color: "var(--accent)" }} /> : <Maximize2 size={15} className="ml-1 shrink-0" style={{ color: "var(--accent)" }} />}
         <span className="max-w-[20vw] truncate px-2 text-sm font-medium">
           {isDraftPath(activeFilePath)
-            ? "未命名"
+            ? tr("未命名")
             : activeFilePath
               ? basename(activeFilePath)
-              : "演示"}
+              : tr("演示")}
         </span>
         {slides && <>
           <span className="mx-1 h-5 w-px" style={{ background: "var(--border)" }} />
-          <ControlButton title="上一页（← / PageUp）" disabled={page === 0} onClick={() => setPage(page - 1)}>
+          <ControlButton title={tr("上一页（← / PageUp）")} disabled={page === 0} onClick={() => setPage(page - 1)}>
             <ChevronLeft size={16} />
           </ControlButton>
-          <span className="min-w-12 select-none text-center text-xs tabular-nums" aria-label={`第 ${page + 1} 页，共 ${pageCount} 页`}>
+          <span className="min-w-12 select-none text-center text-xs tabular-nums" aria-label={tr("第 {{0}} 页，共 {{1}} 页", { 0: page + 1, 1: pageCount })}>
             {page + 1} / {pageCount}
           </span>
-          <ControlButton title="下一页（→ / PageDown）" disabled={page >= pageCount - 1} onClick={() => setPage(page + 1)}>
+          <ControlButton title={tr("下一页（→ / PageDown）")} disabled={page >= pageCount - 1} onClick={() => setPage(page + 1)}>
             <ChevronRight size={16} />
           </ControlButton>
         </>}
         <span className="mx-1 h-5 w-px" style={{ background: "var(--border)" }} />
         <ControlButton
-          title="缩小（⌘/Ctrl -）"
+          title={tr("缩小（⌘/Ctrl -）")}
           disabled={scale <= PRESENTATION_SCALE_MIN}
           onClick={() => setScale(scale - PRESENTATION_SCALE_STEP)}
         >
@@ -91,21 +94,21 @@ export function PresentationControls() {
           {Math.round(scale * 100)}%
         </span>
         <ControlButton
-          title="放大（⌘/Ctrl +）"
+          title={tr("放大（⌘/Ctrl +）")}
           disabled={scale >= PRESENTATION_SCALE_MAX}
           onClick={() => setScale(scale + PRESENTATION_SCALE_STEP)}
         >
           <Plus size={15} />
         </ControlButton>
         <ControlButton
-          title="重置缩放（⌘/Ctrl 0）"
+          title={tr("重置缩放（⌘/Ctrl 0）")}
           disabled={scale === PRESENTATION_SCALE_DEFAULT}
           onClick={() => setScale(PRESENTATION_SCALE_DEFAULT)}
         >
           <RotateCcw size={14} />
         </ControlButton>
         <span className="mx-1 h-5 w-px" style={{ background: "var(--border)" }} />
-        <ControlButton title="退出演示（Esc）" onClick={exit}>
+        <ControlButton title={tr("退出演示（Esc）")} onClick={exit}>
           <X size={16} />
         </ControlButton>
       </div>
@@ -124,6 +127,7 @@ function ControlButton({
   onClick: () => void;
   children: React.ReactNode;
 }) {
+  useLanguage();
   return (
     <button
       type="button"

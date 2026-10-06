@@ -1,3 +1,4 @@
+import { tr } from "../i18n/core.ts";
 // Thin typed wrappers around the Rust file commands defined in
 // src-tauri/src/lib.rs, plus the native folder picker dialog.
 
@@ -54,7 +55,7 @@ export function searchNotes(dir: string, query: string, signal?: AbortSignal): P
     const requestId = crypto.randomUUID();
     const cancel = () => {
       void invoke("cancel_note_search", { requestId }).catch((error) => {
-        console.warn("无法取消笔记搜索", error);
+        console.warn(tr("无法取消笔记搜索"), error);
       });
     };
     signal?.addEventListener("abort", cancel, { once: true });
@@ -147,7 +148,7 @@ export async function pickWorkspace(): Promise<string | null> {
   const selected = await open({
     directory: true,
     multiple: false,
-    title: "选择笔记文件夹",
+    title: tr("选择笔记文件夹"),
   });
   return typeof selected === "string" ? selected : null;
 }
@@ -156,11 +157,11 @@ export async function pickWorkspace(): Promise<string | null> {
  *  (cancelled). Used to save an untitled draft to a real file. */
 export async function pickSavePath(defaultPath?: string): Promise<string | null> {
   const selected = await save({
-    title: "保存为",
+    title: tr("保存为"),
     defaultPath,
     filters: [
       { name: "Markdown", extensions: ["md", "markdown"] },
-      { name: "所有文件", extensions: ["*"] },
+      { name: tr("所有文件"), extensions: ["*"] },
     ],
   });
   return selected ?? null;
@@ -170,10 +171,10 @@ export async function pickSavePath(defaultPath?: string): Promise<string | null>
 export async function pickImage(): Promise<string | null> {
   const selected = await open({
     multiple: false,
-    title: "选择图片",
+    title: tr("选择图片"),
     filters: [
       {
-        name: "图片",
+        name: tr("图片"),
         extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif"],
       },
     ],

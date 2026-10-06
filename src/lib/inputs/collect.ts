@@ -1,3 +1,4 @@
+import { tr } from "../../i18n/core.ts";
 // Turning a block's `in=…` binding into something a script can read.
 //
 // Three channels, all filled at once, because no single one covers every case:
@@ -72,7 +73,7 @@ export async function collectInputs(
 ): Promise<CollectResult> {
   if (binding.kind === "block") {
     const block = findInputBlock(doc, binding.name);
-    if (!block) return { error: `找不到 input 块「${binding.name}」` };
+    if (!block) return { error: tr("找不到 input 块「{{0}}」", { 0: binding.name }) };
     const key = inputKey(filePath, block.id);
     const values = valuesFor(key, block.schema);
     const inputs: Record<string, unknown> = {};
@@ -87,7 +88,7 @@ export async function collectInputs(
           field.as,
           workspacePath,
         );
-        if (!load.ok) return { error: `字段「${field.name}」：${load.error}` };
+        if (!load.ok) return { error: tr("字段「{{0}}」：{{1}}", { 0: field.name, 1: load.error }) };
         inputs[field.name] = load.path;
         inputs[`${field.name}_data`] = load.data;
         env[field.name] = load.path;
@@ -102,7 +103,7 @@ export async function collectInputs(
 
   if (binding.kind === "table") {
     const table = findTable(doc, binding.name);
-    if (!table) return { error: `找不到名为「${binding.name}」的表格` };
+    if (!table) return { error: tr("找不到名为「{{0}}」的表格", { 0: binding.name }) };
     const rows = table.rows.map((r) =>
       Object.fromEntries(table.columns.map((c, i) => [c, r[i] ?? ""])),
     );

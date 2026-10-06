@@ -1,3 +1,4 @@
+import { tr } from "../../i18n/core.ts";
 // The ```input block's little language.
 //
 //     principal: number = 500000 {slider: 0..2000000, step: 10000, label: 贷款总额}
@@ -145,9 +146,9 @@ export const isMoment = (type: FieldType): type is MomentType =>
 
 /** How each picker's literal should look, for the error message. */
 const MOMENT_HINT: Record<MomentType, string> = {
-  date: "日期，应形如 2026-01-31",
-  time: "时间，应形如 09:30",
-  datetime: "日期时间，应形如 2026-01-31T09:30",
+  get date() { return tr("日期，应形如 2026-01-31"); },
+  get time() { return tr("时间，应形如 09:30"); },
+  get datetime() { return tr("日期时间，应形如 2026-01-31T09:30"); },
 };
 
 const DATE_RE = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/;
@@ -256,14 +257,14 @@ function parseField(line: string, lineNo: number): InputField | InputParseError 
     text: line.trim(),
     message,
   });
-  if (!m) return fail("写法应为「名字: 类型 = 默认值 {选项}」");
+  if (!m) return fail(tr("写法应为「名字: 类型 = 默认值 {选项}」"));
 
   const name = m[1];
-  if (!NAME_RE.test(name)) return fail("字段名只能是字母、数字和下划线");
+  if (!NAME_RE.test(name)) return fail(tr("字段名只能是字母、数字和下划线"));
 
   const declared = m[2]?.toLowerCase() ?? null;
   if (declared && !TYPES.includes(declared as FieldType))
-    return fail(`未知类型「${declared}」，可用：${TYPES.join(" / ")}`);
+    return fail(tr("未知类型「{{0}}」，可用：{{1}}", { 0: declared, 1: TYPES.join(" / ") }));
 
   const rhs = m[3] ?? "";
   const list = parseList(rhs);
@@ -271,11 +272,11 @@ function parseField(line: string, lineNo: number): InputField | InputParseError 
   const type = (declared as FieldType | null) ?? inferType(literal, list);
 
   if (type === "select" && (!list || list.length === 0))
-    return fail("select 需要一个选项列表，例如 = [20, 25, 30]");
+    return fail(tr("select 需要一个选项列表，例如 = [20, 25, 30]"));
   if (type === "number" && rhs && !isNumeric(unquote(rhs)))
-    return fail(`「${rhs}」不是数字`);
+    return fail(tr("「{{0}}」不是数字", { 0: rhs }));
   if (isMoment(type) && rhs && normalizeMoment(type, rhs) === null)
-    return fail(`「${rhs}」不是合法的${MOMENT_HINT[type]}`);
+    return fail(tr("「{{0}}」不是合法的{{1}}", { 0: rhs, 1: MOMENT_HINT[type] }));
 
   const range = opts.entries.has("slider")
     ? parseRange(opts.entries.get("slider") ?? "")
@@ -330,7 +331,7 @@ export function parseInputBlock(source: string): InputSchema {
       return;
     }
     if (seen.has(parsed.name)) {
-      errors.push({ line: i + 1, text, message: `字段「${parsed.name}」重复` });
+      errors.push({ line: i + 1, text, message: tr("字段「{{0}}」重复", { 0: parsed.name }) });
       return;
     }
     seen.add(parsed.name);

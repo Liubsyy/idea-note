@@ -1,3 +1,4 @@
+import { tr } from "../i18n/core.ts";
 // 打包体积优化:替代 elkjs/lib/elk.bundled.js(约 1.4MB)。
 //
 // mermaid 只有渲染 `flowchart-elk` 类型图表时才会用到 ELK 布局引擎,普通
@@ -7,7 +8,7 @@
 export default class ELKStub {
   layout(): Promise<never> {
     return Promise.reject(
-      new Error("flowchart-elk 布局已在打包时移除,请改用普通 flowchart"),
+      new Error(tr("flowchart-elk 布局已在打包时移除,请改用普通 flowchart")),
     );
   }
 }

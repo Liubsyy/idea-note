@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { i18nDependency } from './i18nHarness.mjs';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
@@ -30,6 +31,7 @@ function gitHarness() {
   const calls = [];
   const exports = {};
   vm.runInNewContext(compiled, { exports, require: name => {
+    if (name.includes('/i18n/')) return i18nDependency(name);
     assert.equal(name, '@tauri-apps/api/core');
     return { invoke: async (command, args) => { calls.push({command, ...args}); return {code:0,stdout:'',stderr:''}; } };
   } });

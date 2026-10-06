@@ -1,8 +1,11 @@
+import { tr } from "../i18n/core.ts";
+import { useLanguage } from "../i18n/react";
 import { useEffect, useRef, useState } from "react";
 import { KeyRound } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 
 export function GitCredentialModal() {
+  useLanguage();
   const prompt = useAppStore((s) => s.gitCredentialPrompt);
   const closeGitCredentialPrompt = useAppStore((s) => s.closeGitCredentialPrompt);
 
@@ -30,12 +33,12 @@ export function GitCredentialModal() {
   const submit = () => {
     const user = username.trim();
     if (!user) {
-      setError("请填写用户名");
+      setError(tr("请填写用户名"));
       usernameRef.current?.focus();
       return;
     }
     if (!password) {
-      setError("请填写访问令牌或密码");
+      setError(tr("请填写访问令牌或密码"));
       passwordRef.current?.focus();
       return;
     }
@@ -61,8 +64,7 @@ export function GitCredentialModal() {
           <KeyRound size={16} style={{ color: "var(--accent)" }} />
           <div className="min-w-0">
             <div className="text-sm font-semibold" style={{ color: "var(--text)" }}>
-              远程仓库凭据
-            </div>
+              {tr("远程仓库凭据")}</div>
             <div className="truncate text-[11px]" style={{ color: "var(--text-muted)" }}>
               {prompt.remoteUrl}
             </div>
@@ -70,14 +72,12 @@ export function GitCredentialModal() {
         </div>
 
         <div className="mb-3 text-[12px]" style={{ color: "var(--text-muted)" }}>
-          {prompt.message}。请输入 HTTPS 仓库用户名和访问令牌。
-        </div>
+          {prompt.message}{tr("。请输入 HTTPS 仓库用户名和访问令牌。")}</div>
 
         <div className="space-y-2">
           <label className="block">
             <div className="mb-1 text-[12px]" style={{ color: "var(--text-soft)" }}>
-              用户名
-            </div>
+              {tr("用户名")}</div>
             <input
               ref={usernameRef}
               value={username}
@@ -102,8 +102,7 @@ export function GitCredentialModal() {
 
           <label className="block">
             <div className="mb-1 text-[12px]" style={{ color: "var(--text-soft)" }}>
-              访问令牌 / 密码
-            </div>
+              {tr("访问令牌 / 密码")}</div>
             <input
               ref={passwordRef}
               type="password"
@@ -133,8 +132,7 @@ export function GitCredentialModal() {
               checked={remember}
               onChange={(e) => setRemember(e.target.checked)}
             />
-            保存到系统 Git 凭据管理器
-          </label>
+            {tr("保存到系统 Git 凭据管理器")}</label>
         </div>
 
         {error && (
@@ -149,15 +147,13 @@ export function GitCredentialModal() {
             className="rounded-md px-3 py-1.5 text-sm transition-colors"
             style={{ color: "var(--text-muted)" }}
           >
-            取消
-          </button>
+            {tr("取消")}</button>
           <button
             onClick={submit}
             className="rounded-md px-3 py-1.5 text-sm font-medium text-white"
             style={{ background: "var(--accent)" }}
           >
-            重试
-          </button>
+            {tr("重试")}</button>
         </div>
       </div>
     </div>

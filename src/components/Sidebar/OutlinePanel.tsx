@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import { useMemo } from "react";
 import { EditorView } from "@codemirror/view";
 import { useAppStore } from "../../store/useAppStore";
@@ -10,6 +12,7 @@ import { getActiveView } from "../../lib/codemirror/activeView";
  * Parses the live store content, so it updates as the user types.
  */
 export function OutlinePanel() {
+  useLanguage();
   const activeFilePath = useAppStore((s) => s.activeFilePath);
   const content = useAppStore((s) => s.content);
   const compactSidebar = useAppStore((s) => s.compactSidebar);
@@ -20,9 +23,9 @@ export function OutlinePanel() {
     [isMd, content],
   );
 
-  if (!activeFilePath) return <Empty>未打开笔记。</Empty>;
-  if (!isMd) return <Empty>当前文件不是 Markdown。</Empty>;
-  if (!items.length) return <Empty>此笔记还没有标题。</Empty>;
+  if (!activeFilePath) return <Empty>{tr("未打开笔记。")}</Empty>;
+  if (!isMd) return <Empty>{tr("当前文件不是 Markdown。")}</Empty>;
+  if (!items.length) return <Empty>{tr("此笔记还没有标题。")}</Empty>;
 
   const jumpTo = (item: OutlineItem) => {
     const view = getActiveView();
@@ -67,6 +70,7 @@ export function OutlinePanel() {
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
+  useLanguage();
   return (
     <p className="px-4 py-6 text-center text-xs" style={{ color: "var(--text-muted)" }}>
       {children}

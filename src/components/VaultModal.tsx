@@ -1,3 +1,5 @@
+import { tr } from "../i18n/core.ts";
+import { useLanguage } from "../i18n/react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { KeyRound, Lock, X } from "lucide-react";
@@ -17,6 +19,7 @@ import { vaultInit, vaultUnlock, vaultErrorMessage } from "../lib/crypto/vault";
  * generating it is the only chance to make that concrete.
  */
 export function VaultModal() {
+  useLanguage();
   const request = useVaultStore((s) => s.unlockRequest);
   const close = useVaultStore((s) => s.closeUnlockRequest);
   const refresh = useVaultStore((s) => s.refresh);
@@ -64,7 +67,7 @@ export function VaultModal() {
     if (busy) return;
     setError(null);
     if (isInit && secret !== confirmSecret) {
-      setError("两次输入的口令不一致。");
+      setError(tr("两次输入的口令不一致。"));
       return;
     }
     setBusy(true);
@@ -95,10 +98,10 @@ export function VaultModal() {
   };
 
   const title = recoveryCode
-    ? "请保存恢复码"
+    ? tr("请保存恢复码")
     : isInit
-      ? "为这个工作区设置加密口令"
-      : "解锁加密内容";
+      ? tr("为这个工作区设置加密口令")
+      : tr("解锁加密内容");
 
   const modal = (
     <div
@@ -135,10 +138,10 @@ export function VaultModal() {
               style={{ color: "var(--text-soft)" }}
             >
               {recoveryCode
-                ? "忘记口令时，这串恢复码是唯一的入口。抄到密码管理器或纸上，它只显示这一次。"
+                ? tr("忘记口令时，这串恢复码是唯一的入口。抄到密码管理器或纸上，它只显示这一次。")
                 : isInit
-                  ? "口令用来保护这个工作区里的加密内容。它不会被存到任何地方，也无法找回——所以请选一个你不会忘的。"
-                  : "输入口令或恢复码，即可查看和编辑这篇笔记里的加密内容。"}
+                  ? tr("口令用来保护这个工作区里的加密内容。它不会被存到任何地方，也无法找回——所以请选一个你不会忘的。")
+                  : tr("输入口令或恢复码，即可查看和编辑这篇笔记里的加密内容。")}
             </p>
           </div>
           {!recoveryCode && (
@@ -146,7 +149,7 @@ export function VaultModal() {
               onClick={cancel}
               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors"
               style={{ color: "var(--text-muted)" }}
-              title="取消"
+              title={tr("取消")}
             >
               <X size={15} />
             </button>
@@ -177,8 +180,7 @@ export function VaultModal() {
                 onChange={(e) => setAcknowledged(e.target.checked)}
               />
               <span>
-                我已经保存好恢复码。我明白同时丢失口令和恢复码，这些加密内容将永远无法恢复。
-              </span>
+                {tr("我已经保存好恢复码。我明白同时丢失口令和恢复码，这些加密内容将永远无法恢复。")}</span>
             </label>
           </>
         ) : (
@@ -188,7 +190,7 @@ export function VaultModal() {
               type="password"
               value={secret}
               disabled={busy}
-              placeholder={isInit ? "设置口令" : "口令或恢复码"}
+              placeholder={isInit ? tr("设置口令") : tr("口令或恢复码")}
               onChange={(e) => setSecret(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") void submit();
@@ -206,7 +208,7 @@ export function VaultModal() {
                 type="password"
                 value={confirmSecret}
                 disabled={busy}
-                placeholder="再次输入口令"
+                placeholder={tr("再次输入口令")}
                 onChange={(e) => setConfirmSecret(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") void submit();
@@ -231,8 +233,7 @@ export function VaultModal() {
               <div className="vault-progress h-full w-1/3 rounded-full" />
             </div>
             <div className="mt-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
-              正在派生密钥…整个过程依赖内存和计算，难以暴力破解
-            </div>
+              {tr("正在派生密钥…整个过程依赖内存和计算，难以暴力破解")}</div>
           </div>
         )}
 
@@ -250,8 +251,7 @@ export function VaultModal() {
               className="rounded-md px-3.5 py-1.5 text-sm transition-colors"
               style={{ color: "var(--text-muted)" }}
             >
-              取消
-            </button>
+              {tr("取消")}</button>
           )}
           <button
             onClick={() => (recoveryCode ? finishInit() : void submit())}
@@ -263,7 +263,7 @@ export function VaultModal() {
                 busy || (recoveryCode ? !acknowledged : !secret) ? 0.55 : 1,
             }}
           >
-            {busy ? "校验中…" : recoveryCode ? "完成" : isInit ? "设置口令" : "解锁"}
+            {busy ? tr("校验中…") : recoveryCode ? tr("完成") : isInit ? tr("设置口令") : tr("解锁")}
           </button>
         </div>
       </div>

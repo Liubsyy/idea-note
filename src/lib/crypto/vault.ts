@@ -1,3 +1,4 @@
+import { tr } from "../../i18n/core.ts";
 // Typed wrappers around the vault / block commands in src-tauri/src/crypto.rs.
 //
 // Nothing here ever holds key material: the master key stays in Rust for the
@@ -42,23 +43,23 @@ export function vaultErrorMessage(error: unknown): string {
   const code = vaultErrorCode(error);
   switch (code) {
     case "locked":
-      return "加密内容已上锁，请先解锁。";
+      return tr("加密内容已上锁，请先解锁。");
     case "unknown_key":
-      return "这个块由其他密钥加密，当前口令打不开。";
+      return tr("这个块由其他密钥加密，当前口令打不开。");
     case "tampered":
-      return "这个块已损坏或被篡改，无法解密。";
+      return tr("这个块已损坏或被篡改，无法解密。");
     case "bad_format":
-      return "加密块格式无法识别。";
+      return tr("加密块格式无法识别。");
     case "wrong_secret":
-      return "口令或恢复码不正确。";
+      return tr("口令或恢复码不正确。");
     case "not_initialized":
-      return "当前工作区还没有设置加密口令。";
+      return tr("当前工作区还没有设置加密口令。");
     case "already_initialized":
-      return "当前工作区已经设置过加密口令。";
+      return tr("当前工作区已经设置过加密口令。");
     case "rotation_pending":
-      return "MK 重置尚未完成，请先继续完成迁移。";
+      return tr("MK 重置尚未完成，请先继续完成迁移。");
     default:
-      return typeof error === "string" ? error : String(error ?? "未知错误");
+      return typeof error === "string" ? error : String(error ?? tr("未知错误"));
   }
 }
 

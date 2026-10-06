@@ -1,3 +1,5 @@
+import { localizeElement } from "../i18n/dom.ts";
+import { tr } from "../i18n/core.ts";
 export interface SidebarDropTarget {
   dir: string;
   element: HTMLElement;
@@ -41,7 +43,7 @@ export function createSidebarDropFeedback() {
         document.body.appendChild(badge);
       }
       const name = target.dir.split(/[\\/]/).filter(Boolean).pop() || target.dir;
-      badge.textContent = `松开以拷贝${count > 1 ? ` ${count} 个项目` : ""}到「${name}」`;
+      localizeElement(badge, "textContent", () => tr("松开以拷贝{{0}}到「{{1}}」", { 0: count > 1 ? tr(" {{0}} 个项目", { 0: count }) : "", 1: name }));
       badge.style.left = `${Math.max(8, Math.min(point.x + 18, window.innerWidth - badge.offsetWidth - 8))}px`;
       badge.style.top = `${Math.max(8, Math.min(point.y + 20, window.innerHeight - badge.offsetHeight - 8))}px`;
     },

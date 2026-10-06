@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { LoaderCircle, RefreshCw } from "lucide-react";
@@ -9,19 +11,21 @@ interface PreviewSession { sessionId: string; baseUrl: string }
 
 /** Mount only after selecting preview/split. Source mode owns no resource session. */
 export function HtmlEditor({ path }: { path: string }) {
+  useLanguage();
   const [refresh, setRefresh] = useState(0);
   return <PreviewEditor label="HTML" defaultMode="source" sourceFirst previewActions={
-    <button type="button" className="preview-editor-refresh" title="刷新预览" aria-label="刷新预览"
+    <button type="button" className="preview-editor-refresh" title={tr("刷新预览")} aria-label={tr("刷新预览")}
       onClick={() => setRefresh(n => n + 1)}><RefreshCw size={14} /></button>
   }>
     {(mode, selectMode) => mode === "source" ?
-      <div className="svg-editor-placeholder">点击预览或分屏后加载页面</div> :
+      <div className="svg-editor-placeholder">{tr("点击预览或分屏后加载页面")}</div> :
       <HtmlPreview key={`${path}:${refresh}`} path={path} onCancel={() => selectMode("source")}
         onRetry={() => setRefresh(n => n + 1)} />}
   </PreviewEditor>;
 }
 
 function HtmlPreview({ path, onCancel, onRetry }: { path: string; onCancel: () => void; onRetry: () => void }) {
+  useLanguage();
   const content = useAppStore(s => s.content);
   const workspace = useAppStore(s => s.workspacePath);
   const frame = useRef<HTMLIFrameElement>(null);
@@ -47,7 +51,7 @@ function HtmlPreview({ path, onCancel, onRetry }: { path: string; onCancel: () =
       current = next;
       setSession(next);
     }).catch(reason => {
-      if (!disposed) { setError(`无法加载预览资源：${String(reason)}`); setPending(false); }
+      if (!disposed) { setError(tr("无法加载预览资源：{{0}}", { 0: String(reason) })); setPending(false); }
     });
     return () => { disposed = true; expectedToken.current = null; if (current) close(current); };
   }, [path, workspace]);
@@ -71,7 +75,7 @@ function HtmlPreview({ path, onCancel, onRetry }: { path: string; onCancel: () =
             setPreviewDocument({ html, token });
             rendered.current = true;
           } catch (reason) {
-            setError(`无法渲染预览：${String(reason)}`);
+            setError(tr("无法渲染预览：{{0}}", { 0: String(reason) }));
             setPending(false);
           }
         });
@@ -106,21 +110,21 @@ function HtmlPreview({ path, onCancel, onRetry }: { path: string; onCancel: () =
   return <div className="html-preview-container" aria-busy={pending}>
     {error && <div className="svg-editor-error" role="alert">{error}</div>}
     <div className="html-preview-stage">
-      {previewDocument && <iframe key={previewDocument.token} ref={frame} className="html-file-preview" title="HTML 页面预览"
+      {previewDocument && <iframe key={previewDocument.token} ref={frame} className="html-file-preview" title={tr("HTML 页面预览")}
         sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={previewDocument.html} />}
       {pending && <div className="html-preview-loading">
         <LoaderCircle className="html-preview-spinner" size={26} aria-hidden="true" />
-        <span role="status">{slow ? "页面加载较慢，仍在等待资源…" : "正在加载预览…"}</span>
+        <span role="status">{slow ? tr("页面加载较慢，仍在等待资源…") : tr("正在加载预览…")}</span>
         <div className="html-preview-loading-actions">
-          <button type="button" onClick={onCancel}>返回源码</button>
-          {slow && <button type="button" onClick={onRetry}>重试加载</button>}
+          <button type="button" onClick={onCancel}>{tr("返回源码")}</button>
+          {slow && <button type="button" onClick={onRetry}>{tr("重试加载")}</button>}
         </div>
       </div>}
       {!pending && !previewDocument && <div className="html-preview-loading">
-        <span>预览未能加载</span>
+        <span>{tr("预览未能加载")}</span>
         <div className="html-preview-loading-actions">
-          <button type="button" onClick={onCancel}>返回源码</button>
-          <button type="button" onClick={onRetry}>重试加载</button>
+          <button type="button" onClick={onCancel}>{tr("返回源码")}</button>
+          <button type="button" onClick={onRetry}>{tr("重试加载")}</button>
         </div>
       </div>}
     </div>

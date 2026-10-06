@@ -1,3 +1,4 @@
+import { tr } from "../../i18n/core.ts";
 // Toolbar actions that edit the markdown source in a CodeMirror view.
 // Each operates on the active view and refocuses it afterwards.
 
@@ -376,8 +377,8 @@ function editHighlightBlock(
   if (range.empty) {
     insertBlock(
       view,
-      `${highlightMarker(color)}\n>\n> 高亮内容`,
-      "高亮内容",
+      tr("{{0}}\n>\n> 高亮内容", { 0: highlightMarker(color) }),
+      tr("高亮内容"),
     );
     return;
   }
@@ -431,7 +432,7 @@ export const md = {
     const { state } = v;
     const changes = state.changeByRange((range) => {
       const text =
-        label?.trim() || state.sliceDoc(range.from, range.to) || "链接";
+        label?.trim() || state.sliceDoc(range.from, range.to) || tr("链接");
       const insert = `[${text}](${href})`;
       return {
         changes: { from: range.from, to: range.to, insert },
@@ -512,10 +513,10 @@ export const md = {
   table: (v: EditorView) =>
     insertBlock(
       v,
-      "| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n| 内容 | 内容 | 内容 |",
-      "列1",
+      tr("| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n| 内容 | 内容 | 内容 |"),
+      tr("列1"),
     ),
-  taskList: (v: EditorView) => insertBlock(v, "- [ ] 待办事项", "待办事项"),
+  taskList: (v: EditorView) => insertBlock(v, tr("- [ ] 待办事项"), tr("待办事项")),
   mathBlock: (v: EditorView) => insertBlock(v, "$$\nE = mc^2\n$$", "E = mc^2"),
   mermaid: (v: EditorView, body: string) =>
     insertBlock(v, "```mermaid\n" + body + "\n```"),

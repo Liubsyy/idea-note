@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import {
   ChevronRight,
   FileSymlink,
@@ -17,6 +19,7 @@ import { DirectoryEntries } from "../DirectoryEntries";
  * per row. Clicking an entry drills in (folders) or opens the file (files).
  */
 export function FolderView({ path }: { path: string }) {
+  useLanguage();
   const tree = useAppStore((s) => s.tree);
   const openFile = useAppStore((s) => s.openFile);
   const openFolder = useAppStore((s) => s.openFolder);
@@ -27,14 +30,14 @@ export function FolderView({ path }: { path: string }) {
   const createReadme = () => newFile(path, "README.md");
 
   if (node?.children == null) {
-    return <div role="status" className="flex h-full items-center justify-center text-sm" style={{ color: "var(--text-muted)" }}>正在加载文件夹…</div>;
+    return <div role="status" className="flex h-full items-center justify-center text-sm" style={{ color: "var(--text-muted)" }}>{tr("正在加载文件夹…")}</div>;
   }
 
   if (children.length === 0) {
     return (
       <div className="flex h-full items-center justify-center px-6 text-sm">
         <div className="text-center">
-          <div style={{ color: "var(--text-muted)" }}>此文件夹为空</div>
+          <div style={{ color: "var(--text-muted)" }}>{tr("此文件夹为空")}</div>
           <ReadmeHint onCreate={createReadme} />
         </div>
       </div>
@@ -47,8 +50,7 @@ export function FolderView({ path }: { path: string }) {
       <div className="mx-auto w-full max-w-[520px]">
         <div className="mb-3 px-1">
           <div className="text-center text-xs" style={{ color: "var(--text-muted)" }}>
-            共 {children.length} 项
-          </div>
+            {tr("共")}{" "}{children.length} {" "}{tr("项")}</div>
           <ReadmeHint onCreate={createReadme} />
         </div>
         <DirectoryEntries directory={path} entries={children}>
@@ -73,23 +75,23 @@ export function FolderView({ path }: { path: string }) {
 }
 
 function ReadmeHint({ onCreate }: { onCreate: () => void }) {
+  useLanguage();
   return (
     <div className="mt-2 flex items-center justify-center gap-3 text-xs">
       <span style={{ color: "var(--text-muted)" }}>
-        当文件夹中有README.md时将显示README.md。
-      </span>
+        {tr("当文件夹中有README.md时将显示README.md。")}</span>
       <button
         onClick={onCreate}
         className="shrink-0 underline-offset-2 hover:underline"
         style={{ color: "var(--accent)" }}
       >
-        创建README.md
-      </button>
+        {tr("创建README.md")}</button>
     </div>
   );
 }
 
 function Entry({ node, onOpen }: { node: FileNode; onOpen: () => void }) {
+  useLanguage();
   const icon = node.is_dir ? (
     node.is_symlink ? (
       <FolderSymlink size={18} style={{ color: "var(--accent)" }} />

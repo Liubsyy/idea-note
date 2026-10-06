@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -29,6 +31,7 @@ function stripTerminalStyles(data: string) {
  * inactive (hidden) so scrollback survives tab switches; re-fits when shown.
  */
 export function TerminalView({ id, active }: { id: number; active: boolean }) {
+  useLanguage();
   const hostRef = useRef<HTMLDivElement>(null);
   // Keyed by themeId (not just light/dark) so switching between two same-mode
   // themes — or live-editing a custom theme — re-reads the CSS-variable colours.
@@ -67,7 +70,7 @@ export function TerminalView({ id, active }: { id: number; active: boolean }) {
     }).catch((err) => {
       // Surface the failure in the terminal itself — otherwise a shell that
       // can't spawn just leaves a dead black panel.
-      term.writeln(`终端启动失败: ${err}`);
+      term.writeln(tr("终端启动失败: {{0}}", { 0: err }));
     });
 
     const decoder = new TextDecoder();

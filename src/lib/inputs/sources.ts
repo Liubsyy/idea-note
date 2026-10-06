@@ -1,3 +1,4 @@
+import { tr } from "../../i18n/core.ts";
 // Where a code block's inputs come from: an ```input block, a markdown table
 // in the same note, or a file next to it.
 //
@@ -213,25 +214,25 @@ export async function loadFile(
   workspacePath: string | null,
 ): Promise<FileLoad> {
   const path = resolvePath(notePath, ref);
-  if (!path) return { ok: false, error: `无法解析路径「${ref}」` };
+  if (!path) return { ok: false, error: tr("无法解析路径「{{0}}」", { 0: ref }) };
   const root = workspacePath ?? (notePath ? dirname(notePath) : null);
   if (!isInside(root, path))
-    return { ok: false, error: `「${ref}」在工作区之外，出于安全考虑不会读取` };
+    return { ok: false, error: tr("「{{0}}」在工作区之外，出于安全考虑不会读取", { 0: ref }) };
 
   let text: string;
   try {
     text = await readFile(path);
   } catch (e) {
-    return { ok: false, error: `读取失败：${e}` };
+    return { ok: false, error: tr("读取失败：{{0}}", { 0: e }) };
   }
   if (text.length > MAX_INPUT_FILE_BYTES)
-    return { ok: false, error: `文件超过 ${MAX_INPUT_FILE_BYTES / 1024 / 1024} MB` };
+    return { ok: false, error: tr("文件超过 {{0}} MB", { 0: MAX_INPUT_FILE_BYTES / 1024 / 1024 }) };
 
   if (format === "json") {
     try {
       return { ok: true, path, data: JSON.parse(text) };
     } catch (e) {
-      return { ok: false, error: `JSON 解析失败：${e}` };
+      return { ok: false, error: tr("JSON 解析失败：{{0}}", { 0: e }) };
     }
   }
   if (format === "csv") {

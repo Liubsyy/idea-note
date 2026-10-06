@@ -1,3 +1,4 @@
+import { tr } from "../../i18n/core.ts";
 // The ready-to-run example inserted by the 可交互组件 dialog.
 //
 // Every generated block declares `out=` and prints exactly one JSON value on
@@ -22,17 +23,17 @@ const sampleTable = (name: string): string =>
   [
     `**${name}**`,
     "",
-    "| 月份 | 渠道 | 金额 |",
+    tr("| 月份 | 渠道 | 金额 |"),
     "| :--- | :--- | ---: |",
-    "| 1月 | 线上 | 1200 |",
-    "| 2月 | 线上 | 1580 |",
-    "| 3月 | 门店 | 990 |",
+    tr("| 1月 | 线上 | 1200 |"),
+    tr("| 2月 | 线上 | 1580 |"),
+    tr("| 3月 | 门店 | 990 |"),
   ].join("\n");
 
-const SAMPLE_FIELDS = [
-  "amount: number = 500000 {slider: 0..2000000, step: 10000, label: 金额, unit: 元}",
-  "rate:   number = 3.85 {step: 0.05, label: 比例, unit: %}",
-  "title:  text = \"示例\"",
+const sampleFields = () => [
+  tr("amount: number = 500000 {slider: 0..2000000, step: 10000, label: 金额, unit: 元}"),
+  tr("rate:   number = 3.85 {step: 0.05, label: 比例, unit: %}"),
+  tr("title:  text = \"示例\""),
 ];
 
 interface Emit {
@@ -69,7 +70,7 @@ const EMITTERS: Record<string, Emit> = {
     envString: (prefix, name, suffix) =>
       `print(json.dumps(${dq(prefix)} + os.environ[${dq(name)}] + ${dq(suffix)}, ensure_ascii=False))`,
     table: (hasParams) => [
-      `result = {"columns": ["项目", "数值"], "rows": [["金额", ${hasParams ? 'float(os.environ["amount"])' : "500000"}], ["比例", 3.85]]}`,
+      tr("result = {\"columns\": [\"项目\", \"数值\"], \"rows\": [[\"金额\", {{0}}], [\"比例\", 3.85]]}", { 0: hasParams ? 'float(os.environ["amount"])' : "500000" }),
       "print(json.dumps(result, ensure_ascii=False))",
     ],
     comment: (text) => `# ${text}`,
@@ -88,7 +89,7 @@ const EMITTERS: Record<string, Emit> = {
     envString: (prefix, name, suffix) =>
       `console.log(JSON.stringify(${dq(prefix)} + process.env.${name} + ${dq(suffix)}));`,
     table: (hasParams) => [
-      `const result = { columns: ["项目", "数值"], rows: [["金额", ${hasParams ? "Number(process.env.amount)" : "500000"}], ["比例", 3.85]] };`,
+      tr("const result = { columns: [\"项目\", \"数值\"], rows: [[\"金额\", {{0}}], [\"比例\", 3.85]] };", { 0: hasParams ? "Number(process.env.amount)" : "500000" }),
       "console.log(JSON.stringify(result));",
     ],
     comment: (text) => `// ${text}`,
@@ -110,7 +111,7 @@ const EMITTERS: Record<string, Emit> = {
     envString: (prefix, name, suffix) =>
       `puts JSON.generate(${dq(prefix)} + ENV[${dq(name)}] + ${dq(suffix)})`,
     table: (hasParams) => [
-      `result = { "columns" => ["项目", "数值"], "rows" => [["金额", ${hasParams ? 'Float(ENV["amount"])' : "500000"}], ["比例", 3.85]] }`,
+      tr("result = { \"columns\" => [\"项目\", \"数值\"], \"rows\" => [[\"金额\", {{0}}], [\"比例\", 3.85]] }", { 0: hasParams ? 'Float(ENV["amount"])' : "500000" }),
       "puts JSON.generate(result)",
     ],
     comment: (text) => `# ${text}`,
@@ -136,7 +137,7 @@ const EMITTERS: Record<string, Emit> = {
     envString: (prefix, name, suffix) =>
       `print $json->encode(${dq(prefix)} . $ENV{${name}} . ${dq(suffix)}), "\\n";`,
     table: (hasParams) => [
-      `my $result = { columns => ["项目", "数值"], rows => [["金额", ${hasParams ? "0 + $ENV{amount}" : "500000"}], ["比例", 3.85]] };`,
+      tr("my $result = { columns => [\"项目\", \"数值\"], rows => [[\"金额\", {{0}}], [\"比例\", 3.85]] };", { 0: hasParams ? "0 + $ENV{amount}" : "500000" }),
       'print $json->encode($result), "\\n";',
     ],
     comment: (text) => `# ${text}`,
@@ -152,7 +153,7 @@ const EMITTERS: Record<string, Emit> = {
     prelude: ({ bound }) =>
       bound
         ? [
-            "# 绑定数据位于 $IDEA_NOTE_INPUT；复杂处理可使用 jq。",
+            tr("# 绑定数据位于 $IDEA_NOTE_INPUT；复杂处理可使用 jq。"),
             '# echo "$IDEA_NOTE_INPUT" | jq "."',
           ]
         : [],
@@ -161,8 +162,8 @@ const EMITTERS: Record<string, Emit> = {
       `printf '"%s%s%s"\\n' ${shq(jsonStringFragment(prefix))} "$${name}" ${shq(jsonStringFragment(suffix))}`,
     table: (hasParams) => [
       hasParams
-        ? `printf '{"columns":["项目","数值"],"rows":[["金额",%s],["比例",3.85]]}\\n' "$amount"`
-        : `printf '%s\\n' '{"columns":["项目","数值"],"rows":[["金额",500000],["比例",3.85]]}'`,
+        ? tr("printf '{\"columns\":[\"项目\",\"数值\"],\"rows\":[[\"金额\",%s],[\"比例\",3.85]]}\\n' \"$amount\"")
+        : tr("printf '%s\\n' '{\"columns\":[\"项目\",\"数值\"],\"rows\":[[\"金额\",500000],[\"比例\",3.85]]}'"),
     ],
     comment: (text) => `# ${text}`,
   },
@@ -174,8 +175,8 @@ const EMITTERS: Record<string, Emit> = {
     envString: (prefix, name, suffix) =>
       `Write-Output ("${prefix}$env:${name}${suffix}" | ConvertTo-Json -Compress)`,
     table: (hasParams) => [
-      `$rows = ,@("金额", ${hasParams ? '[double]$env:amount' : "500000"}) + ,@("比例", 3.85)`,
-      '$result = @{ columns = @("项目", "数值"); rows = $rows }',
+      tr("$rows = ,@(\"金额\", {{0}}) + ,@(\"比例\", 3.85)", { 0: hasParams ? '[double]$env:amount' : "500000" }),
+      tr("$result = @{ columns = @(\"项目\", \"数值\"); rows = $rows }"),
       "Write-Output ($result | ConvertTo-Json -Compress -Depth 10)",
     ],
     comment: (text) => `# ${text}`,
@@ -185,7 +186,7 @@ const EMITTERS: Record<string, Emit> = {
     prelude: ({ bound }) => [
       "@echo off",
       ...(bound
-        ? ["rem 绑定数据位于 %IDEA_NOTE_INPUT%；复杂 JSON 处理建议改用 PowerShell。"]
+        ? [tr("rem 绑定数据位于 %IDEA_NOTE_INPUT%；复杂 JSON 处理建议改用 PowerShell。")]
         : []),
     ],
     literalJson: (json) => batEcho(json),
@@ -193,19 +194,19 @@ const EMITTERS: Record<string, Emit> = {
       `echo("${batEchoEscape(jsonStringFragment(prefix))}%${name}%${batEchoEscape(jsonStringFragment(suffix))}"`,
     table: (hasParams) => [
       hasParams
-        ? 'echo({"columns":["项目","数值"],"rows":[["金额",%amount%],["比例",3.85]]}'
-        : batEcho('{"columns":["项目","数值"],"rows":[["金额",500000],["比例",3.85]]}'),
+        ? tr("echo({\"columns\":[\"项目\",\"数值\"],\"rows\":[[\"金额\",%amount%],[\"比例\",3.85]]}")
+        : batEcho(tr("{\"columns\":[\"项目\",\"数值\"],\"rows\":[[\"金额\",500000],[\"比例\",3.85]]}")),
     ],
     comment: (text) => `rem ${text}`,
   },
 };
 
 const fallbackEmit = (lang: string): Emit => ({
-  prelude: () => [`# ${lang}：最后一行需要输出一个合法的单行 JSON 值`],
-  literalJson: (json) => `# 输出：${json}`,
+  prelude: () => [tr("# {{0}}：最后一行需要输出一个合法的单行 JSON 值", { 0: lang })],
+  literalJson: (json) => tr("# 输出：{{0}}", { 0: json }),
   envString: (prefix, name, suffix) =>
-    `# 输出 JSON 字符串：${prefix}<${name}>${suffix}`,
-  table: () => ['# 输出：{"columns":["列名"],"rows":[["值"]]}'],
+    tr("# 输出 JSON 字符串：{{0}}<{{1}}>{{2}}", { 0: prefix, 1: name, 2: suffix }),
+  table: () => [tr("# 输出：{\"columns\":[\"列名\"],\"rows\":[[\"值\"]]}")],
   comment: (text) => `# ${text}`,
 });
 
@@ -220,14 +221,14 @@ function outputLines(emit: Emit, kind: OutKind, hasParams: boolean): string[] {
     case "mermaid":
       return [
         emit.literalJson(
-          JSON.stringify("graph TD\n  A[输入] --> B[计算] --> C[结果]"),
+          JSON.stringify(tr("graph TD\n  A[输入] --> B[计算] --> C[结果]")),
         ),
       ];
     case "html":
       return [
         emit.literalJson(
           JSON.stringify(
-            '<div style="padding:6px 10px;border-radius:6px;background:#eef2ff">这是一个 HTML 组件</div>',
+            tr("<div style=\"padding:6px 10px;border-radius:6px;background:#eef2ff\">这是一个 HTML 组件</div>"),
           ),
         ),
       ];
@@ -235,17 +236,17 @@ function outputLines(emit: Emit, kind: OutKind, hasParams: boolean): string[] {
       return [emit.literalJson(JSON.stringify("./chart.png"))];
     case "markdown":
       return hasParams
-        ? [emit.envString("**计算结果**\n\n- 金额：", "amount", " 元")]
+        ? [emit.envString(tr("**计算结果**\n\n- 金额："), "amount", tr(" 元"))]
         : [
             emit.literalJson(
-              JSON.stringify("**计算结果**\n\n- 金额：500000 元"),
+              JSON.stringify(tr("**计算结果**\n\n- 金额：500000 元")),
             ),
           ];
     default:
       return [
         hasParams
-          ? emit.envString("金额 = ", "amount", " 元")
-          : emit.literalJson(JSON.stringify("Hello, 组件！")),
+          ? emit.envString(tr("金额 = "), "amount", tr(" 元"))
+          : emit.literalJson(JSON.stringify(tr("Hello, 组件！"))),
       ];
   }
 }
@@ -280,7 +281,7 @@ function bodyLines(o: ComponentOptions): string[] {
   }
 
   if (bound)
-    lines.push(emit.comment("绑定的数据已经解析好了，下面先返回一份示例结果"));
+    lines.push(emit.comment(tr("绑定的数据已经解析好了，下面先返回一份示例结果")));
   if (lines.length) lines.push("");
   lines.push(...outputLines(emit, o.out, o.source === "input"));
   return lines;
@@ -290,7 +291,7 @@ export function buildComponentSnippet(o: ComponentOptions): string {
   const blocks: string[] = [];
   if (o.source === "input")
     blocks.push(
-      ["```input {id=" + o.name + "}", ...SAMPLE_FIELDS, "```"].join("\n"),
+      ["```input {id=" + o.name + "}", ...sampleFields(), "```"].join("\n"),
     );
   else if (o.source === "table") blocks.push(sampleTable(o.name));
   blocks.push(["```" + fenceInfo(o), ...bodyLines(o), "```"].join("\n"));

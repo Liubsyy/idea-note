@@ -1,3 +1,4 @@
+import { tr } from "../i18n/core.ts";
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
@@ -179,16 +180,16 @@ export const EDITOR_FONT_DEFAULT_STACK =
  *  persisted (`""` = system default); `stack` is the CSS font-family applied,
  *  always ending in a system fallback so an absent font still renders. */
 export const EDITOR_FONT_OPTIONS: { value: string; label: string; stack: string }[] = [
-  { value: "", label: "系统默认", stack: EDITOR_FONT_DEFAULT_STACK },
-  { value: "PingFang SC", label: "苹方 / PingFang", stack: `"PingFang SC", ${EDITOR_FONT_DEFAULT_STACK}` },
-  { value: "Microsoft YaHei", label: "微软雅黑 / YaHei", stack: `"Microsoft YaHei", ${EDITOR_FONT_DEFAULT_STACK}` },
-  { value: "Source Han Sans", label: "思源黑体", stack: `"Source Han Sans SC", "Noto Sans CJK SC", ${EDITOR_FONT_DEFAULT_STACK}` },
-  { value: "Source Han Serif", label: "思源宋体", stack: `"Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", SimSun, serif` },
-  { value: "Songti", label: "宋体", stack: `"Songti SC", STSong, SimSun, serif` },
-  { value: "Kaiti", label: "楷体", stack: `"Kaiti SC", STKaiti, KaiTi, serif` },
-  { value: "Heiti", label: "黑体", stack: `"Heiti SC", STHeiti, SimHei, sans-serif` },
-  { value: "Georgia", label: "Georgia（衬线）", stack: `Georgia, "Times New Roman", "Songti SC", SimSun, serif` },
-  { value: "monospace", label: "等宽 / Monospace", stack: `ui-monospace, SFMono-Regular, "JetBrains Mono", Consolas, "Songti SC", monospace` },
+  { value: "", get label() { return tr("系统默认"); }, stack: EDITOR_FONT_DEFAULT_STACK },
+  { value: "PingFang SC", get label() { return tr("苹方 / PingFang"); }, stack: `"PingFang SC", ${EDITOR_FONT_DEFAULT_STACK}` },
+  { value: "Microsoft YaHei", get label() { return tr("微软雅黑 / YaHei"); }, stack: `"Microsoft YaHei", ${EDITOR_FONT_DEFAULT_STACK}` },
+  { value: "Source Han Sans", get label() { return tr("思源黑体"); }, stack: `"Source Han Sans SC", "Noto Sans CJK SC", ${EDITOR_FONT_DEFAULT_STACK}` },
+  { value: "Source Han Serif", get label() { return tr("思源宋体"); }, stack: `"Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", SimSun, serif` },
+  { value: "Songti", get label() { return tr("宋体"); }, stack: `"Songti SC", STSong, SimSun, serif` },
+  { value: "Kaiti", get label() { return tr("楷体"); }, stack: `"Kaiti SC", STKaiti, KaiTi, serif` },
+  { value: "Heiti", get label() { return tr("黑体"); }, stack: `"Heiti SC", STHeiti, SimHei, sans-serif` },
+  { value: "Georgia", get label() { return tr("Georgia（衬线）"); }, stack: `Georgia, "Times New Roman", "Songti SC", SimSun, serif` },
+  { value: "monospace", get label() { return tr("等宽 / Monospace"); }, stack: `ui-monospace, SFMono-Regular, "JetBrains Mono", Consolas, "Songti SC", monospace` },
 ];
 
 /** Resolve a persisted font key to its CSS font-family stack, falling back to
@@ -1525,12 +1526,12 @@ function confirmUnsavedClose(
   proceed: (save: boolean) => void | Promise<void>,
 ) {
   get().openConfirm({
-    title: "未保存的更改",
-    message: "此标签页有未保存的更改，关闭后将丢失。是否先保存？",
-    confirmLabel: "保存",
+    title: tr("未保存的更改"),
+    message: tr("此标签页有未保存的更改，关闭后将丢失。是否先保存？"),
+    confirmLabel: tr("保存"),
     tone: "primary",
     onConfirm: () => proceed(true),
-    altLabel: "不保存",
+    altLabel: tr("不保存"),
     onAlt: () => proceed(false),
   });
 }
@@ -1665,7 +1666,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           tree = nextTree.snapshot();
         } catch {
           if (request !== workspaceRequest) return;
-          window.alert(`无法打开「${path}」（文件夹可能已被移动或删除）。`);
+          window.alert(tr("无法打开「{{0}}」（文件夹可能已被移动或删除）。", { 0: path }));
           set({ recentWorkspaces: dropRecent(path) });
           return;
         }
@@ -1817,12 +1818,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   requestOpenWorkspaceAt: (path) => {
     set({
       confirm: {
-        title: "打开项目",
-        message: `在哪个窗口打开「${basename(path)}」？`,
-        confirmLabel: "当前窗口",
+        title: tr("打开项目"),
+        message: tr("在哪个窗口打开「{{0}}」？", { 0: basename(path) }),
+        confirmLabel: tr("当前窗口"),
         tone: "primary",
         onConfirm: () => get().openWorkspaceAt(path),
-        altLabel: "新窗口",
+        altLabel: tr("新窗口"),
         onAlt: () => get().openNewWindow(path),
       },
     });
@@ -2039,7 +2040,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ notesTree, notesLoaded: true });
     } catch (error) {
       if (!controller.signal.aborted && notesController === controller)
-        set({ notesError: `无法加载笔记：${String(error)}` });
+        set({ notesError: tr("无法加载笔记：{{0}}", { 0: String(error) }) });
     } finally {
       if (notesController === controller) {
         notesController = null;
@@ -2094,7 +2095,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (request !== workspaceRequest) return;
       // Other non-text files (PDFs, binaries, …) can't be read as UTF-8.
       get().showToast(
-        `无法以文本方式打开「${basename(path)}」（可能是二进制文件）。`,
+        tr("无法以文本方式打开「{{0}}」（可能是二进制文件）。", { 0: basename(path) }),
         "error",
       );
       return;
@@ -2122,7 +2123,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     let children: FileNode[];
     try { children = await get().loadDirectory(node.path); }
     catch (error) {
-      if (directoryTree === current) get().showToast(`无法打开文件夹：${String(error)}`, "error");
+      if (directoryTree === current) get().showToast(tr("无法打开文件夹：{{0}}", { 0: String(error) }), "error");
       return;
     }
     if (directoryTree !== current) return;
@@ -2392,16 +2393,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     // consent; only read the file if the user actually chooses to reload.
     set({
       confirm: {
-        title: "文件已被外部修改",
-        message: `「${basename(path)}」在应用外被修改，而你有未保存的改动。重新加载会丢失这些改动。`,
+        title: tr("文件已被外部修改"),
+        message: tr("「{{0}}」在应用外被修改，而你有未保存的改动。重新加载会丢失这些改动。", { 0: basename(path) }),
         tone: "primary",
-        confirmLabel: "保留我的修改",
+        confirmLabel: tr("保留我的修改"),
         // Keep the buffer; adopt the new on-disk stat so the same external
         // change won't prompt again. A later save overwrites the disk version.
         // The external content was deliberately not read, so its hash is
         // unknown. Keep the editor dirty until the user explicitly saves.
         onConfirm: () => set({ diskStat: now, savedContentHash: null }),
-        altLabel: "重新加载",
+        altLabel: tr("重新加载"),
         onAlt: async () => {
           const disk = await readFile(path);
           if (get().activeFilePath !== path) return;
@@ -2426,7 +2427,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     if (flushed.blocked > 0)
       get().showToast(
-        `有 ${flushed.blocked} 个加密块未能保存：需要先解锁`,
+        tr("有 {{0}} 个加密块未能保存：需要先解锁", { 0: flushed.blocked }),
         "error",
       );
     const { activeFilePath, content, isDirty } = get();
@@ -2435,7 +2436,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (isDraftPath(activeFilePath)) {
       const draftPath = activeFilePath;
       const ws = get().workspacePath;
-      const chosen = await pickSavePath(ws ? `${ws}/未命名.md` : "未命名.md");
+      const chosen = await pickSavePath(ws ? tr("{{0}}/未命名.md", { 0: ws }) : tr("未命名.md"));
       if (!chosen) return; // cancelled
       const savedContent = get().content;
       const savedContentHash = hashContent(savedContent);
@@ -2517,7 +2518,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     if (flushed.blocked > 0)
       get().showToast(
-        `有 ${flushed.blocked} 个加密块未能保存：需要先解锁`,
+        tr("有 {{0}} 个加密块未能保存：需要先解锁", { 0: flushed.blocked }),
         "error",
       );
     const { activeFilePath, content, isDirty } = get();
@@ -2617,7 +2618,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (selectedPath) set({ selectedPath: remap(selectedPath) });
     if (folderViewPath) set({ folderViewPath: remap(folderViewPath) });
 
-    if (failed.length) get().showToast(`有 ${failed.length} 项未能移动`, "error");
+    if (failed.length) get().showToast(tr("有 {{0}} 项未能移动", { 0: failed.length }), "error");
   },
 
   requestMove: (path, destDir) => get().requestMoveMany([path], destDir),
@@ -2630,13 +2631,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (movable.length === 0) return;
     const message =
       movable.length === 1
-        ? `将「${basename(movable[0])}」移动到「${basename(destDir)}」？`
-        : `将 ${movable.length} 个项目移动到「${basename(destDir)}」？`;
+        ? tr("将「{{0}}」移动到「{{1}}」？", { 0: basename(movable[0]), 1: basename(destDir) })
+        : tr("将 {{0}} 个项目移动到「{{1}}」？", { 0: movable.length, 1: basename(destDir) });
     set({
       confirm: {
-        title: "移动",
+        title: tr("移动"),
         message,
-        confirmLabel: "移动",
+        confirmLabel: tr("移动"),
         tone: "primary",
         onConfirm: () => get().moveNodes(movable, destDir),
       },
@@ -2696,7 +2697,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     if (!deleted.length) {
       throw new Error(
-        failed.length === 1 ? `无法删除「${failed[0]}」` : `有 ${failed.length} 个项目删除失败`,
+        failed.length === 1 ? tr("无法删除「{{0}}」", { 0: failed[0] }) : tr("有 {{0}} 个项目删除失败", { 0: failed.length }),
       );
     }
 
@@ -2750,7 +2751,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
 
-    if (failed.length) get().showToast(`有 ${failed.length} 个项目删除失败`, "error");
+    if (failed.length) get().showToast(tr("有 {{0}} 个项目删除失败", { 0: failed.length }), "error");
   },
 
   remove: async (path) => get().removeMany([path]),
@@ -2768,12 +2769,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!roots.length) return;
     set({
       confirm: {
-        title: "删除",
+        title: tr("删除"),
         message:
           roots.length === 1
-            ? `确定删除「${basename(roots[0])}」？此操作不可撤销。`
-            : `确定删除选中的 ${roots.length} 个项目？此操作不可撤销。`,
-        confirmLabel: "删除",
+            ? tr("确定删除「{{0}}」？此操作不可撤销。", { 0: basename(roots[0]) })
+            : tr("确定删除选中的 {{0}} 个项目？此操作不可撤销。", { 0: roots.length }),
+        confirmLabel: tr("删除"),
         onConfirm: () => get().removeManyNow(roots),
       },
     });
@@ -2803,8 +2804,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!target) return;
     set({
       prompt: {
-        title: "新建笔记",
-        defaultValue: "未命名",
+        title: tr("新建笔记"),
+        defaultValue: tr("未命名"),
         onSubmit: (name) => get().newFile(target, name),
       },
     });
@@ -2815,11 +2816,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!target) return;
     set({
       prompt: {
-        title: "新建文件",
-        defaultValue: "未命名.txt",
+        title: tr("新建文件"),
+        defaultValue: tr("未命名.txt"),
         onSubmit: (name) => {
           if (!/\.[^./\\]+$/.test(name.trim())) {
-            throw "请填写文件后缀名（例如 .txt、.json）";
+            throw tr("请填写文件后缀名（例如 .txt、.json）");
           }
           return get().newRawFile(target, name);
         },
@@ -2832,8 +2833,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!target) return;
     set({
       prompt: {
-        title: "新建文件夹",
-        defaultValue: "新建文件夹",
+        title: tr("新建文件夹"),
+        defaultValue: tr("新建文件夹"),
         onSubmit: (name) => get().newFolder(target, name),
       },
     });
@@ -2842,7 +2843,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   requestRename: (path) => {
     set({
       prompt: {
-        title: "重命名",
+        title: tr("重命名"),
         defaultValue: basename(path),
         onSubmit: (name) => get().rename(path, name),
       },
@@ -2925,7 +2926,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // window) and is non-modal, so the main window stays fully editable.
     new WebviewWindow(SETTINGS_WINDOW, {
       url: `index.html?${params.toString()}`,
-      title: "设置",
+      title: tr("设置"),
       width: 720,
       height: 460,
       resizable: false,
@@ -2946,7 +2947,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const source = resolveTheme(sourceId, customThemes);
     const id = newThemeId();
     // Name new themes "<source> 副本", de-duplicated with a numeric suffix.
-    const baseName = `${source.name} 副本`;
+    const baseName = tr("{{0}} 副本", { 0: source.name });
     const taken = new Set([
       ...BUILTIN_THEMES.map((t) => t.name),
       ...customThemes.map((t) => t.name),
@@ -3112,7 +3113,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   enterPresentation: (mode = "fullscreen") => {
     if (!get().activeFilePath || get().folderViewPath) {
-      get().showToast("请先打开一个文件再开始演示", "error");
+      get().showToast(tr("请先打开一个文件再开始演示"), "error");
       return;
     }
     set({
@@ -3276,7 +3277,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { workspacePath, syncState, vaultRotationBusy } = get();
     if (!workspacePath || syncState === "syncing") return;
     if (vaultRotationBusy) {
-      get().showToast("MK 正在迁移，完成后再同步。", "error");
+      get().showToast(tr("MK 正在迁移，完成后再同步。"), "error");
       return;
     }
 
@@ -3303,7 +3304,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         commitMessage = model
           ? (dir) => generateCommitMessage(model, dir, commitCfg.convention)
           : async () => {
-              throw new Error("AI 提交文案生成失败：没有可用的 AI 模型，请先在设置中配置");
+              throw new Error(tr("AI 提交文案生成失败：没有可用的 AI 模型，请先在设置中配置"));
             };
       }
 
@@ -3373,19 +3374,19 @@ export const useAppStore = create<AppState>((set, get) => ({
         const first = result.conflictFiles[0];
         set({
           confirm: {
-            title: "同步冲突",
+            title: tr("同步冲突"),
             message:
-              `${result.conflictFiles.length} 个文件存在冲突，双方修改均已保留（以 <<<<<<< 标记区分）。` +
-              `请整理后再次同步：\n${result.conflictFiles.slice(0, 5).join("\n")}` +
+              tr("{{0}} 个文件存在冲突，双方修改均已保留（以 <<<<<<< 标记区分）。", { 0: result.conflictFiles.length }) +
+              tr("请整理后再次同步：\n{{0}}", { 0: result.conflictFiles.slice(0, 5).join("\n") }) +
               (result.conflictFiles.length > 5 ? "\n…" : ""),
-            confirmLabel: "查看冲突",
+            confirmLabel: tr("查看冲突"),
             tone: "primary",
             onConfirm: () => get().openFile(`${workspacePath}/${first}`),
           },
         });
       }
     } catch (err) {
-      const message = `同步失败：${err instanceof Error ? err.message : String(err)}`;
+      const message = tr("同步失败：{{0}}", { 0: err instanceof Error ? err.message : String(err) });
       set({ syncState: "error", lastSyncMessage: message, lastSyncAt: Date.now() });
       get().showToast(message, "error");
     } finally {
@@ -3397,15 +3398,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { workspacePath, history, isDirty } = get();
     if (!workspacePath || !history) return;
     if (history.kind !== "file" || !relativePathWithinWorkspace(workspacePath, history.path)) {
-      get().showToast("当前文件不属于此项目，无法回退版本", "error");
+      get().showToast(tr("当前文件不属于此项目，无法回退版本"), "error");
       return;
     }
     if (isDirty) {
-      get().showToast("当前文件有未保存更改，请先同步后再回退", "error");
+      get().showToast(tr("当前文件有未保存更改，请先同步后再回退"), "error");
       return;
     }
     if ((await listWorkingChanges(workspacePath)).length > 0) {
-      get().showToast("当前有未提交更改，请先同步后再回退", "error");
+      get().showToast(tr("当前有未提交更改，请先同步后再回退"), "error");
       return;
     }
     // A confirmation or pending Git query must not restore a different target
@@ -3422,7 +3423,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       void captureDiskStat(history.path);
     }
     set({ history: null });
-    get().showToast(`已回退到 ${commit.shortHash}，可在同步时提交`);
+    get().showToast(tr("已回退到 {{0}}，可在同步时提交", { 0: commit.shortHash }));
     void get().refreshGitInfo();
   },
 
@@ -3430,11 +3431,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { workspacePath, activeFilePath, isDirty } = get();
     if (!workspacePath) return;
     if (isDirty) {
-      get().showToast("当前文件有未保存更改，请先同步后再回退", "error");
+      get().showToast(tr("当前文件有未保存更改，请先同步后再回退"), "error");
       return;
     }
     if ((await listWorkingChanges(workspacePath)).length > 0) {
-      get().showToast("当前有未提交更改，请先同步后再回退", "error");
+      get().showToast(tr("当前有未提交更改，请先同步后再回退"), "error");
       return;
     }
     // Restore the target tree without moving HEAD. The rollback remains an
@@ -3474,7 +3475,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     set({ history: null });
-    get().showToast(`已将项目回退到 ${commit.shortHash}，可在同步时提交`);
+    get().showToast(tr("已将项目回退到 {{0}}，可在同步时提交", { 0: commit.shortHash }));
     void get().refreshGitInfo();
   },
 
@@ -3522,7 +3523,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
 
-    get().showToast(files.length === 1 ? "已撤销未提交更改" : `已撤销 ${files.length} 个未提交文件`);
+    get().showToast(files.length === 1 ? tr("已撤销未提交更改") : tr("已撤销 {{0}} 个未提交文件", { 0: files.length }));
     void get().refreshGitInfo();
   },
 

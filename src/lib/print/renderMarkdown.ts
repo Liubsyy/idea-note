@@ -1,3 +1,4 @@
+import { tr } from "../../i18n/core.ts";
 // Markdown → self-contained HTML for printing / "Save as PDF".
 //
 // The app renders notes through CodeMirror's live preview, which is virtualised
@@ -111,7 +112,7 @@ function renderInputTable(source: string): string {
       )}</td></tr>`;
     })
     .join("");
-  return `<table class="print-input"><thead><tr><th>参数</th><th>值</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return tr("<table class=\"print-input\"><thead><tr><th>参数</th><th>值</th></tr></thead><tbody>{{0}}</tbody></table>", { 0: rows });
 }
 
 // ```mermaid fences become placeholders; renderMarkdownToHtml fills in the SVG

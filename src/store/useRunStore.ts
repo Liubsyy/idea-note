@@ -1,3 +1,4 @@
+import { tr } from "../i18n/core.ts";
 // Results of running fenced code blocks, shown in the dedicated 运行输出 panel.
 // Records live in memory only: output routinely contains paths, tokens
 // and API responses, and this workspace may be a synced git repo — writing it
@@ -160,7 +161,7 @@ export const useRunStore = create<RunState>((set) => ({
           ms: result.ms,
           componentResult: truncatedProtocol ? null : parsed.result,
           protocolError: truncatedProtocol
-            ? "输出已截断，无法读取完整组件结果"
+            ? tr("输出已截断，无法读取完整组件结果")
             : parsed.error,
         };
       }),

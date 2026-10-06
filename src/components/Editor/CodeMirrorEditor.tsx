@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import { useEffect, useRef, useState } from "react";
 import { Compartment, EditorState, type StateEffect } from "@codemirror/state";
 import {
@@ -113,6 +115,7 @@ const viewStateCache = new Map<
  * fresh per file (App keys it on docKey).
  */
 export function CodeMirrorEditor({ active = true }: { active?: boolean }) {
+  useLanguage();
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const activeRef = useRef(active);
@@ -180,7 +183,7 @@ export function CodeMirrorEditor({ active = true }: { active?: boolean }) {
       EditorView.lineWrapping,
       cmHighlighting,
       cmTheme,
-      editorSearch(commandTitle("切换替换", "replace", editorKeybindings)),
+      editorSearch(() => commandTitle(tr("切换替换"), "replace", editorKeybindings)),
       // Curated, user-customisable keymap (Settings › 快捷键) + the stock
       // bindings for everything it doesn't manage.
       buildEditorKeymap(editorKeybindings, isMd),
@@ -380,7 +383,7 @@ export function CodeMirrorEditor({ active = true }: { active?: boolean }) {
     void flushSecretEdits(path, view, { prompt: true }).then(applyMode, (error) => {
       useAppStore
         .getState()
-        .showToast(`加密块的改动暂时没能写回：${vaultErrorMessage(error)}`, "error");
+        .showToast(tr("加密块的改动暂时没能写回：{{0}}", { 0: vaultErrorMessage(error) }), "error");
       applyMode();
     });
     // Reconfiguring doesn't fire a selection/doc change, so sync the toolbar's
@@ -454,6 +457,7 @@ export function CodeMirrorEditor({ active = true }: { active?: boolean }) {
 
 /** Placeholder shown when no file is open. */
 export function EmptyEditor() {
+  useLanguage();
   const openWorkspace = useAppStore((s) => s.openWorkspace);
   const workspacePath = useAppStore((s) => s.workspacePath);
   const requestNewFile = useAppStore((s) => s.requestNewFile);
@@ -472,8 +476,8 @@ export function EmptyEditor() {
       </p>
       <p className="text-sm" style={{ color: "var(--text-muted)" }}>
         {workspacePath
-          ? "从左侧选择一篇笔记，或新建一篇开始写作"
-          : "打开一个文件夹作为你的笔记工作区，或克隆一个远程仓库"}
+          ? tr("从左侧选择一篇笔记，或新建一篇开始写作")
+          : tr("打开一个文件夹作为你的笔记工作区，或克隆一个远程仓库")}
       </p>
       <div className="flex items-center gap-2.5">
         <button
@@ -481,7 +485,7 @@ export function EmptyEditor() {
           className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
           style={{ background: "var(--accent)" }}
         >
-          {workspacePath ? "新建笔记" : "打开文件夹"}
+          {workspacePath ? tr("新建笔记") : tr("打开文件夹")}
         </button>
         {!workspacePath && (
           <button
@@ -493,8 +497,7 @@ export function EmptyEditor() {
             }}
           >
             <ArrowDownUp size={15} />
-            远程同步
-          </button>
+            {tr("远程同步")}</button>
         )}
       </div>
     </div>

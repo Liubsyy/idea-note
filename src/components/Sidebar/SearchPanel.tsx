@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { EditorView } from "@codemirror/view";
 import { EditorSelection } from "@codemirror/state";
@@ -27,6 +29,7 @@ const VIEW_WAIT_TIMEOUT_MS = 1500;
  * component only debounces input and renders/jumps.
  */
 export function SearchPanel() {
+  useLanguage();
   const workspacePath = useAppStore((s) => s.workspacePath);
   const query = useAppStore((s) => s.searchQuery);
   const setSearchQuery = useAppStore((s) => s.setSearchQuery);
@@ -67,7 +70,7 @@ export function SearchPanel() {
     [hits, totalHits],
   );
   const displayLimitText =
-    displayLimited && hits.length > 0 ? ` · 显示前 ${hits.length} 条` : "";
+    displayLimited && hits.length > 0 ? tr(" · 显示前 {{0}} 条", { 0: hits.length }) : "";
 
   return (
     <div onContextMenu={(e) => e.stopPropagation()}>
@@ -87,7 +90,7 @@ export function SearchPanel() {
               e.stopPropagation();
               if (e.key === "Escape") e.currentTarget.blur();
             }}
-            placeholder="搜索全部笔记"
+            placeholder={tr("搜索全部笔记")}
             spellCheck={false}
             autoCorrect="off"
             autoCapitalize="off"
@@ -97,7 +100,7 @@ export function SearchPanel() {
           />
           {query && (
             <button
-              title="清空"
+              title={tr("清空")}
               onClick={() => setSearchQuery("")}
               className="shrink-0 rounded p-0.5 transition-colors"
               style={{ color: "var(--text-muted)" }}
@@ -110,21 +113,21 @@ export function SearchPanel() {
           <div className="flex shrink-0 items-center gap-0.5">
             <OptionToggle
               active={options.caseSensitive}
-              title="区分大小写"
+              title={tr("区分大小写")}
               onClick={() => toggleSearchOption("caseSensitive")}
             >
               <CaseSensitive size={15} />
             </OptionToggle>
             <OptionToggle
               active={options.wholeWord}
-              title="全词匹配"
+              title={tr("全词匹配")}
               onClick={() => toggleSearchOption("wholeWord")}
             >
               <WholeWord size={15} />
             </OptionToggle>
             <OptionToggle
               active={options.regex}
-              title="正则表达式"
+              title={tr("正则表达式")}
               onClick={() => toggleSearchOption("regex")}
             >
               <Regex size={14} />
@@ -132,15 +135,14 @@ export function SearchPanel() {
           </div>
           {loading && (
             <button
-              title="停止搜索"
+              title={tr("停止搜索")}
               onClick={stopGlobalSearch}
               className="shrink-0 rounded px-1.5 py-0.5 text-xs transition-colors"
               style={{ color: "var(--accent)", background: "var(--active)" }}
               onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "var(--active)")}
             >
-              停止
-            </button>
+              {tr("停止")}</button>
           )}
         </div>
         {trimmedQuery && (
@@ -149,20 +151,16 @@ export function SearchPanel() {
             style={{ color: regexError ? "#e5484d" : "var(--text-muted)" }}
           >
             {regexError
-              ? `正则表达式无效：${regexError}`
+              ? tr("正则表达式无效：{{0}}", { 0: regexError })
               : resultCount
-                ? `${resultCount} 个结果 · ${fileCount} 个文件${
-                    loading ? " · 搜索中…" : truncated ? " · 已停止" : ""
-                  }${displayLimitText}`
+                ? tr("{{0}} 个结果 · {{1}} 个文件{{2}}{{3}}", { 0: resultCount, 1: fileCount, 2: loading ? tr(" · 搜索中…") : truncated ? tr(" · 已停止") : "", 3: displayLimitText })
                 : displayLimited
-                  ? `结果很多，已显示前 ${hits.length} 条${
-                      loading ? " · 搜索中…" : truncated ? " · 已停止" : ""
-                  }`
+                  ? tr("结果很多，已显示前 {{0}} 条{{1}}", { 0: hits.length, 1: loading ? tr(" · 搜索中…") : truncated ? tr(" · 已停止") : "" })
                 : loading
-                  ? "搜索中…"
+                  ? tr("搜索中…")
                   : truncated
-                    ? "搜索已停止"
-                  : "没有匹配结果"}
+                    ? tr("搜索已停止")
+                  : tr("没有匹配结果")}
           </p>
         )}
         {trimmedQuery && loading && (
@@ -171,9 +169,9 @@ export function SearchPanel() {
       </div>
 
       {!workspacePath ? (
-        <Empty>未打开工作区。</Empty>
+        <Empty>{tr("未打开工作区。")}</Empty>
       ) : !trimmedQuery ? (
-        <Empty>输入关键词，搜索文件名和笔记内容。</Empty>
+        <Empty>{tr("输入关键词，搜索文件名和笔记内容。")}</Empty>
       ) : (
         // Memoized: keystrokes re-render this panel (input + status line) but
         // not the (potentially large) result list, since SearchResults takes
@@ -190,6 +188,7 @@ export function SearchPanel() {
  * insulating the list from the input box's per-keystroke re-renders.
  */
 const SearchResults = memo(function SearchResults() {
+  useLanguage();
   const workspacePath = useAppStore((s) => s.workspacePath);
   const hits = useAppStore((s) => s.searchHits);
   const truncated = useAppStore((s) => s.searchTruncated);
@@ -252,7 +251,7 @@ const SearchResults = memo(function SearchResults() {
     <div className="pb-2">
       {nameHits.length > 0 && (
         <>
-          <SectionLabel>文件名匹配</SectionLabel>
+          <SectionLabel>{tr("文件名匹配")}</SectionLabel>
           {nameHits.map((hit) => (
             <button
               key={hit.path}
@@ -280,7 +279,7 @@ const SearchResults = memo(function SearchResults() {
       )}
 
       {fileGroups.length > 0 && nameHits.length > 0 && (
-        <SectionLabel>内容匹配</SectionLabel>
+        <SectionLabel>{tr("内容匹配")}</SectionLabel>
       )}
       {fileGroups.map(([path, fileHits]) => {
         const isCollapsed = !!collapsed[path];
@@ -352,13 +351,11 @@ const SearchResults = memo(function SearchResults() {
 
       {truncated && (
         <p className="px-3 pt-2 text-center text-xs" style={{ color: "var(--text-muted)" }}>
-          搜索已停止，结果可能不完整。
-        </p>
+          {tr("搜索已停止，结果可能不完整。")}</p>
       )}
       {displayLimited && !truncated && (
         <p className="px-3 pt-2 text-center text-xs" style={{ color: "var(--text-muted)" }}>
-          结果很多，仅显示前 {hits.length} 条；可点击停止结束搜索。
-        </p>
+          {tr("结果很多，仅显示前")}{" "}{hits.length} {" "}{tr("条；可点击停止结束搜索。")}</p>
       )}
     </div>
   );
@@ -389,6 +386,7 @@ const markStyle: React.CSSProperties = {
  *  Offsets are Unicode code points, so split via Array.from rather than slice
  *  (a regex match can span surrogate-pair characters). */
 function Highlighted({ text, start, len }: { text: string; start: number; len: number }) {
+  useLanguage();
   if (len <= 0) return <>{text}</>;
   const chars = Array.from(text);
   return (
@@ -412,6 +410,7 @@ function OptionToggle({
   onClick: () => void;
   children: React.ReactNode;
 }) {
+  useLanguage();
   return (
     <button
       title={title}
@@ -435,6 +434,7 @@ function OptionToggle({
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
+  useLanguage();
   return (
     <p
       className="px-3 pb-0.5 pt-2 text-xs font-medium"
@@ -446,6 +446,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
+  useLanguage();
   return (
     <p className="px-4 py-6 text-center text-xs" style={{ color: "var(--text-muted)" }}>
       {children}

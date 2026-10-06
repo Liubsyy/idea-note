@@ -1,3 +1,4 @@
+import { tr } from "../i18n/core.ts";
 import type { FileNode } from "./fs";
 
 const key = (path: string) => path.replace(/\\/g, "/").replace(/\/$/, "");
@@ -22,7 +23,7 @@ export class DirectoryTree {
     if (this.active >= 4) await new Promise<void>((resolve) => this.waiting.push(resolve));
     else this.active++;
     try {
-      if (this.disposed) throw new Error("目录加载已取消");
+      if (this.disposed) throw new Error(tr("目录加载已取消"));
       return await this.read(path);
     } finally {
       const next = this.waiting.shift();
@@ -32,10 +33,10 @@ export class DirectoryTree {
   }
 
   async load(path: string): Promise<FileNode[]> {
-    if (this.disposed) throw new Error("目录加载已取消");
+    if (this.disposed) throw new Error(tr("目录加载已取消"));
     const id = key(path);
     const root = key(this.root);
-    if (id !== root && !id.startsWith(root + "/")) throw new Error("目录不在当前项目中");
+    if (id !== root && !id.startsWith(root + "/")) throw new Error(tr("目录不在当前项目中"));
     const cached = this.directories.get(id);
     if (cached) return cached;
     const pending = this.pending.get(id);
@@ -44,7 +45,7 @@ export class DirectoryTree {
       // Loading a deep folder from notes mode also materializes its ancestors.
       if (id !== root) await this.load(path.slice(0, Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"))) || this.root);
       const nodes = await this.readLevel(id === root ? this.root : path);
-      if (this.disposed) throw new Error("目录加载已取消");
+      if (this.disposed) throw new Error(tr("目录加载已取消"));
       this.directories.set(id, nodes);
       return nodes;
     })();

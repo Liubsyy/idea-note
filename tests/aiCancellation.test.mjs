@@ -1,3 +1,4 @@
+import { i18nDependency } from './i18nHarness.mjs';
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -15,6 +16,7 @@ function load(path, dependencies = {}, globals = {}) {
     exports, DOMException, AbortController, console, crypto: { randomUUID },
     localStorage: { getItem: () => null },
     require(name) {
+      if (name.includes('/i18n/')) return i18nDependency(name);
       assert.ok(name in dependencies, `unexpected dependency: ${name}`);
       return dependencies[name];
     },

@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import { PenLine, Code2, BookOpen } from "lucide-react";
 import { useAppStore, type MdViewMode } from "../../store/useAppStore";
 
@@ -9,6 +11,7 @@ import { useAppStore, type MdViewMode } from "../../store/useAppStore";
  * surface watches to swap the rendering / read-only extensions in place.
  */
 export function EditorModeTabs() {
+  useLanguage();
   const mdViewMode = useAppStore((s) => s.mdViewMode);
   const setMdViewMode = useAppStore((s) => s.setMdViewMode);
 
@@ -51,9 +54,9 @@ export function EditorModeTabs() {
         border: "1px solid var(--border)",
       }}
     >
-      {btn("live", "编辑", <PenLine size={13} strokeWidth={1.75} />)}
-      {btn("readonly", "只读", <BookOpen size={13} strokeWidth={1.75} />)}
-      {btn("source", "源码", <Code2 size={13} strokeWidth={1.75} />)}
+      {btn("live", tr("编辑"), <PenLine size={13} strokeWidth={1.75} />)}
+      {btn("readonly", tr("只读"), <BookOpen size={13} strokeWidth={1.75} />)}
+      {btn("source", tr("源码"), <Code2 size={13} strokeWidth={1.75} />)}
     </div>
   );
 }

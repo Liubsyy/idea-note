@@ -1,3 +1,4 @@
+import { tr } from "../../i18n/core.ts";
 // One-shot AI commit-message generation for git sync. Reads the staged diff,
 // asks the configured model (no tools, no streaming UI) and returns a cleaned
 // single message. AI mode is strict: generation failures abort the sync so the
@@ -11,10 +12,7 @@ import { collectStagedChanges } from "../git";
 /** Hard cap so a hung API can't stall an (auto-)sync indefinitely. */
 const TIMEOUT_MS = 120_000;
 
-const BASE_PROMPT = `你是笔记应用的 git 提交信息生成器。根据下面的暂存区改动，生成一条简洁的中文提交信息，概括本次对笔记的新增、修改或删除。
-要求：
-- 只输出提交信息本身，不要任何解释、引号或代码块
-- 默认输出一行，不超过 50 字`;
+const BASE_PROMPT = () => tr("你是笔记应用的 git 提交信息生成器。根据下面的暂存区改动，生成一条简洁的中文提交信息，概括本次对笔记的新增、修改或删除。\n要求：\n- 只输出提交信息本身，不要任何解释、引号或代码块\n- 默认输出一行，不超过 50 字");
 
 /** Strip code fences / surrounding quotes the model may wrap the message in. */
 function cleanMessage(text: string): string {
@@ -39,14 +37,14 @@ export async function generateCommitMessage(
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const { stat, diff } = await collectStagedChanges(dir);
-    if (!stat && !diff.trim()) throw new Error("暂存区没有可用于生成提交文案的改动");
+    if (!stat && !diff.trim()) throw new Error(tr("暂存区没有可用于生成提交文案的改动"));
 
     const spec = convention.trim();
     const system = spec
-      ? `${BASE_PROMPT}\n\n用户的提交规范（优先于以上默认格式，严格遵守）：\n${spec}`
-      : BASE_PROMPT;
+      ? tr("{{0}}\n\n用户的提交规范（优先于以上默认格式，严格遵守）：\n{{1}}", { 0: BASE_PROMPT(), 1: spec })
+      : BASE_PROMPT();
     const history: ChatMsg[] = [
-      { role: "user", content: `变更概览：\n${stat}\n\n变更内容：\n${diff}` },
+      { role: "user", content: tr("变更概览：\n{{0}}\n\n变更内容：\n{{1}}", { 0: stat, 1: diff }) },
     ];
 
     const provider = model.provider === "anthropic" ? anthropic : openai;
@@ -59,14 +57,14 @@ export async function generateCommitMessage(
       () => {},
     );
     const message = cleanMessage(text);
-    if (!message) throw new Error("模型返回了空的提交文案");
+    if (!message) throw new Error(tr("模型返回了空的提交文案"));
     return message;
   } catch (cause) {
     if (controller.signal.aborted) {
-      throw new Error(`AI 提交文案生成超时（${TIMEOUT_MS / 1000} 秒）`);
+      throw new Error(tr("AI 提交文案生成超时（{{0}} 秒）", { 0: TIMEOUT_MS / 1000 }));
     }
     const detail = cause instanceof Error ? cause.message : String(cause);
-    throw new Error(`AI 提交文案生成失败：${detail}`);
+    throw new Error(tr("AI 提交文案生成失败：{{0}}", { 0: detail }));
   } finally {
     clearTimeout(timer);
   }

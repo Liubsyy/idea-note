@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import { useEffect, useMemo, useRef } from "react";
 import { useAppStore, isDraftPath } from "../../store/useAppStore";
 import { isMarkdownFile } from "../../lib/fs";
@@ -9,6 +11,7 @@ import "../../styles/presentation.css";
 /** Page the existing read-only editor. Both presentation modes use the same
  * widgets, image resolution, highlighting, theme, and live document state. */
 export function SlidePresentation() {
+  useLanguage();
   const content = useAppStore((s) => s.content);
   const path = useAppStore((s) => s.activeFilePath) ?? "";
   const docKey = useAppStore((s) => s.docKey);
@@ -146,8 +149,8 @@ export function SlidePresentation() {
   }, []);
 
   return (
-    <div className="slide-footer" aria-label="分页演示" aria-live="polite">
-      <span>← / → 或滚轮翻页 · 空格下一页 · Esc 退出</span>
+    <div className="slide-footer" aria-label={tr("分页演示")} aria-live="polite">
+      <span>{tr("← / → 或滚轮翻页 · 空格下一页 · Esc 退出")}</span>
       <span>{page + 1} / {count}</span>
     </div>
   );

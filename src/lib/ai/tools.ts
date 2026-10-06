@@ -1,3 +1,4 @@
+import { tr } from "../../i18n/core.ts";
 // The tools the model can call, plus the editor-side helpers that read/diff/
 // apply changes. The actual orchestration (approval flow, UI updates) lives in
 // useChatStore.sendMessage — this module stays focused on "what does the tool
@@ -28,17 +29,16 @@ import {
 export const TOOL_DEFS: ToolDef[] = [
   {
     name: "read_open_file",
-    description: "读取用户当前在编辑器中打开的文件的完整内容。无参数。",
+    get description() { return tr("读取用户当前在编辑器中打开的文件的完整内容。无参数。"); },
     parameters: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "read_file",
-    description:
-      "按路径读取当前工作区中的某个文本文件。用户明确提到文件名或路径时使用它；如果路径不确定，先用 search_notes 查找。",
+    get description() { return tr("按路径读取当前工作区中的某个文本文件。用户明确提到文件名或路径时使用它；如果路径不确定，先用 search_notes 查找。"); },
     parameters: {
       type: "object",
       properties: {
-        path: { type: "string", description: "要读取的文件路径（相对工作区根目录或绝对路径）。" },
+        path: { type: "string", get description() { return tr("要读取的文件路径（相对工作区根目录或绝对路径）。"); } },
       },
       required: ["path"],
       additionalProperties: false,
@@ -46,14 +46,13 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "edit_open_file",
-    description:
-      "对当前打开的文件做精确字符串替换。old_string 必须与文件中的文本完全一致（含缩进与换行）。优先用它做局部修改。",
+    get description() { return tr("对当前打开的文件做精确字符串替换。old_string 必须与文件中的文本完全一致（含缩进与换行）。优先用它做局部修改。"); },
     parameters: {
       type: "object",
       properties: {
-        old_string: { type: "string", description: "要被替换的原文本，需在文件中完全匹配。" },
-        new_string: { type: "string", description: "替换后的新文本。" },
-        replace_all: { type: "boolean", description: "是否替换所有匹配项，默认 false（仅第一处）。" },
+        old_string: { type: "string", get description() { return tr("要被替换的原文本，需在文件中完全匹配。"); } },
+        new_string: { type: "string", get description() { return tr("替换后的新文本。"); } },
+        replace_all: { type: "boolean", get description() { return tr("是否替换所有匹配项，默认 false（仅第一处）。"); } },
       },
       required: ["old_string", "new_string"],
       additionalProperties: false,
@@ -61,24 +60,23 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "write_open_file",
-    description: "用全新内容整体替换当前打开文件的全部内容。仅在需要大段重写时使用。",
+    get description() { return tr("用全新内容整体替换当前打开文件的全部内容。仅在需要大段重写时使用。"); },
     parameters: {
       type: "object",
-      properties: { content: { type: "string", description: "文件的完整新内容。" } },
+      properties: { content: { type: "string", get description() { return tr("文件的完整新内容。"); } } },
       required: ["content"],
       additionalProperties: false,
     },
   },
   {
     name: "create_note",
-    description:
-      "在工作区中新建一篇 Markdown 笔记并在编辑器中打开。可选地写入初始内容。同名文件已存在时会报错。",
+    get description() { return tr("在工作区中新建一篇 Markdown 笔记并在编辑器中打开。可选地写入初始内容。同名文件已存在时会报错。"); },
     parameters: {
       type: "object",
       properties: {
-        name: { type: "string", description: "笔记文件名，可不带 .md 后缀，不能包含路径分隔符。" },
-        dir: { type: "string", description: "目标文件夹（相对工作区根目录），省略则创建在根目录。" },
-        content: { type: "string", description: "笔记的初始 Markdown 内容，省略则创建空笔记。" },
+        name: { type: "string", get description() { return tr("笔记文件名，可不带 .md 后缀，不能包含路径分隔符。"); } },
+        dir: { type: "string", get description() { return tr("目标文件夹（相对工作区根目录），省略则创建在根目录。"); } },
+        content: { type: "string", get description() { return tr("笔记的初始 Markdown 内容，省略则创建空笔记。"); } },
       },
       required: ["name"],
       additionalProperties: false,
@@ -86,12 +84,11 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "delete_file",
-    description:
-      "删除工作区中的一个文件或文件夹。执行前会向用户弹出确认卡片，用户批准后才真正删除。不确定路径时先用 search_notes 查找。",
+    get description() { return tr("删除工作区中的一个文件或文件夹。执行前会向用户弹出确认卡片，用户批准后才真正删除。不确定路径时先用 search_notes 查找。"); },
     parameters: {
       type: "object",
       properties: {
-        path: { type: "string", description: "要删除的文件或文件夹路径（相对工作区根目录或绝对路径）。" },
+        path: { type: "string", get description() { return tr("要删除的文件或文件夹路径（相对工作区根目录或绝对路径）。"); } },
       },
       required: ["path"],
       additionalProperties: false,
@@ -99,12 +96,11 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "search_notes",
-    description:
-      "在工作区中按关键词搜索笔记：匹配文件名和文本内容（不区分大小写），返回命中文件路径、行号和内容片段。",
+    get description() { return tr("在工作区中按关键词搜索笔记：匹配文件名和文本内容（不区分大小写），返回命中文件路径、行号和内容片段。"); },
     parameters: {
       type: "object",
       properties: {
-        query: { type: "string", description: "搜索关键词。" },
+        query: { type: "string", get description() { return tr("搜索关键词。"); } },
       },
       required: ["query"],
       additionalProperties: false,
@@ -112,16 +108,14 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "component_guide",
-    description:
-      "查阅 Idea Note 可交互组件（```input 参数块 + 可运行代码块）的写法规范，并获知本机启用了哪些运行器。用户要在笔记里做计算器、图表、看板、数据表格、能调参数自动重算的小工具时，先调用它再动手写；不确定语法细节（参数控件、表格/文件绑定、输出格式、自动运行）时也调用它。不要凭记忆猜语法。",
+    get description() { return tr("查阅 Idea Note 可交互组件（```input 参数块 + 可运行代码块）的写法规范，并获知本机启用了哪些运行器。用户要在笔记里做计算器、图表、看板、数据表格、能调参数自动重算的小工具时，先调用它再动手写；不确定语法细节（参数控件、表格/文件绑定、输出格式、自动运行）时也调用它。不要凭记忆猜语法。"); },
     parameters: {
       type: "object",
       properties: {
         topic: {
           type: "string",
           enum: GUIDE_TOPICS,
-          description:
-            "要查的主题：overview=总览与两条铁律（默认，写任何组件都先看它）；input=参数块字段语法；data=表格/文件绑定与环境变量；output=七种输出格式；run=运行时机与执行环境；examples=完整示例。",
+          get description() { return tr("要查的主题：overview=总览与两条铁律（默认，写任何组件都先看它）；input=参数块字段语法；data=表格/文件绑定与环境变量；output=七种输出格式；run=运行时机与执行环境；examples=完整示例。"); },
         },
       },
       additionalProperties: false,
@@ -175,8 +169,8 @@ export interface ReadResult {
 export function readOpenFile(): ReadResult {
   const state = useAppStore.getState();
   const path = state.activeFilePath;
-  if (!path) return { ok: false, error: "当前没有打开任何文件。" };
-  if (isImageFile(path)) return { ok: false, error: "当前打开的是图片，无法按文本读取。" };
+  if (!path) return { ok: false, error: tr("当前没有打开任何文件。") };
+  if (isImageFile(path)) return { ok: false, error: tr("当前打开的是图片，无法按文本读取。") };
   const view = getActiveView();
   const content = view ? view.state.doc.toString() : state.content;
   return { ok: true, path, content };
@@ -184,23 +178,23 @@ export function readOpenFile(): ReadResult {
 
 /** Read a workspace file by path; if it is open, prefer unsaved editor content. */
 export async function readWorkspaceFile(args: Record<string, unknown>): Promise<ReadResult> {
-  if (typeof args.path !== "string") return { ok: false, error: "read_file 需要 path 字符串。" };
+  if (typeof args.path !== "string") return { ok: false, error: tr("read_file 需要 path 字符串。") };
   const resolved = resolveWorkspacePath(args.path);
   if (!resolved.ok) return resolved;
 
   const { activeFilePath, tree } = useAppStore.getState();
   if (resolved.path === activeFilePath) return readOpenFile();
-  if (isImageFile(resolved.path)) return { ok: false, error: "目标文件是图片，无法按文本读取。" };
+  if (isImageFile(resolved.path)) return { ok: false, error: tr("目标文件是图片，无法按文本读取。") };
 
   const node = findNode(tree, resolved.path);
-  if (node?.is_dir) return { ok: false, error: `「${args.path}」是文件夹，不能按文本读取。` };
+  if (node?.is_dir) return { ok: false, error: tr("「{{0}}」是文件夹，不能按文本读取。", { 0: args.path }) };
 
   try {
     return { ok: true, path: resolved.path, content: await readFile(resolved.path) };
   } catch (e) {
     return {
       ok: false,
-      error: typeof e === "string" ? e : (e as Error)?.message ?? "读取文件失败",
+      error: typeof e === "string" ? e : (e as Error)?.message ?? tr("读取文件失败"),
     };
   }
 }
@@ -220,28 +214,28 @@ function replaceFirst(s: string, find: string, repl: string): string {
 export function prepareEdit(name: string, args: Record<string, unknown>): PrepareResult {
   const state = useAppStore.getState();
   const path = state.activeFilePath;
-  if (!path) return { ok: false, error: "当前没有打开任何文件，无法编辑。" };
-  if (isImageFile(path)) return { ok: false, error: "当前打开的是图片，无法编辑文本。" };
+  if (!path) return { ok: false, error: tr("当前没有打开任何文件，无法编辑。") };
+  if (isImageFile(path)) return { ok: false, error: tr("当前打开的是图片，无法编辑文本。") };
   const view = getActiveView();
-  if (!view) return { ok: false, error: "当前没有可编辑的文本编辑器。" };
+  if (!view) return { ok: false, error: tr("当前没有可编辑的文本编辑器。") };
 
   const before = view.state.doc.toString();
   let after: string;
 
   if (name === "write_open_file") {
-    if (typeof args.content !== "string") return { ok: false, error: "write_open_file 需要 content 字符串。" };
+    if (typeof args.content !== "string") return { ok: false, error: tr("write_open_file 需要 content 字符串。") };
     after = args.content;
   } else {
     const oldStr = args.old_string;
     const newStr = args.new_string;
     if (typeof oldStr !== "string" || typeof newStr !== "string")
-      return { ok: false, error: "edit_open_file 需要 old_string 和 new_string 字符串。" };
-    if (oldStr === "") return { ok: false, error: "old_string 不能为空。" };
-    if (!before.includes(oldStr)) return { ok: false, error: "在当前文件中找不到 old_string，未做修改。" };
+      return { ok: false, error: tr("edit_open_file 需要 old_string 和 new_string 字符串。") };
+    if (oldStr === "") return { ok: false, error: tr("old_string 不能为空。") };
+    if (!before.includes(oldStr)) return { ok: false, error: tr("在当前文件中找不到 old_string，未做修改。") };
     after = args.replace_all === true ? before.split(oldStr).join(newStr) : replaceFirst(before, oldStr, newStr);
   }
 
-  if (after === before) return { ok: false, error: "修改后内容与原文件相同，未做改动。" };
+  if (after === before) return { ok: false, error: tr("修改后内容与原文件相同，未做改动。") };
   return { ok: true, summary: basename(path), before, after, diff: computeLineDiff(before, after) };
 }
 
@@ -266,7 +260,7 @@ export function applyContent(content: string): boolean {
  */
 function resolveWorkspacePath(p: string): WorkspacePathResult {
   const ws = useAppStore.getState().workspacePath;
-  if (!ws) return { ok: false, error: "当前没有打开工作区。" };
+  if (!ws) return { ok: false, error: tr("当前没有打开工作区。") };
   return resolvePathWithinWorkspace(ws, p);
 }
 
@@ -278,11 +272,11 @@ export type CreateNoteResult =
 export async function createNote(args: Record<string, unknown>, signal?: AbortSignal): Promise<CreateNoteResult> {
   throwIfAborted(signal);
   const name = typeof args.name === "string" ? args.name.trim() : "";
-  if (!name) return { ok: false, error: "create_note 需要 name 字符串。" };
-  if (/[/\\]/.test(name)) return { ok: false, error: "name 不能包含路径分隔符，请用 dir 指定文件夹。" };
+  if (!name) return { ok: false, error: tr("create_note 需要 name 字符串。") };
+  if (/[/\\]/.test(name)) return { ok: false, error: tr("name 不能包含路径分隔符，请用 dir 指定文件夹。") };
 
   const ws = useAppStore.getState().workspacePath;
-  if (!ws) return { ok: false, error: "当前没有打开工作区。" };
+  if (!ws) return { ok: false, error: tr("当前没有打开工作区。") };
   let dir = ws;
   if (typeof args.dir === "string" && args.dir.trim()) {
     const resolved = resolveWorkspacePath(args.dir);
@@ -304,7 +298,7 @@ export async function createNote(args: Record<string, unknown>, signal?: AbortSi
     return { ok: true, path: created, name: basename(created) };
   } catch (e) {
     throwIfAborted(signal);
-    return { ok: false, error: typeof e === "string" ? e : (e as Error)?.message ?? "创建失败" };
+    return { ok: false, error: typeof e === "string" ? e : (e as Error)?.message ?? tr("创建失败") };
   }
 }
 
@@ -314,18 +308,18 @@ export type PrepareDeleteResult =
 
 /** Resolve and validate a delete target without deleting (for the confirm card). */
 export async function prepareDelete(args: Record<string, unknown>): Promise<PrepareDeleteResult> {
-  if (typeof args.path !== "string") return { ok: false, error: "delete_file 需要 path 字符串。" };
+  if (typeof args.path !== "string") return { ok: false, error: tr("delete_file 需要 path 字符串。") };
   const resolved = resolveWorkspacePath(args.path);
   if (!resolved.ok) return resolved;
   const { workspacePath } = useAppStore.getState();
   if (resolved.path === workspacePath)
-    return { ok: false, error: "不能删除工作区根目录。" };
+    return { ok: false, error: tr("不能删除工作区根目录。") };
   // Lazy browsing need not have visited the target's parent directory.
   if (!await fileStat(resolved.path))
-    return { ok: false, error: `找不到「${args.path}」，请先用 search_notes 确认路径。` };
+    return { ok: false, error: tr("找不到「{{0}}」，请先用 search_notes 确认路径。", { 0: args.path }) };
   const isDir = await pathIsDir(resolved.path);
   if (useAppStore.getState().workspacePath !== workspacePath)
-    return { ok: false, error: "项目已切换，请重新确认删除目标。" };
+    return { ok: false, error: tr("项目已切换，请重新确认删除目标。") };
   return { ok: true, path: resolved.path, name: basename(resolved.path), isDir };
 }
 
@@ -337,14 +331,14 @@ export type SearchResult =
 export async function runSearch(args: Record<string, unknown>, signal?: AbortSignal): Promise<SearchResult> {
   throwIfAborted(signal);
   const query = typeof args.query === "string" ? args.query.trim() : "";
-  if (!query) return { ok: false, error: "search_notes 需要 query 关键词。" };
+  if (!query) return { ok: false, error: tr("search_notes 需要 query 关键词。") };
   const ws = useAppStore.getState().workspacePath;
-  if (!ws) return { ok: false, error: "当前没有打开工作区。" };
+  if (!ws) return { ok: false, error: tr("当前没有打开工作区。") };
   try {
     return { ok: true, hits: await searchNotes(ws, query, signal) };
   } catch (e) {
     throwIfAborted(signal);
-    return { ok: false, error: typeof e === "string" ? e : (e as Error)?.message ?? "搜索失败" };
+    return { ok: false, error: typeof e === "string" ? e : (e as Error)?.message ?? tr("搜索失败") };
   }
 }
 

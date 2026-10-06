@@ -1,3 +1,4 @@
+import { i18nDependency } from './i18nHarness.mjs';
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -13,7 +14,7 @@ function load(file, dependencies = {}) {
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
-  vm.runInNewContext(code, { exports, require: (name) => dependencies[name] ?? require(name) });
+  vm.runInNewContext(code, { exports, require: (name) => dependencies[name] ?? (name.includes('/i18n/') ? i18nDependency(name) : require(name)) });
   return exports;
 }
 const batch = load("../src/components/DirectoryEntries.tsx");
@@ -67,6 +68,7 @@ test("clicking a large folder also limits the right-pane listing", () => {
 function mountedBatch(count) {
   let stateValue;
   const { DirectoryEntries } = load("../src/components/DirectoryEntries.tsx", {
+    "../i18n/react": { useLanguage: () => "zh-CN" },
     react: { useState(initial) {
       stateValue ??= initial;
       return [stateValue, (update) => { stateValue = update(stateValue); }];

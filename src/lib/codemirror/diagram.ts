@@ -1,3 +1,5 @@
+import { localizeElement } from "../../i18n/dom.ts";
+import { tr } from "../../i18n/core.ts";
 // Mermaid diagram rendering for fenced ```mermaid code blocks.
 //
 // Like tablePreview/mathBlock, a fenced block spans line breaks, so it must be
@@ -90,7 +92,7 @@ export async function renderMermaidSvg(
     // own cleanup, leaking the node (it would even show up in printed PDFs).
     document.getElementById(`d${renderId}`)?.remove();
     document.getElementById(renderId)?.remove();
-    return { error: `图表渲染失败：${e instanceof Error ? e.message : String(e)}` };
+    return { error: tr("图表渲染失败：{{0}}", { 0: e instanceof Error ? e.message : String(e) }) };
   }
 }
 
@@ -134,14 +136,14 @@ function applyDiagramTransform(svgHost: HTMLElement, transform: DiagramTransform
 
 function createControlButton(
   icon: Parameters<typeof iconSvg>[0],
-  label: string,
+  label: () => string,
   onClick: () => void,
 ) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "cm-md-mermaid-control-btn";
-  button.title = label;
-  button.setAttribute("aria-label", label);
+  localizeElement(button, "title", label);
+  localizeElement(button, "ariaLabel", label);
   button.innerHTML = iconSvg(icon);
   button.addEventListener("click", (event) => {
     event.preventDefault();
@@ -175,7 +177,7 @@ function createMermaidControls(svgHost: HTMLElement) {
 
   const controls = document.createElement("div");
   controls.className = "cm-md-mermaid-controls";
-  controls.setAttribute("aria-label", "Mermaid 图表视图控制");
+  localizeElement(controls, "ariaLabel", () => tr("Mermaid 图表视图控制"));
   for (const type of ["pointerdown", "mousedown", "mouseup", "dblclick", "touchstart"] as const)
     controls.addEventListener(type, (event) => {
       event.preventDefault();
@@ -184,14 +186,14 @@ function createMermaidControls(svgHost: HTMLElement) {
 
   controls.append(
     document.createElement("span"),
-    createControlButton("up", "上移图表", () => move(0, -PAN_STEP)),
-    createControlButton("zoomIn", "放大图表", () => zoom(ZOOM_STEP)),
-    createControlButton("left", "左移图表", () => move(-PAN_STEP, 0)),
-    createControlButton("reset", "重置图表视图", reset),
-    createControlButton("right", "右移图表", () => move(PAN_STEP, 0)),
+    createControlButton("up", () => tr("上移图表"), () => move(0, -PAN_STEP)),
+    createControlButton("zoomIn", () => tr("放大图表"), () => zoom(ZOOM_STEP)),
+    createControlButton("left", () => tr("左移图表"), () => move(-PAN_STEP, 0)),
+    createControlButton("reset", () => tr("重置图表视图"), reset),
+    createControlButton("right", () => tr("右移图表"), () => move(PAN_STEP, 0)),
     document.createElement("span"),
-    createControlButton("down", "下移图表", () => move(0, PAN_STEP)),
-    createControlButton("zoomOut", "缩小图表", () => zoom(-ZOOM_STEP)),
+    createControlButton("down", () => tr("下移图表"), () => move(0, PAN_STEP)),
+    createControlButton("zoomOut", () => tr("缩小图表"), () => zoom(-ZOOM_STEP)),
   );
   update();
   return controls;

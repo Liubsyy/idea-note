@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "test:i18n": "node --test tests/i18n.test.mjs",
     "dev": "vite",
     "dev:preview-tests": "vite --config tests/vite.preview.config.ts --port 1427 --cors",
     "build": "tsc && vite build",

@@ -1,3 +1,4 @@
+import { tr } from "../../i18n/core.ts";
 // Provider-agnostic chat driver. Runs the tool-calling loop: ask the model
 // (streaming text via SSE), run any requested tools (via the caller's
 // `onToolCall`), feed results back, repeat until the model answers without
@@ -74,14 +75,14 @@ export async function runChat(
         history.push({
           role: "tool", toolCallId: call.id, name: call.name,
           result: options.signal?.aborted
-            ? "用户已停止本轮操作。未返回执行结果；已发生的修改不会自动撤销，请重新确认状态。"
-            : "本轮工具执行中断，未获得执行结果。",
+            ? tr("用户已停止本轮操作。未返回执行结果；已发生的修改不会自动撤销，请重新确认状态。")
+            : tr("本轮工具执行中断，未获得执行结果。"),
         });
       }
       throw error;
     }
   }
 
-  hooks.onTextDelta("（已达到本轮工具调用次数上限，已停止。）");
+  hooks.onTextDelta(tr("（已达到本轮工具调用次数上限，已停止。）"));
   hooks.onTextDone();
 }

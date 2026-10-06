@@ -1,3 +1,5 @@
+import { localizeElement } from "../../i18n/dom.ts";
+import { tr } from "../../i18n/core.ts";
 // The result of a code block, rendered next to it in the document.
 //
 // A block that draws a table or a chart has to show it where the code is: a
@@ -56,13 +58,13 @@ const el = <K extends keyof HTMLElementTagNameMap>(
 const CLEANUPS = new WeakMap<HTMLElement, () => void>();
 
 const statusLabel = (record: RunRecord): string => {
-  if (record.status === "running") return "运行中";
-  if (record.status === "timeout") return "超时";
-  if (record.status === "killed") return "已停止";
-  if (record.status === "error") return "启动失败";
+  if (record.status === "running") return tr("运行中");
+  if (record.status === "timeout") return tr("超时");
+  if (record.status === "killed") return tr("已停止");
+  if (record.status === "error") return tr("启动失败");
   return record.exitCode === 0 || record.exitCode === null
-    ? `完成 · ${record.ms} 毫秒`
-    : `退出码 ${record.exitCode}`;
+    ? tr("完成 · {{0}} 毫秒", { 0: record.ms })
+    : tr("退出码 {{0}}", { 0: record.exitCode });
 };
 
 class ResultWidget extends WidgetType {
@@ -125,7 +127,7 @@ class ResultWidget extends WidgetType {
         if (this.expected) {
           show();
           wrap.classList.add("cm-md-result-empty");
-          status.textContent = "尚未运行";
+          localizeElement(status, "textContent", () => tr("尚未运行"));
           params.textContent = "";
           body.replaceChildren();
         } else hide();
@@ -150,7 +152,7 @@ class ResultWidget extends WidgetType {
           "cm-md-result-running",
           !wrap.classList.contains("cm-md-result-dormant"),
         );
-        status.textContent = "运行中";
+        localizeElement(status, "textContent", () => tr("运行中"));
         params.textContent = record.inputSummary;
         return;
       }
@@ -164,7 +166,7 @@ class ResultWidget extends WidgetType {
         wrap.classList.remove("cm-md-result-empty", "cm-md-result-running");
         status.textContent = statusLabel(record);
         params.textContent = record.inputSummary;
-        const message = record.error ?? (outputText(record) || "代码块运行失败");
+        const message = record.error ?? (outputText(record) || tr("代码块运行失败"));
         if (record.runId !== shownRunId || message !== shownError)
           renderOutputError(body, message);
         shownRunId = record.runId;

@@ -1,3 +1,5 @@
+import { localizeElement } from "../../i18n/dom.ts";
+import { tr } from "../../i18n/core.ts";
 // Typora/VSCode-style find & replace bar for the editor, built on
 // @codemirror/search with a custom Chinese-language panel that follows the
 // app's CSS variables instead of the library's default look.
@@ -49,19 +51,19 @@ const icons = {
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3v10"/><path d="m12.67 5.5 8.66 5"/><path d="m12.67 10.5 8.66-5"/><path d="M9 17a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-2z"/></svg>',
 };
 
-function iconButton(title: string, svg: string, onClick: () => void) {
+function iconButton(title: () => string, svg: string, onClick: () => void) {
   const b = document.createElement("button");
   b.className = "cm-find-btn";
-  b.title = title;
+  localizeElement(b, "title", title);
   b.innerHTML = svg;
   b.addEventListener("click", onClick);
   return b;
 }
 
-function toggleButton(title: string, svg: string, onToggle: () => void) {
+function toggleButton(title: () => string, svg: string, onToggle: () => void) {
   const b = document.createElement("button");
   b.className = "cm-find-toggle";
-  b.title = title;
+  localizeElement(b, "title", title);
   b.innerHTML = svg;
   b.addEventListener("click", () => {
     b.classList.toggle("active");
@@ -70,10 +72,10 @@ function toggleButton(title: string, svg: string, onToggle: () => void) {
   return b;
 }
 
-function textButton(label: string, onClick: () => void) {
+function textButton(label: () => string, onClick: () => void) {
   const b = document.createElement("button");
   b.className = "cm-find-text-btn";
-  b.textContent = label;
+  localizeElement(b, "textContent", label);
   b.addEventListener("click", onClick);
   return b;
 }
@@ -91,12 +93,12 @@ class FindPanel implements Panel {
   private regexBtn: HTMLButtonElement;
   private wordBtn: HTMLButtonElement;
 
-  constructor(private view: EditorView, replaceTitle: string) {
+  constructor(private view: EditorView, replaceTitle: string | (() => string)) {
     panels.set(view, this);
 
     this.searchField = document.createElement("input");
     this.searchField.className = "cm-find-field";
-    this.searchField.placeholder = "查找";
+    localizeElement(this.searchField, "placeholder", () => tr("查找"));
     this.searchField.setAttribute("main-field", "true");
     this.searchField.addEventListener("input", () => {
       this.commit();
@@ -115,7 +117,7 @@ class FindPanel implements Panel {
 
     this.replaceField = document.createElement("input");
     this.replaceField.className = "cm-find-field";
-    this.replaceField.placeholder = "替换为";
+    localizeElement(this.replaceField, "placeholder", () => tr("替换为"));
     this.replaceField.addEventListener("input", () => this.commit());
     this.replaceField.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
@@ -137,14 +139,14 @@ class FindPanel implements Panel {
       field.autocomplete = "off";
     }
 
-    this.caseBtn = toggleButton("区分大小写", icons.caseSensitive, () => this.onQueryChanged());
-    this.regexBtn = toggleButton("正则表达式", icons.regex, () => this.onQueryChanged());
-    this.wordBtn = toggleButton("全字匹配", icons.wholeWord, () => this.onQueryChanged());
+    this.caseBtn = toggleButton(() => tr("区分大小写"), icons.caseSensitive, () => this.onQueryChanged());
+    this.regexBtn = toggleButton(() => tr("正则表达式"), icons.regex, () => this.onQueryChanged());
+    this.wordBtn = toggleButton(() => tr("全字匹配"), icons.wholeWord, () => this.onQueryChanged());
 
     this.countEl = document.createElement("span");
     this.countEl.className = "cm-find-count";
 
-    this.modeBtn = iconButton(replaceTitle, icons.chevronRight, () =>
+    this.modeBtn = iconButton(typeof replaceTitle === "function" ? replaceTitle : () => replaceTitle, icons.chevronRight, () =>
       this.setReplaceVisible(this.replaceRow.style.display === "none"),
     );
     this.modeBtn.classList.add("cm-find-mode");
@@ -157,9 +159,9 @@ class FindPanel implements Panel {
       this.wordBtn,
       this.regexBtn,
       this.countEl,
-      iconButton("上一个 (⇧↵)", icons.arrowUp, () => findPrevious(this.view)),
-      iconButton("下一个 (↵)", icons.arrowDown, () => findNext(this.view)),
-      iconButton("关闭 (Esc)", icons.close, () => {
+      iconButton(() => tr("上一个 (⇧↵)"), icons.arrowUp, () => findPrevious(this.view)),
+      iconButton(() => tr("下一个 (↵)"), icons.arrowDown, () => findNext(this.view)),
+      iconButton(() => tr("关闭 (Esc)"), icons.close, () => {
         closeSearchPanel(this.view);
         this.view.focus();
       }),
@@ -170,8 +172,8 @@ class FindPanel implements Panel {
     this.replaceRow.style.display = "none";
     this.replaceRow.append(
       this.replaceField,
-      textButton("替换", () => replaceNext(this.view)),
-      textButton("全部替换", () => replaceAll(this.view)),
+      textButton(() => tr("替换"), () => replaceNext(this.view)),
+      textButton(() => tr("全部替换"), () => replaceAll(this.view)),
     );
 
     const rows = document.createElement("div");
@@ -276,16 +278,15 @@ class FindPanel implements Panel {
     const { state } = this.view;
     const query = getSearchQuery(state);
     if (!query.search) {
-      this.countEl.textContent = "";
+      localizeElement(this.countEl, "textContent", () => "");
       return;
     }
     if (!query.valid) {
-      this.countEl.textContent = "无效";
+      localizeElement(this.countEl, "textContent", () => tr("无效"));
       return;
     }
     const { total, current } = countMatches(query, state);
-    this.countEl.textContent =
-      total === 0 ? "无结果" : current ? `${current}/${total}` : `${total} 个匹配`;
+    localizeElement(this.countEl, "textContent", () => total === 0 ? tr("无结果") : current ? `${current}/${total}` : tr("{{0}} 个匹配", { 0: total }));
   }
 }
 
@@ -306,7 +307,7 @@ function countMatches(query: SearchQuery, state: EditorState) {
  * step through matches, Esc to close. Other occurrences of the selected text
  * are highlighted passively.
  */
-export function editorSearch(replaceTitle: string) {
+export function editorSearch(replaceTitle: string | (() => string)) {
   return [
     search({ top: true, createPanel: (view) => new FindPanel(view, replaceTitle) }),
     highlightSelectionMatches(),

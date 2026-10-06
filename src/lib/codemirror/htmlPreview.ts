@@ -1,3 +1,4 @@
+import { tr } from "../../i18n/core.ts";
 // Raw-HTML live preview for CodeMirror 6.
 //
 // Markdown may embed HTML — block-level (`<div>…</div>`, `<details>`, a raw
@@ -98,7 +99,7 @@ class HtmlWidget extends WidgetType {
     });
     if (this.image) {
       el.classList.add("cm-md-image-wrap");
-      bindResourcePreview(el, view, this.image, this.image.url, "图片", this.image.selected,
+      bindResourcePreview(el, view, this.image, this.image.url, tr("图片"), this.image.selected,
         () => openImagePrompt(view));
     } else el.addEventListener("mousedown", (e) => {
       // Let links/checkboxes inside the rendered HTML behave normally.

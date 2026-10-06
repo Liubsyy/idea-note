@@ -1,3 +1,4 @@
+import { tr } from "../../i18n/core.ts";
 // Customisable editor keymap. A curated registry of high-value editing commands
 // is exposed in Settings (快捷键 tab); each one keeps its CodeMirror default but
 // can be rebound. The override map (command id -> key string) is persisted in
@@ -79,58 +80,58 @@ export interface EditorCommandDef extends ShortcutDef {
  * Mod-I for italic. Markdown defaults are shared with the toolbar tooltips.
  */
 export const EDITOR_COMMANDS: EditorCommandDef[] = [
-  { id: "find", label: "查找", desc: "打开当前文档的查找框", defaultKey: "Mod-f", run: openSearchPanel, group: "general", scope: "editor search-panel search-open" },
-  { id: "replace", label: "替换", desc: "直接打开并聚焦替换框", defaultKey: "Mod-r", run: openSearchWithReplace, group: "general", scope: "editor search-panel search-open" },
-  { id: "undo", label: "撤销", desc: "撤销上一次编辑", defaultKey: "Mod-z", run: undo, group: "general" },
+  { id: "find", get label() { return tr("查找"); }, get desc() { return tr("打开当前文档的查找框"); }, defaultKey: "Mod-f", run: openSearchPanel, group: "general", scope: "editor search-panel search-open" },
+  { id: "replace", get label() { return tr("替换"); }, get desc() { return tr("直接打开并聚焦替换框"); }, defaultKey: "Mod-r", run: openSearchWithReplace, group: "general", scope: "editor search-panel search-open" },
+  { id: "undo", get label() { return tr("撤销"); }, get desc() { return tr("撤销上一次编辑"); }, defaultKey: "Mod-z", run: undo, group: "general" },
   // Redo: ⌘⇧Z on mac, Ctrl+Y on Windows, Ctrl+Shift+Z on Linux.
-  { id: "redo", label: "重做", desc: "重做被撤销的编辑", defaultKey: "Mod-y", mac: "Mod-Shift-z", linux: "Ctrl-Shift-z", run: redo, group: "general" },
-  { id: "selectAll", label: "全选", desc: "选中整个文档", defaultKey: "Mod-a", run: selectAll, group: "general" },
+  { id: "redo", get label() { return tr("重做"); }, get desc() { return tr("重做被撤销的编辑"); }, defaultKey: "Mod-y", mac: "Mod-Shift-z", linux: "Ctrl-Shift-z", run: redo, group: "general" },
+  { id: "selectAll", get label() { return tr("全选"); }, get desc() { return tr("选中整个文档"); }, defaultKey: "Mod-a", run: selectAll, group: "general" },
   // Select line: ⌃L on mac, Alt+L on Windows/Linux.
-  { id: "selectLine", label: "选中整行", desc: "选中光标所在行", defaultKey: "Alt-l", mac: "Ctrl-l", run: selectLine, group: "general" },
-  { id: "selectParentSyntax", label: "选中父级语法", desc: "向外扩展选区到父级语法节点", defaultKey: "Mod-Shift-i", run: selectParentSyntax, group: "general" },
-  { id: "copyLineUp", label: "向上复制行", desc: "复制当前行并插入到上方", defaultKey: "Shift-Alt-ArrowUp", run: copyLineUp, group: "general" },
-  { id: "copyLineDown", label: "向下复制行", desc: "复制当前行并插入到下方", defaultKey: "Shift-Alt-ArrowDown", run: copyLineDown, group: "general" },
-  { id: "moveLineUp", label: "上移当前行", desc: "把当前行与上一行互换", defaultKey: "Alt-ArrowUp", run: moveLineUp, group: "general" },
-  { id: "moveLineDown", label: "下移当前行", desc: "把当前行与下一行互换", defaultKey: "Alt-ArrowDown", run: moveLineDown, group: "general" },
-  { id: "deleteLine", label: "删除整行", desc: "删除光标所在行", defaultKey: "Shift-Mod-k", run: deleteLine, group: "general" },
-  { id: "indentMore", label: "增加缩进", desc: "向右缩进所选行", defaultKey: "Mod-]", run: indentMore, group: "general" },
-  { id: "indentLess", label: "减少缩进", desc: "向左缩进所选行", defaultKey: "Mod-[", run: indentLess, group: "general" },
-  { id: "toggleComment", label: "注释/取消注释", desc: "切换当前行或选区的注释", defaultKey: "Mod-/", run: toggleComment, group: "general" },
-  { id: "cursorMatchingBracket", label: "跳到匹配括号", desc: "把光标移到配对的括号处", defaultKey: "Shift-Mod-\\", run: cursorMatchingBracket, group: "general" },
+  { id: "selectLine", get label() { return tr("选中整行"); }, get desc() { return tr("选中光标所在行"); }, defaultKey: "Alt-l", mac: "Ctrl-l", run: selectLine, group: "general" },
+  { id: "selectParentSyntax", get label() { return tr("选中父级语法"); }, get desc() { return tr("向外扩展选区到父级语法节点"); }, defaultKey: "Mod-Shift-i", run: selectParentSyntax, group: "general" },
+  { id: "copyLineUp", get label() { return tr("向上复制行"); }, get desc() { return tr("复制当前行并插入到上方"); }, defaultKey: "Shift-Alt-ArrowUp", run: copyLineUp, group: "general" },
+  { id: "copyLineDown", get label() { return tr("向下复制行"); }, get desc() { return tr("复制当前行并插入到下方"); }, defaultKey: "Shift-Alt-ArrowDown", run: copyLineDown, group: "general" },
+  { id: "moveLineUp", get label() { return tr("上移当前行"); }, get desc() { return tr("把当前行与上一行互换"); }, defaultKey: "Alt-ArrowUp", run: moveLineUp, group: "general" },
+  { id: "moveLineDown", get label() { return tr("下移当前行"); }, get desc() { return tr("把当前行与下一行互换"); }, defaultKey: "Alt-ArrowDown", run: moveLineDown, group: "general" },
+  { id: "deleteLine", get label() { return tr("删除整行"); }, get desc() { return tr("删除光标所在行"); }, defaultKey: "Shift-Mod-k", run: deleteLine, group: "general" },
+  { id: "indentMore", get label() { return tr("增加缩进"); }, get desc() { return tr("向右缩进所选行"); }, defaultKey: "Mod-]", run: indentMore, group: "general" },
+  { id: "indentLess", get label() { return tr("减少缩进"); }, get desc() { return tr("向左缩进所选行"); }, defaultKey: "Mod-[", run: indentLess, group: "general" },
+  { id: "toggleComment", get label() { return tr("注释/取消注释"); }, get desc() { return tr("切换当前行或选区的注释"); }, defaultKey: "Mod-/", run: toggleComment, group: "general" },
+  { id: "cursorMatchingBracket", get label() { return tr("跳到匹配括号"); }, get desc() { return tr("把光标移到配对的括号处"); }, defaultKey: "Shift-Mod-\\", run: cursorMatchingBracket, group: "general" },
 
-  { id: "markdownParagraph", label: "正文", desc: "把所选行设为正文", defaultKey: "Mod-0", run: MARKDOWN_ACTIONS.markdownParagraph, group: "markdown" },
+  { id: "markdownParagraph", get label() { return tr("正文"); }, get desc() { return tr("把所选行设为正文"); }, defaultKey: "Mod-0", run: MARKDOWN_ACTIONS.markdownParagraph, group: "markdown" },
   ...[1, 2, 3, 4, 5, 6].map((level): EditorCommandDef => ({
     id: `markdownHeading${level}`,
-    label: `标题 ${level}`,
-    desc: `把所选行设为 ${level} 级标题`,
+    get label() { return tr("标题 {{0}}", { 0: level }); },
+    get desc() { return tr("把所选行设为 {{0}} 级标题", { 0: level }); },
     defaultKey: `Mod-${level}`,
     run: MARKDOWN_ACTIONS[`markdownHeading${level}`],
     group: "markdown",
   })),
-  { id: "markdownBold", label: "加粗", desc: "加粗或取消加粗所选内容", defaultKey: "Mod-b", run: MARKDOWN_ACTIONS.markdownBold, group: "markdown" },
-  { id: "markdownItalic", label: "斜体", desc: "设为斜体或取消斜体", defaultKey: "Mod-i", run: MARKDOWN_ACTIONS.markdownItalic, group: "markdown" },
-  { id: "markdownStrike", label: "删除线", desc: "添加或取消删除线", defaultKey: "Mod-Shift-x", run: MARKDOWN_ACTIONS.markdownStrike, group: "markdown" },
-  { id: "markdownInlineCode", label: "行内代码", desc: "添加或取消行内代码", defaultKey: "Mod-e", run: MARKDOWN_ACTIONS.markdownInlineCode, group: "markdown" },
-  { id: "markdownTextColor", label: "应用文字颜色", desc: "应用最近使用的文字颜色", defaultKey: "Mod-Shift-c", run: MARKDOWN_ACTIONS.markdownTextColor, group: "markdown" },
-  { id: "markdownBgColor", label: "应用背景色", desc: "应用最近使用的背景颜色", defaultKey: "Mod-Shift-h", run: MARKDOWN_ACTIONS.markdownBgColor, group: "markdown" },
-  { id: "markdownClearColor", label: "清除颜色", desc: "清除文字颜色和背景色", defaultKey: "Mod-Alt-0", run: MARKDOWN_ACTIONS.markdownClearColor, group: "markdown" },
-  { id: "markdownBulletList", label: "无序列表", desc: "切换所选行为无序列表", defaultKey: "Mod-Shift-8", run: MARKDOWN_ACTIONS.markdownBulletList, group: "markdown" },
-  { id: "markdownOrderedList", label: "有序列表", desc: "切换所选行为有序列表", defaultKey: "Mod-Shift-7", run: MARKDOWN_ACTIONS.markdownOrderedList, group: "markdown" },
-  { id: "markdownTaskList", label: "任务列表", desc: "插入任务列表项", defaultKey: "Mod-Shift-9", run: MARKDOWN_ACTIONS.markdownTaskList, group: "markdown" },
-  { id: "markdownQuote", label: "引用", desc: "切换所选行为引用", defaultKey: "Mod-Shift-q", run: MARKDOWN_ACTIONS.markdownQuote, group: "markdown" },
-  { id: "markdownHighlightBlock", label: "高亮块", desc: "插入高亮块或转换所选段落", defaultKey: "Mod-Alt-Shift-h", run: MARKDOWN_ACTIONS.markdownHighlightBlock, group: "markdown" },
-  { id: "markdownCodeBlock", label: "代码块", desc: "插入代码块", defaultKey: "Mod-Alt-c", run: MARKDOWN_ACTIONS.markdownCodeBlock, group: "markdown" },
-  { id: "markdownHr", label: "分割线", desc: "插入水平分割线", defaultKey: "Mod-Alt-h", run: MARKDOWN_ACTIONS.markdownHr, group: "markdown" },
-  { id: "markdownLink", label: "链接", desc: "插入 Markdown 链接", defaultKey: "Mod-k", run: MARKDOWN_ACTIONS.markdownLink, group: "markdown" },
-  { id: "markdownImage", label: "图片", desc: "插入 Markdown 图片", defaultKey: "Mod-Alt-i", run: MARKDOWN_ACTIONS.markdownImage, group: "markdown" },
-  { id: "markdownTable", label: "表格", desc: "插入 Markdown 表格", defaultKey: "Mod-Alt-t", run: MARKDOWN_ACTIONS.markdownTable, group: "markdown" },
-  { id: "markdownMathBlock", label: "数学公式", desc: "插入块级数学公式", defaultKey: "Mod-Alt-m", run: MARKDOWN_ACTIONS.markdownMathBlock, group: "markdown" },
-  { id: "markdownMermaidFlowchart", label: "Mermaid 流程图", desc: "插入 Mermaid 流程图模板", defaultKey: "Mod-Alt-1", run: MARKDOWN_ACTIONS.markdownMermaidFlowchart, group: "markdown" },
-  { id: "markdownMermaidSequence", label: "Mermaid 时序图", desc: "插入 Mermaid 时序图模板", defaultKey: "Mod-Alt-2", run: MARKDOWN_ACTIONS.markdownMermaidSequence, group: "markdown" },
-  { id: "markdownMermaidGantt", label: "Mermaid 甘特图", desc: "插入 Mermaid 甘特图模板", defaultKey: "Mod-Alt-3", run: MARKDOWN_ACTIONS.markdownMermaidGantt, group: "markdown" },
-  { id: "markdownMermaidPie", label: "Mermaid 饼图", desc: "插入 Mermaid 饼图模板", defaultKey: "Mod-Alt-4", run: MARKDOWN_ACTIONS.markdownMermaidPie, group: "markdown" },
-  { id: "markdownMermaidClass", label: "Mermaid 类图", desc: "插入 Mermaid 类图模板", defaultKey: "Mod-Alt-5", run: MARKDOWN_ACTIONS.markdownMermaidClass, group: "markdown" },
-  { id: "markdownMermaidState", label: "Mermaid 状态图", desc: "插入 Mermaid 状态图模板", defaultKey: "Mod-Alt-6", run: MARKDOWN_ACTIONS.markdownMermaidState, group: "markdown" },
+  { id: "markdownBold", get label() { return tr("加粗"); }, get desc() { return tr("加粗或取消加粗所选内容"); }, defaultKey: "Mod-b", run: MARKDOWN_ACTIONS.markdownBold, group: "markdown" },
+  { id: "markdownItalic", get label() { return tr("斜体"); }, get desc() { return tr("设为斜体或取消斜体"); }, defaultKey: "Mod-i", run: MARKDOWN_ACTIONS.markdownItalic, group: "markdown" },
+  { id: "markdownStrike", get label() { return tr("删除线"); }, get desc() { return tr("添加或取消删除线"); }, defaultKey: "Mod-Shift-x", run: MARKDOWN_ACTIONS.markdownStrike, group: "markdown" },
+  { id: "markdownInlineCode", get label() { return tr("行内代码"); }, get desc() { return tr("添加或取消行内代码"); }, defaultKey: "Mod-e", run: MARKDOWN_ACTIONS.markdownInlineCode, group: "markdown" },
+  { id: "markdownTextColor", get label() { return tr("应用文字颜色"); }, get desc() { return tr("应用最近使用的文字颜色"); }, defaultKey: "Mod-Shift-c", run: MARKDOWN_ACTIONS.markdownTextColor, group: "markdown" },
+  { id: "markdownBgColor", get label() { return tr("应用背景色"); }, get desc() { return tr("应用最近使用的背景颜色"); }, defaultKey: "Mod-Shift-h", run: MARKDOWN_ACTIONS.markdownBgColor, group: "markdown" },
+  { id: "markdownClearColor", get label() { return tr("清除颜色"); }, get desc() { return tr("清除文字颜色和背景色"); }, defaultKey: "Mod-Alt-0", run: MARKDOWN_ACTIONS.markdownClearColor, group: "markdown" },
+  { id: "markdownBulletList", get label() { return tr("无序列表"); }, get desc() { return tr("切换所选行为无序列表"); }, defaultKey: "Mod-Shift-8", run: MARKDOWN_ACTIONS.markdownBulletList, group: "markdown" },
+  { id: "markdownOrderedList", get label() { return tr("有序列表"); }, get desc() { return tr("切换所选行为有序列表"); }, defaultKey: "Mod-Shift-7", run: MARKDOWN_ACTIONS.markdownOrderedList, group: "markdown" },
+  { id: "markdownTaskList", get label() { return tr("任务列表"); }, get desc() { return tr("插入任务列表项"); }, defaultKey: "Mod-Shift-9", run: MARKDOWN_ACTIONS.markdownTaskList, group: "markdown" },
+  { id: "markdownQuote", get label() { return tr("引用"); }, get desc() { return tr("切换所选行为引用"); }, defaultKey: "Mod-Shift-q", run: MARKDOWN_ACTIONS.markdownQuote, group: "markdown" },
+  { id: "markdownHighlightBlock", get label() { return tr("高亮块"); }, get desc() { return tr("插入高亮块或转换所选段落"); }, defaultKey: "Mod-Alt-Shift-h", run: MARKDOWN_ACTIONS.markdownHighlightBlock, group: "markdown" },
+  { id: "markdownCodeBlock", get label() { return tr("代码块"); }, get desc() { return tr("插入代码块"); }, defaultKey: "Mod-Alt-c", run: MARKDOWN_ACTIONS.markdownCodeBlock, group: "markdown" },
+  { id: "markdownHr", get label() { return tr("分割线"); }, get desc() { return tr("插入水平分割线"); }, defaultKey: "Mod-Alt-h", run: MARKDOWN_ACTIONS.markdownHr, group: "markdown" },
+  { id: "markdownLink", get label() { return tr("链接"); }, get desc() { return tr("插入 Markdown 链接"); }, defaultKey: "Mod-k", run: MARKDOWN_ACTIONS.markdownLink, group: "markdown" },
+  { id: "markdownImage", get label() { return tr("图片"); }, get desc() { return tr("插入 Markdown 图片"); }, defaultKey: "Mod-Alt-i", run: MARKDOWN_ACTIONS.markdownImage, group: "markdown" },
+  { id: "markdownTable", get label() { return tr("表格"); }, get desc() { return tr("插入 Markdown 表格"); }, defaultKey: "Mod-Alt-t", run: MARKDOWN_ACTIONS.markdownTable, group: "markdown" },
+  { id: "markdownMathBlock", get label() { return tr("数学公式"); }, get desc() { return tr("插入块级数学公式"); }, defaultKey: "Mod-Alt-m", run: MARKDOWN_ACTIONS.markdownMathBlock, group: "markdown" },
+  { id: "markdownMermaidFlowchart", get label() { return tr("Mermaid 流程图"); }, get desc() { return tr("插入 Mermaid 流程图模板"); }, defaultKey: "Mod-Alt-1", run: MARKDOWN_ACTIONS.markdownMermaidFlowchart, group: "markdown" },
+  { id: "markdownMermaidSequence", get label() { return tr("Mermaid 时序图"); }, get desc() { return tr("插入 Mermaid 时序图模板"); }, defaultKey: "Mod-Alt-2", run: MARKDOWN_ACTIONS.markdownMermaidSequence, group: "markdown" },
+  { id: "markdownMermaidGantt", get label() { return tr("Mermaid 甘特图"); }, get desc() { return tr("插入 Mermaid 甘特图模板"); }, defaultKey: "Mod-Alt-3", run: MARKDOWN_ACTIONS.markdownMermaidGantt, group: "markdown" },
+  { id: "markdownMermaidPie", get label() { return tr("Mermaid 饼图"); }, get desc() { return tr("插入 Mermaid 饼图模板"); }, defaultKey: "Mod-Alt-4", run: MARKDOWN_ACTIONS.markdownMermaidPie, group: "markdown" },
+  { id: "markdownMermaidClass", get label() { return tr("Mermaid 类图"); }, get desc() { return tr("插入 Mermaid 类图模板"); }, defaultKey: "Mod-Alt-5", run: MARKDOWN_ACTIONS.markdownMermaidClass, group: "markdown" },
+  { id: "markdownMermaidState", get label() { return tr("Mermaid 状态图"); }, get desc() { return tr("插入 Mermaid 状态图模板"); }, defaultKey: "Mod-Alt-6", run: MARKDOWN_ACTIONS.markdownMermaidState, group: "markdown" },
 ];
 
 /**
@@ -139,7 +140,7 @@ export const EDITOR_COMMANDS: EditorCommandDef[] = [
  * override map (and conflict checks) with the editor commands.
  */
 export const APP_COMMANDS: ShortcutDef[] = [
-  { id: "closeTab", label: "关闭标签页", desc: "关闭当前标签页，不会关闭窗口", defaultKey: "Mod-w" },
+  { id: "closeTab", get label() { return tr("关闭标签页"); }, get desc() { return tr("关闭当前标签页，不会关闭窗口"); }, defaultKey: "Mod-w" },
 ];
 
 /** Run-functions the registry owns, so we can strip their stock bindings. */

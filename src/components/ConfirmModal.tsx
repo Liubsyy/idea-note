@@ -1,3 +1,5 @@
+import { tr } from "../i18n/core.ts";
+import { useLanguage } from "../i18n/react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, AppWindow, X } from "lucide-react";
@@ -8,6 +10,7 @@ import { useAppStore } from "../store/useAppStore";
  * window.confirm, which is unreliable in Tauri's WKWebView.
  */
 export function ConfirmModal() {
+  useLanguage();
   const confirm = useAppStore((s) => s.confirm);
   const closeConfirm = useAppStore((s) => s.closeConfirm);
 
@@ -40,7 +43,7 @@ export function ConfirmModal() {
       await action();
       closeConfirm();
     } catch (e) {
-      setError(typeof e === "string" ? e : (e as Error)?.message ?? "操作失败");
+      setError(typeof e === "string" ? e : (e as Error)?.message ?? tr("操作失败"));
       setBusy(false);
     }
   };
@@ -107,7 +110,7 @@ export function ConfirmModal() {
             onClick={closeConfirm}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors"
             style={{ color: "var(--text-muted)" }}
-            title="取消"
+            title={tr("取消")}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = "var(--hover)";
               e.currentTarget.style.color = "var(--text)";
@@ -134,8 +137,7 @@ export function ConfirmModal() {
             onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
           >
-            取消
-          </button>
+            {tr("取消")}</button>
           {hasAltAction && (
             <button
               onClick={() => run(confirm.onAlt!)}

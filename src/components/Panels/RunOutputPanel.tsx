@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import { useEffect, useMemo, useRef } from "react";
 import {
   ChevronDown,
@@ -36,15 +38,15 @@ import { basename } from "../../lib/fs";
 const STATUS_LABEL = (record: RunRecord): string => {
   switch (record.status) {
     case "running":
-      return "运行中";
+      return tr("运行中");
     case "timeout":
-      return "已超时";
+      return tr("已超时");
     case "killed":
-      return "已停止";
+      return tr("已停止");
     case "error":
-      return "启动失败";
+      return tr("启动失败");
     default:
-      return record.exitCode === null ? "已结束" : `退出码 ${record.exitCode}`;
+      return record.exitCode === null ? tr("已结束") : tr("退出码 {{0}}", { 0: record.exitCode });
   }
 };
 
@@ -65,11 +67,12 @@ function needsTerminal(record: RunRecord): boolean {
   );
 }
 
-const formatMs = (ms: number) => (ms < 1000 ? `${ms} 毫秒` : `${(ms / 1000).toFixed(1)} 秒`);
+const formatMs = (ms: number) => (ms < 1000 ? tr("{{0}} 毫秒", { 0: ms }) : tr("{{0}} 秒", { 0: (ms / 1000).toFixed(1) }));
 
 /** The panel owns its clear/close actions; opening it lives on every code block
  *  instead of in the app title bar. */
 function RunPanelActions() {
+  useLanguage();
   const activeFilePath = useAppStore((s) => s.activeFilePath);
   const toggleRunPanel = useAppStore((s) => s.toggleRunPanel);
   const clearFile = useRunStore((s) => s.clearFile);
@@ -77,7 +80,7 @@ function RunPanelActions() {
   return (
     <div className="flex shrink-0 items-center gap-0.5">
       <button
-        title="清空运行输出"
+        title={tr("清空运行输出")}
         onMouseDown={(e) => e.stopPropagation()}
         onClick={() => clearFile(activeFilePath ?? "")}
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-[var(--hover)]"
@@ -86,7 +89,7 @@ function RunPanelActions() {
         <Trash2 size={15} />
       </button>
       <button
-        title="关闭运行输出"
+        title={tr("关闭运行输出")}
         onMouseDown={(e) => e.stopPropagation()}
         onClick={toggleRunPanel}
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-[var(--hover)]"
@@ -99,6 +102,7 @@ function RunPanelActions() {
 }
 
 export function RunOutputPanel() {
+  useLanguage();
   const activeFilePath = useAppStore((s) => s.activeFilePath);
   const records = useRunStore((s) => s.records);
   const visible = useMemo(
@@ -115,14 +119,13 @@ export function RunOutputPanel() {
       >
         <Play size={14} className="shrink-0" style={{ color: "var(--accent)" }} />
         <span className="shrink-0 text-[0.923em] font-medium" style={{ color: "var(--text)" }}>
-          运行输出
-        </span>
+          {tr("运行输出")}</span>
         <span
           data-tauri-drag-region
           className="min-w-0 flex-1 truncate text-[0.923em]"
           style={{ color: "var(--text-muted)" }}
         >
-          {activeFilePath ? basename(activeFilePath) : "未打开笔记"}
+          {activeFilePath ? basename(activeFilePath) : tr("未打开笔记")}
         </span>
         <RunPanelActions />
       </div>
@@ -133,10 +136,8 @@ export function RunOutputPanel() {
             className="px-2 py-6 text-center text-[0.923em] leading-relaxed"
             style={{ color: "var(--text-muted)" }}
           >
-            还没有运行结果。
-            <br />
-            在代码块右上角点「运行」。
-          </div>
+            {tr("还没有运行结果。")}<br />
+            {tr("在代码块右上角点「运行」。")}</div>
         ) : (
           <div className="flex flex-col gap-2">
             {visible.map((record) => (
@@ -152,6 +153,7 @@ export function RunOutputPanel() {
 /** Standalone right-side panel; its open state and width are independent from
  *  the AI assistant panel. */
 export function RunPanel() {
+  useLanguage();
   const fontSize = useAppStore((s) => s.codeRunConfig.fontSize);
 
   return (
@@ -177,6 +179,7 @@ function IconButton({
   onClick: () => void;
   children: React.ReactNode;
 }) {
+  useLanguage();
   return (
     <button
       title={title}
@@ -205,6 +208,7 @@ function IconButton({
  * same wherever the user happens to be reading it.
  */
 function RichOutput({ record }: { record: RunRecord }) {
+  useLanguage();
   const host = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!host.current) return;
@@ -234,6 +238,7 @@ function rerun(record: RunRecord): void {
 }
 
 function RunCard({ record }: { record: RunRecord }) {
+  useLanguage();
   const setCollapsed = useRunStore((s) => s.setCollapsed);
   const showToast = useAppStore((s) => s.showToast);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -266,8 +271,8 @@ function RunCard({ record }: { record: RunRecord }) {
         style={{ borderBottom: collapsed ? "none" : "1px solid var(--border)" }}
       >
         <button
-          title={collapsed ? "展开" : "折叠"}
-          aria-label={collapsed ? "展开" : "折叠"}
+          title={collapsed ? tr("展开") : tr("折叠")}
+          aria-label={collapsed ? tr("展开") : tr("折叠")}
           onClick={() => setCollapsed(record.runId, !collapsed)}
           className="flex h-4 w-4 shrink-0 items-center justify-center rounded"
           style={{ color: "var(--text-muted)" }}
@@ -291,26 +296,26 @@ function RunCard({ record }: { record: RunRecord }) {
           {record.firstLine}
         </span>
         {record.status === "running" ? (
-          <IconButton title="停止" onClick={() => stopRun(record.runId)}>
+          <IconButton title={tr("停止")} onClick={() => stopRun(record.runId)}>
             <Square size={11} />
           </IconButton>
         ) : (
-          <IconButton title="重跑" onClick={() => rerun(record)}>
+          <IconButton title={tr("重跑")} onClick={() => rerun(record)}>
             <Play size={12} />
           </IconButton>
         )}
         <IconButton
-          title="插入到文档"
+          title={tr("插入到文档")}
           onClick={() =>
-            locate(() => insertOutput(record), "找不到对应的代码块（可能已被修改）")
+            locate(() => insertOutput(record), tr("找不到对应的代码块（可能已被修改）"))
           }
         >
           <FileInput size={12} />
         </IconButton>
         <IconButton
-          title="跳到代码块"
+          title={tr("跳到代码块")}
           onClick={() =>
-            locate(() => revealBlock(record), "找不到对应的代码块（可能已被修改）")
+            locate(() => revealBlock(record), tr("找不到对应的代码块（可能已被修改）"))
           }
         >
           <LocateFixed size={12} />
@@ -335,7 +340,7 @@ function RunCard({ record }: { record: RunRecord }) {
               <RichOutput record={record} />
             ) : record.segs.length === 0 ? (
               <div className="text-[0.85em]" style={{ color: "var(--text-muted)" }}>
-                {record.status === "running" ? "等待输出…" : "没有输出"}
+                {record.status === "running" ? tr("等待输出…") : tr("没有输出")}
               </div>
             ) : !failed && record.declaredOut !== null ? (
               <RichOutput record={record} />
@@ -357,11 +362,11 @@ function RunCard({ record }: { record: RunRecord }) {
             <span className="truncate font-mono">{record.command}</span>
             {record.inputSummary && (
               <span className="truncate" title={record.inputSummary}>
-                参数：{record.inputSummary}
+                {tr("参数：")}{record.inputSummary}
               </span>
             )}
             {record.status !== "running" && <span>{formatMs(record.ms)}</span>}
-            {record.truncated && <span>输出已截断</span>}
+            {record.truncated && <span>{tr("输出已截断")}</span>}
           </div>
 
           {needsTerminal(record) && (
@@ -370,8 +375,7 @@ function RunCard({ record }: { record: RunRecord }) {
               style={{ color: "var(--text-muted)" }}
             >
               <span className="min-w-0 flex-1">
-                这段代码可能需要交互或长期运行，试试在终端里跑。
-              </span>
+                {tr("这段代码可能需要交互或长期运行，试试在终端里跑。")}</span>
               <button
                 onClick={() => void runInTerminal(record.lang, record.code)}
                 className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 transition-colors"
@@ -380,8 +384,7 @@ function RunCard({ record }: { record: RunRecord }) {
                 onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
               >
                 <SquareTerminal size={11} />
-                在终端运行
-              </button>
+                {tr("在终端运行")}</button>
             </div>
           )}
         </>

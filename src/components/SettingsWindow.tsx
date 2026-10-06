@@ -1,3 +1,6 @@
+import { tr, currentLanguage } from "../i18n/core.ts";
+import { changeLanguage, isAppLanguage, LANGUAGE_OPTIONS } from "../i18n/core";
+import { useLanguage } from "../i18n/react";
 import { useCallback, useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getAllWebviewWindows } from "@tauri-apps/api/webviewWindow";
@@ -152,15 +155,15 @@ interface Tab {
 }
 
 const tabs: Tab[] = [
-  { id: "appearance", label: "外观", caption: "主题、缩放与布局", icon: <Sun size={16} /> },
-  { id: "sidebar", label: "左侧列表", caption: "各模式字体大小", icon: <ListTree size={16} /> },
-  { id: "editor", label: "编辑器", caption: "字体、字号与行高", icon: <PenLine size={16} /> },
-  { id: "shortcuts", label: "快捷键", caption: "编辑器快捷键自定义", icon: <Keyboard size={16} /> },
-  { id: "attachments", label: "图片/附件", caption: "粘贴文件的保存目录", icon: <ImageIcon size={16} /> },
-  { id: "coderun", label: "代码块执行", caption: "可运行的代码块语言", icon: <Play size={16} /> },
-  { id: "models", label: "AI笔记助手", caption: "模型、字号与 API Key", icon: <Bot size={16} /> },
-  { id: "sync", label: "远程同步", caption: "Git 仓库同步", icon: <ArrowDownUp size={16} /> },
-  { id: "security", label: "加密", caption: "笔记内容加密口令", icon: <Lock size={16} /> },
+  { id: "appearance", get label() { return tr("外观"); }, get caption() { return tr("主题、缩放与布局"); }, icon: <Sun size={16} /> },
+  { id: "sidebar", get label() { return tr("左侧列表"); }, get caption() { return tr("各模式字体大小"); }, icon: <ListTree size={16} /> },
+  { id: "editor", get label() { return tr("编辑器"); }, get caption() { return tr("字体、字号与行高"); }, icon: <PenLine size={16} /> },
+  { id: "shortcuts", get label() { return tr("快捷键"); }, get caption() { return tr("编辑器快捷键自定义"); }, icon: <Keyboard size={16} /> },
+  { id: "attachments", get label() { return tr("图片/附件"); }, get caption() { return tr("粘贴文件的保存目录"); }, icon: <ImageIcon size={16} /> },
+  { id: "coderun", get label() { return tr("代码块执行"); }, get caption() { return tr("可运行的代码块语言"); }, icon: <Play size={16} /> },
+  { id: "models", get label() { return tr("AI笔记助手"); }, get caption() { return tr("模型、字号与 API Key"); }, icon: <Bot size={16} /> },
+  { id: "sync", get label() { return tr("远程同步"); }, get caption() { return tr("Git 仓库同步"); }, icon: <ArrowDownUp size={16} /> },
+  { id: "security", get label() { return tr("加密"); }, get caption() { return tr("笔记内容加密口令"); }, icon: <Lock size={16} /> },
 ];
 
 /** Initial tab from the `tab` URL param (set by openSettings), else 外观. */
@@ -177,6 +180,7 @@ function readInitialTab(): TabId {
  * The top bars carry `data-tauri-drag-region` for native window drag.
  */
 export function SettingsWindow() {
+  useLanguage();
   const themeId = useAppStore((s) => s.themeId);
   const customThemes = useAppStore((s) => s.customThemes);
   const setTheme = useAppStore((s) => s.setTheme);
@@ -259,8 +263,7 @@ export function SettingsWindow() {
           className="flex h-[52px] shrink-0 select-none items-end px-4 pb-2"
         >
           <span className="text-[13px] font-semibold tracking-wide" style={{ color: "var(--text)" }}>
-            设置
-          </span>
+            {tr("设置")}</span>
         </div>
 
         <nav className="flex-1 space-y-0.5 px-2.5 py-1">
@@ -296,7 +299,7 @@ export function SettingsWindow() {
               {active.caption}
             </p>
           </div>
-          <IconButton title="关闭" onClick={() => getCurrentWindow().close()}>
+          <IconButton title={tr("关闭")} onClick={() => getCurrentWindow().close()}>
             <X size={16} />
           </IconButton>
         </header>
@@ -304,6 +307,23 @@ export function SettingsWindow() {
         <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-1">
           {activeTab === "appearance" && (
             <div className="space-y-4">
+              <Card>
+                <Row title="语言 / Language" desc={tr("切换后立即生效，并同步到所有窗口")}>
+                  <select
+                    aria-label="语言 / Language"
+                    value={currentLanguage()}
+                    onChange={(event) => {
+                      if (!isAppLanguage(event.target.value)) return;
+                      try { changeLanguage(event.target.value); }
+                      catch (error) { showToast(tr("保存语言设置失败：{{0}}", { 0: String(error) }), "error"); }
+                    }}
+                    className="rounded-md border px-3 py-1.5 text-[12px]"
+                    style={{ background: "var(--bg)", color: "var(--text)", borderColor: "var(--border)" }}
+                  >
+                    {LANGUAGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </Row>
+              </Card>
               <ThemeSection
                 themeId={themeId}
                 customThemes={customThemes}
@@ -315,7 +335,7 @@ export function SettingsWindow() {
               />
 
               <Card>
-                <Row title="界面缩放" desc="放大或缩小整个应用界面">
+                <Row title={tr("界面缩放")} desc={tr("放大或缩小整个应用界面")}>
                   <Stepper
                     value={uiZoom}
                     min={0.8}
@@ -332,7 +352,7 @@ export function SettingsWindow() {
           {activeTab === "editor" && (
             <div className="space-y-4">
               <Card>
-                <Row title="字号" desc="编辑区正文与标题的基准大小">
+                <Row title={tr("字号")} desc={tr("编辑区正文与标题的基准大小")}>
                   <Stepper
                     value={editorFontSize}
                     min={12}
@@ -342,7 +362,7 @@ export function SettingsWindow() {
                     onChange={setEditorFontSize}
                   />
                 </Row>
-                <Row title="标题大小" desc="统一缩放各级标题（相对正文，100% 为默认）">
+                <Row title={tr("标题大小")} desc={tr("统一缩放各级标题（相对正文，100% 为默认）")}>
                   <Stepper
                     value={editorHeadingScale}
                     min={HEADING_SCALE_MIN}
@@ -352,7 +372,7 @@ export function SettingsWindow() {
                     onChange={setEditorHeadingScale}
                   />
                 </Row>
-                <Row title="行高" desc="行与行之间的垂直间距">
+                <Row title={tr("行高")} desc={tr("行与行之间的垂直间距")}>
                   <Stepper
                     value={editorLineHeight}
                     min={1.3}
@@ -362,7 +382,7 @@ export function SettingsWindow() {
                     onChange={setEditorLineHeight}
                   />
                 </Row>
-                <Row title="字体" desc="编辑区正文字体（代码块仍用等宽字体）">
+                <Row title={tr("字体")} desc={tr("编辑区正文字体（代码块仍用等宽字体）")}>
                   <div className="w-[148px]">
                     <Select
                       value={editorFontFamily}
@@ -374,7 +394,7 @@ export function SettingsWindow() {
                     />
                   </div>
                 </Row>
-                <Row title="字重" desc="编辑区正文的粗细；400 常规、500 中等、600 半粗">
+                <Row title={tr("字重")} desc={tr("编辑区正文的粗细；400 常规、500 中等、600 半粗")}>
                   <Stepper
                     value={editorFontWeight}
                     min={FONT_WEIGHT_MIN}
@@ -384,25 +404,25 @@ export function SettingsWindow() {
                     onChange={setEditorFontWeight}
                   />
                 </Row>
-                <Row title="显示行号" desc="在 Markdown 源码模式和其他文本文件中显示">
+                <Row title={tr("显示行号")} desc={tr("在 Markdown 源码模式和其他文本文件中显示")}>
                   <Toggle checked={editorLineNumbers} onChange={setEditorLineNumbers} />
                 </Row>
-                <Row title="同时打开文件数" desc="编辑器标签栏最多保留的文件数，超出后自动关闭最早的">
+                <Row title={tr("同时打开文件数")} desc={tr("编辑器标签栏最多保留的文件数，超出后自动关闭最早的")}>
                   <Stepper
                     value={editorMaxTabs}
                     min={1}
                     max={20}
                     step={1}
-                    format={(v) => `${v} 个`}
+                    format={(v) => tr("{{0}} 个", { 0: v })}
                     onChange={setEditorMaxTabs}
                   />
                 </Row>
-                <Row title="紧凑排版" desc="收紧行距与标题间距，一屏显示更多内容">
+                <Row title={tr("紧凑排版")} desc={tr("收紧行距与标题间距，一屏显示更多内容")}>
                   <Toggle checked={compactEditor} onChange={setCompactEditor} />
                 </Row>
               </Card>
 
-              <Preview label="预览">
+              <Preview label={tr("预览")}>
                 <div
                   style={{
                     fontSize: editorFontSize,
@@ -424,8 +444,7 @@ export function SettingsWindow() {
                       marginBottom: "0.35em",
                     }}
                   >
-                    标题示例 Heading
-                  </div>
+                    {tr("标题示例 Heading")}</div>
                   <div
                     className="grid gap-x-3"
                     style={{ gridTemplateColumns: editorLineNumbers ? "2.5em 1fr" : "1fr" }}
@@ -439,8 +458,7 @@ export function SettingsWindow() {
                       </div>
                     )}
                     <p className="m-0 min-w-0">
-                      灵感稍纵即逝，随手记下。
-                      <br />
+                      {tr("灵感稍纵即逝，随手记下。")}<br />
                       The quick brown fox jumps over the lazy dog.
                     </p>
                   </div>
@@ -460,10 +478,10 @@ export function SettingsWindow() {
           {activeTab === "sidebar" && (
             <div className="space-y-4">
               <Card>
-                <Row title="紧凑侧栏" desc="减小列表的行间距，一屏显示更多">
+                <Row title={tr("紧凑侧栏")} desc={tr("减小列表的行间距，一屏显示更多")}>
                   <Toggle checked={compactSidebar} onChange={setCompactSidebar} />
                 </Row>
-                <Row title="文件模式" desc="完整文件树列表的字体大小">
+                <Row title={tr("文件模式")} desc={tr("完整文件树列表的字体大小")}>
                   <Stepper
                     value={sidebarFilesFontSize}
                     min={11}
@@ -473,7 +491,7 @@ export function SettingsWindow() {
                     onChange={(v) => setSidebarFontSize("files", v)}
                   />
                 </Row>
-                <Row title="笔记模式" desc="Markdown 笔记列表的字体大小">
+                <Row title={tr("笔记模式")} desc={tr("Markdown 笔记列表的字体大小")}>
                   <Stepper
                     value={sidebarNotesFontSize}
                     min={11}
@@ -483,7 +501,7 @@ export function SettingsWindow() {
                     onChange={(v) => setSidebarFontSize("notes", v)}
                   />
                 </Row>
-                <Row title="预览大纲" desc="标题大纲列表的字体大小">
+                <Row title={tr("预览大纲")} desc={tr("标题大纲列表的字体大小")}>
                   <Stepper
                     value={sidebarOutlineFontSize}
                     min={11}
@@ -493,7 +511,7 @@ export function SettingsWindow() {
                     onChange={(v) => setSidebarFontSize("outline", v)}
                   />
                 </Row>
-                <Row title="字重" desc="所有列表共用的粗细；400 常规、500 中等、600 半粗">
+                <Row title={tr("字重")} desc={tr("所有列表共用的粗细；400 常规、500 中等、600 半粗")}>
                   <Stepper
                     value={sidebarFontWeight}
                     min={FONT_WEIGHT_MIN}
@@ -505,13 +523,13 @@ export function SettingsWindow() {
                 </Row>
               </Card>
 
-              <Preview label="预览">
+              <Preview label={tr("预览")}>
                 <div className={compactSidebar ? "space-y-1" : "space-y-3"}>
                   {(
                     [
-                      ["文件模式", sidebarFilesFontSize, "笔记目录/会议记录.md"],
-                      ["笔记模式", sidebarNotesFontSize, "产品想法"],
-                      ["预览大纲", sidebarOutlineFontSize, "一、功能设计"],
+                      [tr("文件模式"), sidebarFilesFontSize, tr("笔记目录/会议记录.md")],
+                      [tr("笔记模式"), sidebarNotesFontSize, tr("产品想法")],
+                      [tr("预览大纲"), sidebarOutlineFontSize, tr("一、功能设计")],
                     ] as const
                   ).map(([label, size, sample]) => (
                     <div key={label} className="flex items-baseline gap-3">
@@ -574,7 +592,7 @@ async function prepareVaultRotation(workspace: string, operation: string) {
   const targets = (await getAllWebviewWindows())
     .map((window) => window.label)
     .filter((label) => label !== "settings");
-  if (targets.length === 0) throw "找不到主窗口，请重新打开工作区后再试。";
+  if (targets.length === 0) throw tr("找不到主窗口，请重新打开工作区后再试。");
 
   const expected = new Set(targets);
   const acknowledgements = new Map<string, VaultRotationAck>();
@@ -593,7 +611,7 @@ async function prepareVaultRotation(workspace: string, operation: string) {
       unlisten = stop;
       timer = window.setTimeout(() => {
         stop();
-        reject("有主窗口未响应，请关闭多余窗口后重试。");
+        reject(tr("有主窗口未响应，请关闭多余窗口后重试。"));
       }, 5000);
       void emit(VAULT_ROTATION_PREPARE, { operation, workspace, targets });
     });
@@ -602,9 +620,9 @@ async function prepareVaultRotation(workspace: string, operation: string) {
   try {
     const replies = await all;
     const matching = replies.filter((reply) => reply.matches);
-    if (matching.length === 0) throw "没有打开该工作区的主窗口。";
+    if (matching.length === 0) throw tr("没有打开该工作区的主窗口。");
     const blocked = matching.find((reply) => !reply.ready);
-    if (blocked) throw `无法重置 MK：${blocked.reason ?? "存在未保存内容"}。请先保存后重试。`;
+    if (blocked) throw tr("无法重置 MK：{{0}}。请先保存后重试。", { 0: blocked.reason ?? tr("存在未保存内容") });
   } catch (error) {
     await emit(VAULT_ROTATION_END, { operation, workspace, reload: false });
     throw error;
@@ -615,11 +633,11 @@ const finishVaultRotation = (workspace: string, operation: string, reload: boole
   emit(VAULT_ROTATION_END, { operation, workspace, reload });
 
 const SYNC_STATE_LABEL: Record<SyncState, string> = {
-  idle: "尚未同步",
-  syncing: "同步中…",
-  success: "同步成功",
-  conflict: "有冲突待处理",
-  error: "同步失败",
+  get idle() { return tr("尚未同步"); },
+  get syncing() { return tr("同步中…"); },
+  get success() { return tr("同步成功"); },
+  get conflict() { return tr("有冲突待处理"); },
+  get error() { return tr("同步失败"); },
 };
 
 /**
@@ -636,6 +654,7 @@ function ShortcutsTab({
   onSet: (commandId: string, key: string | null) => void;
   onResetAll: () => void;
 }) {
+  useLanguage();
   // Effective key -> command ids, so a combo bound to two commands is flagged.
   const keyUsers = new Map<string, string[]>();
   for (const cmd of [...APP_COMMANDS, ...EDITOR_COMMANDS]) {
@@ -644,10 +663,10 @@ function ShortcutsTab({
   }
   const hasOverrides = Object.keys(overrides).length > 0;
   const groups: { id: string; label: string; commands: ShortcutDef[] }[] = [
-    { id: "app", label: "标签页", commands: APP_COMMANDS },
+    { id: "app", label: tr("标签页"), commands: APP_COMMANDS },
     {
       id: "general" as const,
-      label: "通用编辑",
+      label: tr("通用编辑"),
       commands: EDITOR_COMMANDS.filter((cmd) => cmd.group === "general"),
     },
     {
@@ -661,14 +680,11 @@ function ShortcutsTab({
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
         <p className="text-[11px] leading-snug" style={{ color: "var(--text-muted)" }}>
-          点击按键框后直接按下想要的组合键即可重新绑定。
-          <br />
-          Esc 取消，Delete / Backspace 恢复该项默认。
-        </p>
+          {tr("点击按键框后直接按下想要的组合键即可重新绑定。")}<br />
+          {tr("Esc 取消，Delete / Backspace 恢复该项默认。")}</p>
         <div className="shrink-0">
           <TextButton onClick={onResetAll} disabled={!hasOverrides}>
-            全部恢复默认
-          </TextButton>
+            {tr("全部恢复默认")}</TextButton>
         </div>
       </div>
 
@@ -704,7 +720,7 @@ function ShortcutsTab({
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       {overridden && (
-                        <IconButton title="恢复默认" onClick={() => onSet(cmd.id, null)}>
+                        <IconButton title={tr("恢复默认")} onClick={() => onSet(cmd.id, null)}>
                           <RotateCcw size={14} />
                         </IconButton>
                       )}
@@ -741,6 +757,7 @@ function KeyRecorder({
   onChange: (key: string) => void;
   onReset: () => void;
 }) {
+  useLanguage();
   const [recording, setRecording] = useState(false);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -775,7 +792,7 @@ function KeyRecorder({
       onClick={() => setRecording((r) => !r)}
       onKeyDown={onKeyDown}
       onBlur={() => setRecording(false)}
-      title={conflict ? "该组合键与其它命令冲突" : "点击后按下快捷键"}
+      title={conflict ? tr("该组合键与其它命令冲突") : tr("点击后按下快捷键")}
       className="flex h-8 min-w-[96px] items-center justify-center rounded-lg px-3 text-[13px] font-medium tabular-nums transition-colors"
       style={{
         border: `1px solid ${border}`,
@@ -783,7 +800,7 @@ function KeyRecorder({
         color,
       }}
     >
-      {recording ? "按下快捷键…" : formatKey(value)}
+      {recording ? tr("按下快捷键…") : formatKey(value)}
     </button>
   );
 }
@@ -795,6 +812,7 @@ function KeyRecorder({
  * the opener main window via events, since that window owns the tree + editor.
  */
 function SyncTab() {
+  useLanguage();
   const [ctx, setCtx] = useState(readSyncContext);
   const { ws, src } = ctx;
 
@@ -845,21 +863,19 @@ function SyncTab() {
   return (
     <div className="space-y-4">
       <Card>
-        <Row title="Git" desc="基于 git 命令同步：可仅本地提交快照，或同步到任意远程仓库（GitHub、Gitee、自建…）">
+        <Row title="Git" desc={tr("基于 git 命令同步：可仅本地提交快照，或同步到任意远程仓库（GitHub、Gitee、自建…）")}>
           <span
             className="flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[10px]"
             style={{ background: "var(--active)", color: "var(--accent)" }}
           >
             <GitBranch size={11} />
-            默认
-          </span>
+            {tr("默认")}</span>
         </Row>
       </Card>
 
       {info && !info.installed && (
         <Notice tone="danger">
-          未检测到 git，请先安装命令行 git（macOS 可执行 xcode-select --install）。
-        </Notice>
+          {tr("未检测到 git，请先安装命令行 git（macOS 可执行 xcode-select --install）。")}</Notice>
       )}
 
       {!ready ? null : !ws ? (
@@ -886,6 +902,7 @@ function SyncTab() {
 
 /** Empty project: clone a remote repo into a chosen local folder and open it. */
 function CloneSection({ src }: { src: string }) {
+  useLanguage();
   const requestGitCredential = useAppStore((s) => s.requestGitCredential);
   const [url, setUrl] = useState("");
   const [proxy, setProxy] = useState(() => readGlobalProxy());
@@ -895,7 +912,7 @@ function CloneSection({ src }: { src: string }) {
   const [done, setDone] = useState(false);
 
   const pickDir = async () => {
-    const selected = await open({ directory: true, multiple: false, title: "选择存放位置" });
+    const selected = await open({ directory: true, multiple: false, title: tr("选择存放位置") });
     if (typeof selected === "string") setParentDir(selected);
   };
 
@@ -919,7 +936,7 @@ function CloneSection({ src }: { src: string }) {
   };
 
   if (done) {
-    return <Notice>克隆完成，已在主窗口打开。</Notice>;
+    return <Notice>{tr("克隆完成，已在主窗口打开。")}</Notice>;
   }
 
   return (
@@ -928,23 +945,22 @@ function CloneSection({ src }: { src: string }) {
       style={{ background: "var(--bg-elev)", border: "1px solid var(--border)" }}
     >
       <div className="text-[12px]" style={{ color: "var(--text-muted)" }}>
-        当前是空项目。克隆一个远程 git 仓库作为笔记库：
-      </div>
-      <Field label="远程仓库地址">
+        {tr("当前是空项目。克隆一个远程 git 仓库作为笔记库：")}</div>
+      <Field label={tr("远程仓库地址")}>
         <Input
           value={url}
-          placeholder="git@github.com:user/notes.git 或 https://…"
+          placeholder={tr("git@github.com:user/notes.git 或 https://…")}
           onChange={setUrl}
         />
       </Field>
-      <Field label="同步代理（全局，所有笔记库共用，仅 HTTPS）">
+      <Field label={tr("同步代理（全局，所有笔记库共用，仅 HTTPS）")}>
         <Input
           value={proxy}
-          placeholder="http://127.0.0.1:7890（留空不使用）"
+          placeholder={tr("http://127.0.0.1:7890（留空不使用）")}
           onChange={setProxy}
         />
       </Field>
-      <Field label="存放位置">
+      <Field label={tr("存放位置")}>
         <button
           onClick={() => void pickDir()}
           className="flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-[13px]"
@@ -955,18 +971,18 @@ function CloneSection({ src }: { src: string }) {
           }}
         >
           <FolderOpen size={14} className="shrink-0" />
-          <span className="truncate">{parentDir ?? "选择本地文件夹…"}</span>
+          <span className="truncate">{parentDir ?? tr("选择本地文件夹…")}</span>
         </button>
       </Field>
       {parentDir && url.trim() && (
         <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-          将克隆到 {parentDir}/{repoNameFromUrl(url.trim())}
+          {tr("将克隆到")}{" "}{parentDir}/{repoNameFromUrl(url.trim())}
         </div>
       )}
       {error && <Notice tone="danger">{error}</Notice>}
       <div className="flex justify-end pt-1">
         <TextButton primary disabled={!url.trim() || !parentDir || busy} onClick={() => void clone()}>
-          {busy ? "克隆中…" : "克隆并打开"}
+          {busy ? tr("克隆中…") : tr("克隆并打开")}
         </TextButton>
       </div>
     </div>
@@ -984,6 +1000,7 @@ function AttachSection({
   isRepo: boolean;
   onAttached: () => Promise<void>;
 }) {
+  useLanguage();
   const requestGitCredential = useAppStore((s) => s.requestGitCredential);
   const [url, setUrl] = useState("");
   const [proxy, setProxy] = useState(() => readGlobalProxy());
@@ -1032,20 +1049,20 @@ function AttachSection({
     >
       <div className="text-[12px]" style={{ color: "var(--text-muted)" }}>
         {isRepo
-          ? "关联远程仓库后即可在多台设备间同步（远程已有内容会自动合并进来）："
-          : `「${basename(ws)}」尚未开启同步。关联远程仓库可在多台设备间同步（远程已有内容会自动合并进来）；也可以仅本地使用，把修改提交为本地版本快照：`}
+          ? tr("关联远程仓库后即可在多台设备间同步（远程已有内容会自动合并进来）：")
+          : tr("「{{0}}」尚未开启同步。关联远程仓库可在多台设备间同步（远程已有内容会自动合并进来）；也可以仅本地使用，把修改提交为本地版本快照：", { 0: basename(ws) })}
       </div>
-      <Field label="远程仓库地址">
+      <Field label={tr("远程仓库地址")}>
         <Input
           value={url}
-          placeholder="git@github.com:user/notes.git 或 https://…"
+          placeholder={tr("git@github.com:user/notes.git 或 https://…")}
           onChange={setUrl}
         />
       </Field>
-      <Field label="同步代理（全局，所有笔记库共用，仅 HTTPS）">
+      <Field label={tr("同步代理（全局，所有笔记库共用，仅 HTTPS）")}>
         <Input
           value={proxy}
-          placeholder="http://127.0.0.1:7890（留空不使用）"
+          placeholder={tr("http://127.0.0.1:7890（留空不使用）")}
           onChange={setProxy}
         />
       </Field>
@@ -1053,11 +1070,11 @@ function AttachSection({
       <div className="flex items-center justify-end gap-2 pt-1">
         {!isRepo && (
           <TextButton disabled={!!busy} onClick={() => void initLocal()}>
-            {busy === "local" ? "初始化中…" : "仅本地使用"}
+            {busy === "local" ? tr("初始化中…") : tr("仅本地使用")}
           </TextButton>
         )}
         <TextButton primary disabled={!url.trim() || !!busy} onClick={() => void attach()}>
-          {busy === "attach" ? "关联中…" : "关联并初始化"}
+          {busy === "attach" ? tr("关联中…") : tr("关联并初始化")}
         </TextButton>
       </div>
     </div>
@@ -1081,6 +1098,7 @@ function ConnectedSection({
   local: boolean;
   onChanged: () => Promise<void>;
 }) {
+  useLanguage();
   const [editingUrl, setEditingUrl] = useState<string | null>(null);
   const [urlError, setUrlError] = useState<string | null>(null);
   const [config, setConfig] = useState<SyncConfig>(() => readSyncConfig(ws));
@@ -1113,7 +1131,7 @@ function ConnectedSection({
     if (!url) return;
     const out = await gitRun(ws, ["remote", "set-url", "origin", url]);
     if (out.code !== 0) {
-      setUrlError(out.stderr.trim().split("\n")[0] || "修改失败");
+      setUrlError(out.stderr.trim().split("\n")[0] || tr("修改失败"));
       return;
     }
     setUrlError(null);
@@ -1134,25 +1152,24 @@ function ConnectedSection({
     <>
       <Card>
         {local ? (
-          <Row title="同步方式" desc="修改提交到本地 git 仓库作为版本快照，不会推送到任何远程">
+          <Row title={tr("同步方式")} desc={tr("修改提交到本地 git 仓库作为版本快照，不会推送到任何远程")}>
             <span className="flex items-center gap-1.5 text-[12px]" style={{ color: "var(--text-soft)" }}>
               <FolderOpen size={13} />
-              仅本地
-            </span>
+              {tr("仅本地")}</span>
           </Row>
         ) : (
-          <Row title="远程地址" desc={editingUrl === null ? (info.remoteUrl ?? "") : undefined}>
+          <Row title={tr("远程地址")} desc={editingUrl === null ? (info.remoteUrl ?? "") : undefined}>
             {editingUrl === null ? (
-              <IconButton title="修改远程地址" onClick={() => setEditingUrl(info.remoteUrl ?? "")}>
+              <IconButton title={tr("修改远程地址")} onClick={() => setEditingUrl(info.remoteUrl ?? "")}>
                 <Pencil size={15} />
               </IconButton>
             ) : (
               <div className="flex w-[300px] items-center gap-1">
                 <Input value={editingUrl} onChange={setEditingUrl} />
-                <IconButton title="保存" onClick={() => void saveUrl()}>
+                <IconButton title={tr("保存")} onClick={() => void saveUrl()}>
                   <Check size={15} />
                 </IconButton>
-                <IconButton title="取消" onClick={() => { setEditingUrl(null); setUrlError(null); }}>
+                <IconButton title={tr("取消")} onClick={() => { setEditingUrl(null); setUrlError(null); }}>
                   <X size={15} />
                 </IconButton>
               </div>
@@ -1164,18 +1181,18 @@ function ConnectedSection({
             {urlError}
           </div>
         )}
-        <Row title="当前分支">
+        <Row title={tr("当前分支")}>
           <span className="flex items-center gap-1.5 text-[12px]" style={{ color: "var(--text-soft)" }}>
             <GitBranch size={13} />
             {info.branch ?? "—"}
           </span>
         </Row>
         <Row
-          title="立即同步"
+          title={tr("立即同步")}
           desc={
             (sync.lastSyncMessage ?? SYNC_STATE_LABEL[sync.syncState]) +
             (sync.lastSyncAt
-              ? ` · ${new Date(sync.lastSyncAt).toLocaleTimeString("zh-CN", { hour12: false })}`
+              ? ` · ${new Date(sync.lastSyncAt).toLocaleTimeString(currentLanguage(), { hour12: false })}`
               : "")
           }
         >
@@ -1186,35 +1203,35 @@ function ConnectedSection({
               disabled={syncing}
               onClick={() => emit(SYNC_REQUEST_EVENT, { target: src }).catch(() => {})}
             >
-              {syncing ? "同步中…" : "同步"}
+              {syncing ? tr("同步中…") : tr("同步")}
             </TextButton>
           </div>
         </Row>
       </Card>
 
       <Card>
-        <Row title="自动同步" desc="按固定间隔在后台自动执行同步">
+        <Row title={tr("自动同步")} desc={tr("按固定间隔在后台自动执行同步")}>
           <Toggle checked={config.autoSync} onChange={(autoSync) => updateConfig({ autoSync })} />
         </Row>
         <Row
-          title="同步间隔"
-          desc={config.autoSync ? "两次自动同步之间的时间" : "开启自动同步后按此频率执行"}
+          title={tr("同步间隔")}
+          desc={config.autoSync ? tr("两次自动同步之间的时间") : tr("开启自动同步后按此频率执行")}
         >
           <Stepper
             value={config.intervalMin}
             min={1}
             max={60}
             step={1}
-            format={(v) => `${v}分钟`}
+            format={(v) => tr("{{0}}分钟", { 0: v })}
             onChange={(intervalMin) => updateConfig({ intervalMin })}
           />
         </Row>
         {!local && (
-          <Row title="同步代理" desc="全局设置，所有笔记库共用；仅同步时经此 HTTP 代理，不写入 git 全局配置">
+          <Row title={tr("同步代理")} desc={tr("全局设置，所有笔记库共用；仅同步时经此 HTTP 代理，不写入 git 全局配置")}>
             <div className="w-[260px]">
               <Input
                 value={proxy}
-                placeholder="http://127.0.0.1:7890（留空不使用）"
+                placeholder={tr("http://127.0.0.1:7890（留空不使用）")}
                 onChange={updateProxy}
               />
             </div>
@@ -1226,8 +1243,8 @@ function ConnectedSection({
 
       <div className="px-1 text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
         {local
-          ? "同步流程：将本地修改提交到本地 git 仓库，作为版本快照；关联远程后即可在多台设备间同步。"
-          : "同步流程：先提交本地修改，再拉取远程并合并，最后推送。两端改动同一处时，双方内容都会保留在文件中（以 <<<<<<< 标记区分），整理后再次同步即可。"}
+          ? tr("同步流程：将本地修改提交到本地 git 仓库，作为版本快照；关联远程后即可在多台设备间同步。")
+          : tr("同步流程：先提交本地修改，再拉取远程并合并，最后推送。两端改动同一处时，双方内容都会保留在文件中（以 <<<<<<< 标记区分），整理后再次同步即可。")}
       </div>
     </>
   );
@@ -1238,6 +1255,7 @@ function ConnectedSection({
  *  config is global (all workspaces share it), like the sync proxy; `ws` is
  *  only the SYNC_CONFIG_EVENT payload so main windows re-read the cache. */
 function CommitMessageCard({ ws }: { ws: string }) {
+  useLanguage();
   const aiModels = useAppStore((s) => s.aiModels);
   const [config, setConfig] = useState<CommitMessageConfig>(readCommitMessageConfig);
 
@@ -1264,19 +1282,19 @@ function CommitMessageCard({ ws }: { ws: string }) {
   return (
     <Card>
       <Row
-        title="提交文案"
+        title={tr("提交文案")}
         desc={
           (config.mode === "ai"
-            ? "由 AI 阅读本次改动生成提交说明，生成失败时中止同步并提示错误"
-            : "使用默认时间戳文案，如 sync: 2026/7/5 14:30:00") + "；全局设置，所有笔记库共用"
+            ? tr("由 AI 阅读本次改动生成提交说明，生成失败时中止同步并提示错误")
+            : tr("使用默认时间戳文案，如 sync: 2026/7/5 14:30:00")) + tr("；全局设置，所有笔记库共用")
         }
       >
         <div className="w-[150px]">
           <Select
             value={config.mode}
             options={[
-              { value: "default", label: "默认（时间）" },
-              { value: "ai", label: "AI 生成" },
+              { value: "default", label: tr("默认（时间）") },
+              { value: "ai", label: tr("AI 生成") },
             ]}
             onChange={(v) => update({ mode: v as CommitMessageConfig["mode"] })}
           />
@@ -1285,11 +1303,11 @@ function CommitMessageCard({ ws }: { ws: string }) {
       {config.mode === "ai" && (
         <>
           <Row
-            title="生成模型"
+            title={tr("生成模型")}
             desc={
               modelOptions.length > 0
-                ? "用于生成提交文案的模型"
-                : "尚未配置 AI 模型，请先在「AI笔记助手」中添加，否则使用默认文案"
+                ? tr("用于生成提交文案的模型")
+                : tr("尚未配置 AI 模型，请先在「AI笔记助手」中添加，否则使用默认文案")
             }
           >
             {modelOptions.length > 0 && (
@@ -1301,21 +1319,19 @@ function CommitMessageCard({ ws }: { ws: string }) {
                 className="w-[220px]"
                 label={
                   modelOptions.find((o) => o.value === modelValue)?.label ??
-                  "选择模型"
+                  tr("选择模型")
                 }
               />
             )}
           </Row>
           <div className="px-4 py-3" style={{ borderColor: "var(--border)" }}>
             <div className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
-              提交规范
-            </div>
+              {tr("提交规范")}</div>
             <div className="mb-2 mt-0.5 text-[11px] leading-snug" style={{ color: "var(--text-muted)" }}>
-              用自然语言描述提交文案的要求，会作为提示词交给 AI；留空则由 AI 自行概括改动
-            </div>
+              {tr("用自然语言描述提交文案的要求，会作为提示词交给 AI；留空则由 AI 自行概括改动")}</div>
             <textarea
               value={config.convention}
-              placeholder={"例如：以「笔记:」开头，用一句话概括本次改动，不超过 30 字"}
+              placeholder={tr("例如：以「笔记:」开头，用一句话概括本次改动，不超过 30 字")}
               onChange={(e) => update({ convention: e.target.value })}
               className="min-h-[64px] w-full resize-y rounded-lg px-2.5 py-2 text-[13px] leading-5 outline-none"
               style={{ background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)" }}
@@ -1331,6 +1347,7 @@ function CommitMessageCard({ ws }: { ws: string }) {
 
 /** Inline notice banner (info by default, red for danger). */
 function Notice({ tone, children }: { tone?: "danger"; children: React.ReactNode }) {
+  useLanguage();
   return (
     <div
       className="rounded-xl px-4 py-3 text-[12px] leading-relaxed"
@@ -1398,6 +1415,7 @@ const runnerCommandLine = (command: string, args: string[], ext: string) =>
  * confirmation before a note can execute local commands.
  */
 function CodeRunTab() {
+  useLanguage();
   const config = useAppStore((s) => s.codeRunConfig);
   const setConfig = useAppStore((s) => s.setCodeRunConfig);
   // Saving goes through a Rust command; the settings window renders no toast,
@@ -1489,22 +1507,21 @@ function CodeRunTab() {
   return (
     <div className="space-y-4">
       <Notice>
-        运行代码块会在你的电脑上真实执行程序，结果显示在独立的运行输出面板。
-      </Notice>
+        {tr("运行代码块会在你的电脑上真实执行程序，结果显示在独立的运行输出面板。")}</Notice>
 
-      {saveError && <Notice tone="danger">保存失败：{saveError}</Notice>}
+      {saveError && <Notice tone="danger">{tr("保存失败：")}{saveError}</Notice>}
 
       <Card>
-        <Row title="启用代码块运行" desc="关闭后所有代码块都不显示「运行」按钮">
+        <Row title={tr("启用代码块运行")} desc={tr("关闭后所有代码块都不显示「运行」按钮")}>
           <Toggle checked={config.enabled} onChange={(enabled) => update({ enabled })} />
         </Row>
-        <Row title="运行前二次确认" desc="每次运行代码块前显示确认弹窗">
+        <Row title={tr("运行前二次确认")} desc={tr("每次运行代码块前显示确认弹窗")}>
           <Toggle
             checked={config.confirmEveryRun}
             onChange={(confirmEveryRun) => update({ confirmEveryRun })}
           />
         </Row>
-        <Row title="运行输出字号" desc="调整运行输出面板中的文字大小">
+        <Row title={tr("运行输出字号")} desc={tr("调整运行输出面板中的文字大小")}>
           <Stepper
             value={config.fontSize}
             min={CODE_RUN_FONT_SIZE_MIN}
@@ -1514,7 +1531,7 @@ function CodeRunTab() {
             onChange={(fontSize) => update({ fontSize })}
           />
         </Row>
-        <Row title="输出上限" desc="单次运行最多保留的输出，超出后截断（程序继续运行）">
+        <Row title={tr("输出上限")} desc={tr("单次运行最多保留的输出，超出后截断（程序继续运行）")}>
           <Stepper
             value={config.maxOutputKb}
             min={50}
@@ -1540,12 +1557,9 @@ function CodeRunTab() {
       <div>
         <div className="mb-2 px-0.5">
           <div className="text-[12px] font-medium" style={{ color: "var(--text-soft)" }}>
-            自定义运行器
-          </div>
+            {tr("自定义运行器")}</div>
           <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
-            凡是「一条命令跑一个源文件」的语言都可以加，例如 ruby、deno run、go run。
-            需要交互输入、或要先编译再运行的语言请改用「在终端运行」。
-          </div>
+            {tr("凡是「一条命令跑一个源文件」的语言都可以加，例如 ruby、deno run、go run。 需要交互输入、或要先编译再运行的语言请改用「在终端运行」。")}</div>
         </div>
 
         {customs.length > 0 && (
@@ -1583,12 +1597,11 @@ function CodeRunTab() {
                 {confirmDelete === runner.lang ? (
                   <div className="flex shrink-0 items-center gap-1">
                     <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-                      删除？
-                    </span>
-                    <IconButton title="确认删除" onClick={() => removeRunner(runner.lang)}>
+                      {tr("删除？")}</span>
+                    <IconButton title={tr("确认删除")} onClick={() => removeRunner(runner.lang)}>
                       <Check size={15} />
                     </IconButton>
-                    <IconButton title="取消" onClick={() => setConfirmDelete(null)}>
+                    <IconButton title={tr("取消")} onClick={() => setConfirmDelete(null)}>
                       <X size={15} />
                     </IconButton>
                   </div>
@@ -1598,10 +1611,10 @@ function CodeRunTab() {
                       checked={runner.enabled}
                       onChange={(enabled) => updateRunner(runner.lang, { enabled })}
                     />
-                    <IconButton title="编辑" onClick={() => openEdit(runner)}>
+                    <IconButton title={tr("编辑")} onClick={() => openEdit(runner)}>
                       <Pencil size={15} />
                     </IconButton>
-                    <IconButton title="删除" onClick={() => setConfirmDelete(runner.lang)}>
+                    <IconButton title={tr("删除")} onClick={() => setConfirmDelete(runner.lang)}>
                       <Trash2 size={15} />
                     </IconButton>
                   </div>
@@ -1616,35 +1629,35 @@ function CodeRunTab() {
             className={`space-y-3 rounded-xl p-4 ${customs.length > 0 ? "mt-3" : ""}`}
             style={{ background: "var(--bg-elev)", border: "1px solid var(--border)" }}
           >
-            <Field label="语言标识">
+            <Field label={tr("语言标识")}>
               <Input
                 value={draft.lang}
-                placeholder="ruby —— 对应 ```ruby 代码块"
+                placeholder={tr("ruby —— 对应 ```ruby 代码块")}
                 onChange={(v) => editDraft({ lang: v })}
               />
             </Field>
-            <Field label="别名">
+            <Field label={tr("别名")}>
               <Input
                 value={draft.aliases}
-                placeholder="rb —— 可留空，多个用空格分隔"
+                placeholder={tr("rb —— 可留空，多个用空格分隔")}
                 onChange={(v) => editDraft({ aliases: v })}
               />
             </Field>
-            <Field label="命令">
+            <Field label={tr("命令")}>
               <Input
                 value={draft.command}
-                placeholder="ruby 或解释器的绝对路径"
+                placeholder={tr("ruby 或解释器的绝对路径")}
                 onChange={(v) => editDraft({ command: v })}
               />
             </Field>
-            <Field label="参数">
+            <Field label={tr("参数")}>
               <Input
                 value={draft.args}
-                placeholder="可留空；代码文件路径会追加在最后"
+                placeholder={tr("可留空；代码文件路径会追加在最后")}
                 onChange={(v) => editDraft({ args: v })}
               />
             </Field>
-            <Field label="扩展名">
+            <Field label={tr("扩展名")}>
               <Input
                 value={draft.ext}
                 placeholder=".rb"
@@ -1654,24 +1667,22 @@ function CodeRunTab() {
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0">
                 <div className="text-[12px] font-medium" style={{ color: "var(--text-soft)" }}>
-                  超时
-                </div>
+                  {tr("超时")}</div>
                 <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
-                  超时后进程会被结束；设为 0 表示不限制
-                </div>
+                  {tr("超时后进程会被结束；设为 0 表示不限制")}</div>
               </div>
               <Stepper
                 value={Math.round(draft.timeoutMs / 1000)}
                 min={0}
                 max={600}
                 step={5}
-                format={(v) => (v === 0 ? "不限制" : `${v} 秒`)}
+                format={(v) => (v === 0 ? tr("不限制") : tr("{{0}} 秒", { 0: v }))}
                 onChange={(v) => editDraft({ timeoutMs: v * 1000 })}
               />
             </div>
             {draftPreview && (
               <div className="truncate text-[11px]" style={{ color: "var(--text-muted)" }}>
-                将执行：{draftPreview}
+                {tr("将执行：")}{draftPreview}
               </div>
             )}
             {draftError && (
@@ -1680,10 +1691,9 @@ function CodeRunTab() {
               </div>
             )}
             <div className="flex justify-end gap-2 pt-1">
-              <TextButton onClick={closeDraft}>取消</TextButton>
+              <TextButton onClick={closeDraft}>{tr("取消")}</TextButton>
               <TextButton primary onClick={saveDraft}>
-                保存
-              </TextButton>
+                {tr("保存")}</TextButton>
             </div>
           </div>
         ) : (
@@ -1697,14 +1707,12 @@ function CodeRunTab() {
             onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
           >
             <Plus size={15} />
-            添加运行器
-          </button>
+            {tr("添加运行器")}</button>
         )}
       </div>
 
       <Notice>
-        应用启动时会读取登录 Shell 的 PATH。若解释器仍无法找到，请在「命令」里填写绝对路径。
-      </Notice>
+        {tr("应用启动时会读取登录 Shell 的 PATH。若解释器仍无法找到，请在「命令」里填写绝对路径。")}</Notice>
     </div>
   );
 }
@@ -1718,6 +1726,7 @@ function RunnerCard({
   disabled: boolean;
   onChange: (patch: Partial<CodeRunner>) => void;
 }) {
+  useLanguage();
   const label = RUNNER_LABEL[runner.lang] ?? runner.lang;
   const langs = [runner.lang, ...runner.aliases].join(" / ");
 
@@ -1739,7 +1748,7 @@ function RunnerCard({
             className="mt-0.5 truncate text-[11px]"
             style={{ color: "var(--text-muted)" }}
           >
-            匹配 ```{langs}
+            {tr("匹配 ```")}{langs}
           </div>
         </div>
         <Toggle checked={runner.enabled} onChange={(enabled) => onChange({ enabled })} />
@@ -1750,41 +1759,38 @@ function RunnerCard({
           {SHELL_LANGS.has(runner.lang) && (
             <div className="pt-3">
               <Notice tone="danger">
-                Shell 代码块可以执行任何命令（包括删除文件）。只在你完全信任笔记来源时开启。
-              </Notice>
+                {tr("Shell 代码块可以执行任何命令（包括删除文件）。只在你完全信任笔记来源时开启。")}</Notice>
             </div>
           )}
           <div className={SHELL_LANGS.has(runner.lang) ? "" : "pt-3"}>
-            <Field label="命令">
+            <Field label={tr("命令")}>
               <Input
                 value={runner.command}
                 onChange={(command) => onChange({ command })}
-                placeholder="python3 或解释器的绝对路径"
+                placeholder={tr("python3 或解释器的绝对路径")}
               />
             </Field>
           </div>
-          <Field label="参数">
+          <Field label={tr("参数")}>
             <Input
               value={runner.args.join(" ")}
               onChange={(v) => onChange({ args: splitArgs(v) })}
-              placeholder="传给解释器的参数，代码文件路径会追加在最后"
+              placeholder={tr("传给解释器的参数，代码文件路径会追加在最后")}
             />
           </Field>
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
               <div className="text-[12px] font-medium" style={{ color: "var(--text-soft)" }}>
-                超时
-              </div>
+                {tr("超时")}</div>
               <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
-                超时后进程会被结束；设为 0 表示不限制
-              </div>
+                {tr("超时后进程会被结束；设为 0 表示不限制")}</div>
             </div>
             <Stepper
               value={Math.round(runner.timeoutMs / 1000)}
               min={0}
               max={600}
               step={5}
-              format={(v) => (v === 0 ? "不限制" : `${v} 秒`)}
+              format={(v) => (v === 0 ? tr("不限制") : tr("{{0}} 秒", { 0: v }))}
               onChange={(v) => onChange({ timeoutMs: v * 1000 })}
             />
           </div>
@@ -1804,6 +1810,7 @@ function RunnerCard({
  * under the workspace root, or in a fixed absolute folder.
  */
 function AttachmentsTab() {
+  useLanguage();
   const [ws, setWs] = useState<string | null>(() => readSyncContext().ws);
   // Track the opener workspace when an open settings window is refocused.
   useEffect(() => {
@@ -1834,7 +1841,7 @@ function AttachmentsTab() {
 
   if (!ws) {
     return (
-      <Notice>图片 / 附件目录按工程分别保存。请先在主窗口打开一个工程，再回到这里配置。</Notice>
+      <Notice>{tr("图片 / 附件目录按工程分别保存。请先在主窗口打开一个工程，再回到这里配置。")}</Notice>
     );
   }
   if (!loaded) return null;
@@ -1849,16 +1856,16 @@ function AttachmentsTab() {
   return (
     <div className="space-y-4">
       <LocationCard
-        title="图片"
-        desc="在笔记中粘贴截图或图片文件时的保存位置"
+        title={tr("图片")}
+        desc={tr("在笔记中粘贴截图或图片文件时的保存位置")}
         location={config.imageLocation}
         dir={config.imageDir}
         onLocation={(imageLocation) => update({ imageLocation })}
         onDir={(imageDir) => update({ imageDir })}
       />
       <LocationCard
-        title="附件"
-        desc="粘贴非图片文件（PDF、压缩包等）时的保存位置"
+        title={tr("附件")}
+        desc={tr("粘贴非图片文件（PDF、压缩包等）时的保存位置")}
         location={config.attachmentLocation}
         dir={config.attachmentDir}
         onLocation={(attachmentLocation) => update({ attachmentLocation })}
@@ -1866,10 +1873,9 @@ function AttachmentsTab() {
       />
 
       <div className="px-1 text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
-        以上配置仅作用于当前工程，随工程单独保存。在 Markdown 中粘贴剪贴板里的图片或文件时，真实文件会保存到上面的目录，笔记中插入对应的引用（图片为 <code>![](…)</code>，附件为 <code>[文件名](…)</code>）。
+        {tr("以上配置仅作用于当前工程，随工程单独保存。在 Markdown 中粘贴剪贴板里的图片或文件时，真实文件会保存到上面的目录，笔记中插入对应的引用（图片为")}{" "}<code>![](…)</code>{tr("，附件为")}{" "}<code>{tr("[文件名](…)")}</code>）。
         <br />
-        笔记目录 / 工程目录模式插入相对链接，便于随仓库同步；绝对目录模式插入绝对路径。粘贴到工程目录或笔记目录时需先保存笔记。
-      </div>
+        {tr("笔记目录 / 工程目录模式插入相对链接，便于随仓库同步；绝对目录模式插入绝对路径。粘贴到工程目录或笔记目录时需先保存笔记。")}</div>
     </div>
   );
 }
@@ -1890,10 +1896,11 @@ function LocationCard({
   onLocation: (location: AttachmentLocation) => void;
   onDir: (dir: string) => void;
 }) {
+  useLanguage();
   const isAbs = location === "absolute";
 
   const pickAbsolute = async () => {
-    const selected = await open({ directory: true, multiple: false, title: "选择目录" });
+    const selected = await open({ directory: true, multiple: false, title: tr("选择目录") });
     if (typeof selected === "string") onDir(selected);
   };
 
@@ -1904,22 +1911,22 @@ function LocationCard({
           <Select
             value={location}
             options={[
-              { value: "relative", label: "笔记目录" },
-              { value: "project", label: "工程目录" },
-              { value: "absolute", label: "绝对目录" },
+              { value: "relative", label: tr("笔记目录") },
+              { value: "project", label: tr("工程目录") },
+              { value: "absolute", label: tr("绝对目录") },
             ]}
             onChange={(v) => onLocation(v as AttachmentLocation)}
           />
         </div>
       </Row>
       <Row
-        title={isAbs ? "绝对路径" : "子目录"}
+        title={isAbs ? tr("绝对路径") : tr("子目录")}
         desc={
           isAbs
-            ? "文件保存到该绝对目录"
+            ? tr("文件保存到该绝对目录")
             : location === "project"
-              ? "相对工程根目录，如 assets/images"
-              : "相对笔记所在目录，如 assets/images"
+              ? tr("相对工程根目录，如 assets/images")
+              : tr("相对笔记所在目录，如 assets/images")
         }
       >
         <div className="flex w-[260px] items-center gap-1">
@@ -1929,7 +1936,7 @@ function LocationCard({
             onChange={onDir}
           />
           {isAbs && (
-            <IconButton title="选择目录" onClick={() => void pickAbsolute()}>
+            <IconButton title={tr("选择目录")} onClick={() => void pickAbsolute()}>
               <FolderOpen size={15} />
             </IconButton>
           )}
@@ -1947,7 +1954,7 @@ const uid = () =>
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 const PROVIDER_LABEL: Record<AiProvider, string> = {
-  openai: "OpenAI 兼容",
+  get openai() { return tr("OpenAI 兼容"); },
   anthropic: "Anthropic",
 };
 const DEFAULT_BASE_URL: Record<AiProvider, string> = {
@@ -1976,6 +1983,7 @@ function ModelsTab({
   aiSessionHistoryLimit: number;
   setAiSessionHistoryLimit: (limit: number) => void;
 }) {
+  useLanguage();
   const aiModels = useAppStore((s) => s.aiModels);
   const addAiModel = useAppStore((s) => s.addAiModel);
   const updateAiModel = useAppStore((s) => s.updateAiModel);
@@ -2029,7 +2037,7 @@ function ModelsTab({
 
   const fetchModels = async () => {
     if (!draft.baseUrl.trim()) {
-      setFetchError("请先填写 Base URL");
+      setFetchError(tr("请先填写 Base URL"));
       return;
     }
     setFetchingModels(true);
@@ -2041,7 +2049,7 @@ function ModelsTab({
         apiKey: draft.apiKey.trim(),
       });
       if (models.length === 0) {
-        setFetchError("上游没有返回模型 ID");
+        setFetchError(tr("上游没有返回模型 ID"));
         return;
       }
       setDraft((d) => ({ ...d, model: models.join("\n") }));
@@ -2055,7 +2063,7 @@ function ModelsTab({
   return (
     <div className="space-y-4">
       <Card>
-        <Row title="AI 笔记助手字号" desc="调整右侧 AI 面板中的文字大小">
+        <Row title={tr("AI 笔记助手字号")} desc={tr("调整右侧 AI 面板中的文字大小")}>
           <Stepper
             value={aiAssistantFontSize}
             min={11}
@@ -2066,14 +2074,14 @@ function ModelsTab({
           />
         </Row>
         <Row
-          title="会话历史保留数量"
-          desc="超过上限后自动删除最早的会话；当前会话和生成中的会话会保留"
+          title={tr("会话历史保留数量")}
+          desc={tr("超过上限后自动删除最早的会话；当前会话和生成中的会话会保留")}
         >
           <NumberSettingInput
             value={aiSessionHistoryLimit}
             min={AI_SESSION_HISTORY_LIMIT_MIN}
             max={AI_SESSION_HISTORY_LIMIT_MAX}
-            suffix="条"
+            suffix={tr("条")}
             onChange={setAiSessionHistoryLimit}
           />
         </Row>
@@ -2084,8 +2092,7 @@ function ModelsTab({
           className="rounded-xl px-4 py-8 text-center text-[12px]"
           style={{ background: "var(--bg-elev)", border: "1px solid var(--border)", color: "var(--text-muted)" }}
         >
-          还没有配置模型。添加一个后即可在右侧栏的 AI 聊天里使用。
-        </div>
+          {tr("还没有配置模型。添加一个后即可在右侧栏的 AI 聊天里使用。")}</div>
       )}
 
       {aiModels.length > 0 && (
@@ -2110,20 +2117,20 @@ function ModelsTab({
               </div>
               {confirmDelete === m.id ? (
                 <div className="flex shrink-0 items-center gap-1">
-                  <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>删除？</span>
-                  <IconButton title="确认删除" onClick={() => { void removeAiModel(m.id); setConfirmDelete(null); }}>
+                  <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{tr("删除？")}</span>
+                  <IconButton title={tr("确认删除")} onClick={() => { void removeAiModel(m.id); setConfirmDelete(null); }}>
                     <Check size={15} />
                   </IconButton>
-                  <IconButton title="取消" onClick={() => setConfirmDelete(null)}>
+                  <IconButton title={tr("取消")} onClick={() => setConfirmDelete(null)}>
                     <X size={15} />
                   </IconButton>
                 </div>
               ) : (
                 <div className="flex shrink-0 items-center gap-0.5">
-                  <IconButton title="编辑" onClick={() => openEdit(m)}>
+                  <IconButton title={tr("编辑")} onClick={() => openEdit(m)}>
                     <Pencil size={15} />
                   </IconButton>
-                  <IconButton title="删除" onClick={() => setConfirmDelete(m.id)}>
+                  <IconButton title={tr("删除")} onClick={() => setConfirmDelete(m.id)}>
                     <Trash2 size={15} />
                   </IconButton>
                 </div>
@@ -2138,10 +2145,10 @@ function ModelsTab({
           className="space-y-3 rounded-xl p-4"
           style={{ background: "var(--bg-elev)", border: "1px solid var(--border)" }}
         >
-          <Field label="名称">
-            <Input value={draft.label} placeholder="例如 DeepSeek" onChange={(v) => setDraft({ ...draft, label: v })} />
+          <Field label={tr("名称")}>
+            <Input value={draft.label} placeholder={tr("例如 DeepSeek")} onChange={(v) => setDraft({ ...draft, label: v })} />
           </Field>
-          <Field label="类型">
+          <Field label={tr("类型")}>
             <Select
               value={draft.provider}
               options={[
@@ -2161,9 +2168,9 @@ function ModelsTab({
             <Input value={draft.apiKey} password placeholder="sk-..." onChange={(v) => setDraft({ ...draft, apiKey: v })} />
           </Field>
           <Field
-            label="模型 ID"
+            label={tr("模型 ID")}
             action={
-              <IconButton title="从上游获取" onClick={() => void fetchModels()} disabled={fetchingModels}>
+              <IconButton title={tr("从上游获取")} onClick={() => void fetchModels()} disabled={fetchingModels}>
                 <DownloadCloud size={14} className={fetchingModels ? "animate-pulse" : ""} />
               </IconButton>
             }
@@ -2180,10 +2187,9 @@ function ModelsTab({
             )}
           </Field>
           <div className="flex justify-end gap-2 pt-1">
-            <TextButton onClick={close}>取消</TextButton>
+            <TextButton onClick={close}>{tr("取消")}</TextButton>
             <TextButton primary disabled={!canSave} onClick={() => void save()}>
-              保存
-            </TextButton>
+              {tr("保存")}</TextButton>
           </div>
         </div>
       ) : (
@@ -2195,15 +2201,14 @@ function ModelsTab({
           onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
         >
           <Plus size={15} />
-          添加模型
-        </button>
+          {tr("添加模型")}</button>
       )}
     </div>
   );
 }
 
 function maskKey(key: string): string {
-  if (!key) return "未设置 Key";
+  if (!key) return tr("未设置 Key");
   if (key.length <= 8) return "••••";
   return `${key.slice(0, 4)}••••${key.slice(-4)}`;
 }
@@ -2228,6 +2233,7 @@ function Field({
   action?: React.ReactNode;
   children: React.ReactNode;
 }) {
+  useLanguage();
   return (
     <label className="block">
       <div className="mb-1 flex items-center gap-1.5">
@@ -2250,10 +2256,11 @@ function ModelIdsInput({
   onChange: (v: string) => void;
   placeholder?: string;
 }) {
+  useLanguage();
   return (
     <textarea
       value={value}
-      placeholder={`${placeholder}\n每行一个，或用逗号分隔`}
+      placeholder={tr("{{0}}\n每行一个，或用逗号分隔", { 0: placeholder })}
       onChange={(e) => onChange(e.target.value)}
       className="min-h-[76px] w-full resize-y rounded-lg px-2.5 py-2 text-[13px] leading-5 outline-none"
       style={{ background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)" }}
@@ -2274,6 +2281,7 @@ function Input({
   placeholder?: string;
   password?: boolean;
 }) {
+  useLanguage();
   return (
     <input
       type={password ? "password" : "text"}
@@ -2297,6 +2305,7 @@ function Select({
   options: { value: string; label: string }[];
   onChange: (v: string) => void;
 }) {
+  useLanguage();
   return (
     <select
       value={value}
@@ -2326,6 +2335,7 @@ function TextButton({
   danger?: boolean;
   disabled?: boolean;
 }) {
+  useLanguage();
   return (
     <button
       onClick={onClick}
@@ -2360,6 +2370,7 @@ function TextButton({
  * encrypted notes are unreadable forever, by anyone, including us.
  */
 function SecurityTab() {
+  useLanguage();
   const [ws, setWs] = useState<string | null>(() => readSyncContext().ws);
   useEffect(() => {
     const un = listen<{ ws: string | null }>(SETTINGS_CONTEXT_EVENT, ({ payload }) =>
@@ -2447,7 +2458,7 @@ function SecurityTab() {
   }, [status, reload]);
 
   if (!ws) {
-    return <Notice>加密口令按工程分别保存。请先在主窗口打开一个工程，再回到这里配置。</Notice>;
+    return <Notice>{tr("加密口令按工程分别保存。请先在主窗口打开一个工程，再回到这里配置。")}</Notice>;
   }
 
   const setupStage = vaultSetupStage(status?.initialized ?? null, recoveryCode);
@@ -2508,9 +2519,9 @@ function SecurityTab() {
         <Notice>
           {replacingRecovery
             ? rotationSummary
-              ? `MK 已重置，${rotationSummary.filesChanged} 个文件中的 ${rotationSummary.secretsChanged} 处加密内容已迁移。工作区已锁定，旧恢复码已失效，这串新码只显示一次。`
-              : "新恢复码已生效，旧恢复码已失效。这串新码只显示一次，请立即保存。"
-            : "这串恢复码只显示这一次。抄到密码管理器或纸上——忘记口令时，它是唯一的入口。"}
+              ? tr("MK 已重置，{{0}} 个文件中的 {{1}} 处加密内容已迁移。工作区已锁定，旧恢复码已失效，这串新码只显示一次。", { 0: rotationSummary.filesChanged, 1: rotationSummary.secretsChanged })
+              : tr("新恢复码已生效，旧恢复码已失效。这串新码只显示一次，请立即保存。")
+            : tr("这串恢复码只显示这一次。抄到密码管理器或纸上——忘记口令时，它是唯一的入口。")}
         </Notice>
         <div
           className="select-all rounded-xl px-4 py-4 text-center text-[13px] tracking-[0.14em]"
@@ -2534,8 +2545,7 @@ function SecurityTab() {
             onChange={(e) => setAcknowledged(e.target.checked)}
           />
           <span>
-            我已经保存好恢复码。我明白同时丢失口令和恢复码，这些加密内容将永远无法恢复。
-          </span>
+            {tr("我已经保存好恢复码。我明白同时丢失口令和恢复码，这些加密内容将永远无法恢复。")}</span>
         </label>
         <div className="flex justify-end">
           <TextButton
@@ -2547,16 +2557,15 @@ function SecurityTab() {
               setDone(
                 replacingRecovery
                   ? rotationSummary
-                    ? "MK 重置已完成，新恢复码已保存。工作区已锁定，再次查看密文时需要输入口令。"
-                    : "新恢复码已保存，旧恢复码已失效。"
-                  : "加密口令已设置。现在可以在笔记里加密选中的内容了。",
+                    ? tr("MK 重置已完成，新恢复码已保存。工作区已锁定，再次查看密文时需要输入口令。")
+                    : tr("新恢复码已保存，旧恢复码已失效。")
+                  : tr("加密口令已设置。现在可以在笔记里加密选中的内容了。"),
               );
               setReplacingRecovery(false);
               setRotationSummary(null);
             }}
           >
-            我已保存
-          </TextButton>
+            {tr("我已保存")}</TextButton>
         </div>
       </div>
     );
@@ -2567,15 +2576,14 @@ function SecurityTab() {
     return (
       <div className="space-y-4">
         <Notice>
-          设置口令后，就能把笔记里的任意一段内容加密。密文随笔记一起提交到仓库，在其他设备上输入同一口令即可打开。
-        </Notice>
+          {tr("设置口令后，就能把笔记里的任意一段内容加密。密文随笔记一起提交到仓库，在其他设备上输入同一口令即可打开。")}</Notice>
         <Card>
           <div className="space-y-3 px-4 py-4">
-            <Field label="设置口令">
-              <Input password value={newPassword} onChange={setNewPassword} placeholder="选一个你不会忘的口令" />
+            <Field label={tr("设置口令")}>
+              <Input password value={newPassword} onChange={setNewPassword} placeholder={tr("选一个你不会忘的口令")} />
             </Field>
-            <Field label="再次输入">
-              <Input password value={confirmPassword} onChange={setConfirmPassword} placeholder="确认口令" />
+            <Field label={tr("再次输入")}>
+              <Input password value={confirmPassword} onChange={setConfirmPassword} placeholder={tr("确认口令")} />
             </Field>
           </div>
         </Card>
@@ -2587,7 +2595,7 @@ function SecurityTab() {
             disabled={busy || !newPassword}
             onClick={() =>
               void run(async () => {
-                if (newPassword !== confirmPassword) throw "两次输入的口令不一致。";
+                if (newPassword !== confirmPassword) throw tr("两次输入的口令不一致。");
                 const { recoveryCode: code } = await vaultInit(ws, newPassword);
                 setNewPassword("");
                 setConfirmPassword("");
@@ -2596,13 +2604,11 @@ function SecurityTab() {
               })
             }
           >
-            {busy ? "正在生成密钥…" : "设置口令"}
+            {busy ? tr("正在生成密钥…") : tr("设置口令")}
           </TextButton>
         </div>
         <div className="px-1 text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
-          口令本身不会被保存到任何地方。工程目录下会生成 <code>.ideanote/vault.json</code>，
-          里面只有被口令包裹后的密钥，请把它一起提交到仓库——否则其他设备打不开加密内容。
-        </div>
+          {tr("口令本身不会被保存到任何地方。工程目录下会生成")}{" "}<code>.ideanote/vault.json</code>{tr("， 里面只有被口令包裹后的密钥，请把它一起提交到仓库——否则其他设备打不开加密内容。")}</div>
       </div>
     );
   }
@@ -2618,16 +2624,15 @@ function SecurityTab() {
     <div className="space-y-4">
       {status.rotationPending && (
         <Notice tone="danger">
-          上次 MK 重置在写入过程中中断。当前新旧 MK 会共同保留，已有内容仍可解密；请输入当前主口令继续完成迁移。
-        </Notice>
+          {tr("上次 MK 重置在写入过程中中断。当前新旧 MK 会共同保留，已有内容仍可解密；请输入当前主口令继续完成迁移。")}</Notice>
       )}
       <Card>
         <Row
-          title={status.locked ? "已上锁" : "已解锁"}
+          title={status.locked ? tr("已上锁") : tr("已解锁")}
           desc={
             status.locked
-              ? "加密内容当前不可读。在笔记里点击加密块即可解锁。"
-              : "本次会话已解锁。关闭工程或点击上锁后需要重新输入口令。"
+              ? tr("加密内容当前不可读。在笔记里点击加密块即可解锁。")
+              : tr("本次会话已解锁。关闭工程或点击上锁后需要重新输入口令。")
           }
         >
           <TextButton
@@ -2640,12 +2645,11 @@ function SecurityTab() {
               })
             }
           >
-            立即上锁
-          </TextButton>
+            {tr("立即上锁")}</TextButton>
         </Row>
         <Row
-          title="口令有效期"
-          desc="从输入口令开始，多长时间内无需再次输入；期间加密、解密或保存不会续期。"
+          title={tr("口令有效期")}
+          desc={tr("从输入口令开始，多长时间内无需再次输入；期间加密、解密或保存不会续期。")}
         >
           <div className="flex flex-col items-end gap-1">
             <div className="w-32">
@@ -2653,7 +2657,7 @@ function SecurityTab() {
                 value={String(vaultTtlMinutes)}
                 options={VAULT_TTL_OPTIONS.map((m) => ({
                   value: String(m),
-                  label: m < 0 ? "立即过期" : m === 0 ? "从不过期" : `${m} 分钟`,
+                  label: m < 0 ? tr("立即过期") : m === 0 ? tr("从不过期") : tr("{{0}} 分钟", { 0: m }),
                 }))}
                 onChange={(v) => {
                   setError(null);
@@ -2668,8 +2672,7 @@ function SecurityTab() {
                 className="whitespace-nowrap text-[11px] leading-none"
                 style={{ color: "var(--text-muted)" }}
               >
-                距离口令失效还有 {expiresInMinutes} 分钟
-              </span>
+                {tr("距离口令失效还有")}{" "}{expiresInMinutes} {" "}{tr("分钟")}</span>
             )}
           </div>
         </Row>
@@ -2677,7 +2680,7 @@ function SecurityTab() {
           <Row
             key={slot.id}
             title={slot.label}
-            desc={`${slot.kind === "recovery" ? "恢复码" : "口令"} · 创建于 ${new Date(slot.createdAt).toLocaleDateString()}`}
+            desc={tr("{{0}} · 创建于 {{1}}", { 0: slot.kind === "recovery" ? tr("恢复码") : tr("口令"), 1: new Date(slot.createdAt).toLocaleDateString() })}
           >
             <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
               {slot.keyId}
@@ -2690,18 +2693,16 @@ function SecurityTab() {
         <div className="space-y-3 px-4 py-4">
           <div>
             <div className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
-              重新生成恢复码
-            </div>
+              {tr("重新生成恢复码")}</div>
             <div className="mt-1 text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
-              适用于恢复码遗失或未显示的情况。生成后旧恢复码会立即失效，笔记密文不会改变。
-            </div>
+              {tr("适用于恢复码遗失或未显示的情况。生成后旧恢复码会立即失效，笔记密文不会改变。")}</div>
           </div>
-          <Field label="当前口令或恢复码">
+          <Field label={tr("当前口令或恢复码")}>
             <Input
               password
               value={recoverySecret}
               onChange={setRecoverySecret}
-              placeholder="用于验证身份"
+              placeholder={tr("用于验证身份")}
             />
           </Field>
           <div className="flex justify-end">
@@ -2718,7 +2719,7 @@ function SecurityTab() {
                 })
               }
             >
-              {busy ? "正在生成…" : "生成新恢复码"}
+              {busy ? tr("正在生成…") : tr("生成新恢复码")}
             </TextButton>
           </div>
         </div>
@@ -2727,16 +2728,15 @@ function SecurityTab() {
       <Card>
         <div className="space-y-3 px-4 py-4">
           <div className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
-            修改口令
-          </div>
-          <Field label="当前口令或恢复码">
-            <Input password value={oldPassword} onChange={setOldPassword} placeholder="用于验证身份" />
+            {tr("修改口令")}</div>
+          <Field label={tr("当前口令或恢复码")}>
+            <Input password value={oldPassword} onChange={setOldPassword} placeholder={tr("用于验证身份")} />
           </Field>
-          <Field label="新口令">
-            <Input password value={newPassword} onChange={setNewPassword} placeholder="新口令" />
+          <Field label={tr("新口令")}>
+            <Input password value={newPassword} onChange={setNewPassword} placeholder={tr("新口令")} />
           </Field>
-          <Field label="再次输入新口令">
-            <Input password value={confirmPassword} onChange={setConfirmPassword} placeholder="确认新口令" />
+          <Field label={tr("再次输入新口令")}>
+            <Input password value={confirmPassword} onChange={setConfirmPassword} placeholder={tr("确认新口令")} />
           </Field>
           <div className="flex justify-end">
             <TextButton
@@ -2744,16 +2744,16 @@ function SecurityTab() {
               disabled={busy || !oldPassword || !newPassword || status.rotationPending}
               onClick={() =>
                 void run(async () => {
-                  if (newPassword !== confirmPassword) throw "两次输入的新口令不一致。";
+                  if (newPassword !== confirmPassword) throw tr("两次输入的新口令不一致。");
                   await vaultChangePassword(ws, oldPassword, newPassword);
                   setOldPassword("");
                   setNewPassword("");
                   setConfirmPassword("");
-                  setDone("口令已修改。笔记内容没有被改动，其他设备下次输入新口令即可。");
+                  setDone(tr("口令已修改。笔记内容没有被改动，其他设备下次输入新口令即可。"));
                 })
               }
             >
-              {busy ? "正在重设密钥…" : "修改口令"}
+              {busy ? tr("正在重设密钥…") : tr("修改口令")}
             </TextButton>
           </div>
         </div>
@@ -2763,29 +2763,26 @@ function SecurityTab() {
         <div className="space-y-3 px-4 py-4">
           <div>
             <div className="text-[13px] font-medium" style={{ color: "var(--danger, #ef4444)" }}>
-              {status.rotationPending ? "继续完成 MK 重置" : "重置 MK"}
+              {status.rotationPending ? tr("继续完成 MK 重置") : tr("重置 MK")}
             </div>
             <div className="mt-1 text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
-              生成全新的主密钥，并重新加密工作区内所有 Markdown 加密内容。主口令保持不变，但所有相关笔记和 vault.json 都会产生 Git 改动，旧恢复码将在完成后失效。重置完成后会立即清理内存中的 MK 并锁定工作区，再次查看密文时需要输入口令。
-            </div>
+              {tr("生成全新的主密钥，并重新加密工作区内所有 Markdown 加密内容。主口令保持不变，但所有相关笔记和 vault.json 都会产生 Git 改动，旧恢复码将在完成后失效。重置完成后会立即清理内存中的 MK 并锁定工作区，再次查看密文时需要输入口令。")}</div>
           </div>
-          <Field label="当前主口令（不能使用恢复码）">
+          <Field label={tr("当前主口令（不能使用恢复码）")}>
             <Input
               password
               value={rotationPassword}
               onChange={setRotationPassword}
-              placeholder="用于验证并包裹新 MK"
+              placeholder={tr("用于验证并包裹新 MK")}
             />
           </Field>
           {confirmRotation ? (
             <Notice tone="danger">
-              请确认所有编辑窗口都已保存。迁移开始后，打开该工作区的编辑器会暂时变为只读；遇到任何损坏或未知密钥内容将严格中止。
-              <div className="mt-3 flex justify-end gap-2">
+              {tr("请确认所有编辑窗口都已保存。迁移开始后，打开该工作区的编辑器会暂时变为只读；遇到任何损坏或未知密钥内容将严格中止。")}<div className="mt-3 flex justify-end gap-2">
                 <TextButton disabled={busy} onClick={() => setConfirmRotation(false)}>
-                  取消
-                </TextButton>
+                  {tr("取消")}</TextButton>
                 <TextButton danger disabled={busy || !rotationPassword} onClick={() => void rotateMasterKey()}>
-                  {busy ? "正在重置 MK…" : status.rotationPending ? "继续迁移" : "确认重置"}
+                  {busy ? tr("正在重置 MK…") : status.rotationPending ? tr("继续迁移") : tr("确认重置")}
                 </TextButton>
               </div>
             </Notice>
@@ -2796,7 +2793,7 @@ function SecurityTab() {
                 disabled={busy || !rotationPassword}
                 onClick={() => setConfirmRotation(true)}
               >
-                {status.rotationPending ? "继续完成" : "重置 MK"}
+                {status.rotationPending ? tr("继续完成") : tr("重置 MK")}
               </TextButton>
             </div>
           )}
@@ -2807,10 +2804,8 @@ function SecurityTab() {
       {done && <Notice>{done}</Notice>}
 
       <div className="px-1 text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
-        修改口令只会重新包裹密钥，不会重写任何笔记——所以它不产生大量改动，也不会和其他设备冲突。
-        <br />
-        请确保 <code>.ideanote/vault.json</code> 已提交到仓库；忽略它会导致其他设备无法解密。
-      </div>
+        {tr("修改口令只会重新包裹密钥，不会重写任何笔记——所以它不产生大量改动，也不会和其他设备冲突。")}<br />
+        {tr("请确保")}{" "}<code>.ideanote/vault.json</code> {" "}{tr("已提交到仓库；忽略它会导致其他设备无法解密。")}</div>
     </div>
   );
 }
@@ -2826,6 +2821,7 @@ function NavItem({
   active: boolean;
   onClick: () => void;
 }) {
+  useLanguage();
   return (
     <button
       onClick={onClick}
@@ -2858,6 +2854,7 @@ function IconButton({
   disabled?: boolean;
   children: React.ReactNode;
 }) {
+  useLanguage();
   return (
     <button
       title={title}
@@ -2883,6 +2880,7 @@ function IconButton({
 
 /** A grouped list container. Direct children (rows) get hairline dividers. */
 function Card({ children }: { children: React.ReactNode }) {
+  useLanguage();
   return (
     <div
       className="overflow-hidden rounded-xl [&>*+*]:border-t"
@@ -2905,6 +2903,7 @@ function Row({
   desc?: string;
   children: React.ReactNode;
 }) {
+  useLanguage();
   return (
     <div
       className="flex items-center justify-between gap-4 px-4 py-3"
@@ -2926,6 +2925,7 @@ function Row({
 }
 
 function Preview({ label, children }: { label: string; children: React.ReactNode }) {
+  useLanguage();
   return (
     <div>
       <div className="mb-2 px-1 text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
@@ -2954,6 +2954,7 @@ function NumberSettingInput({
   suffix: string;
   onChange: (value: number) => void;
 }) {
+  useLanguage();
   const [draft, setDraft] = useState(String(value));
 
   useEffect(() => setDraft(String(value)), [value]);
@@ -3009,6 +3010,7 @@ function Stepper({
   format: (v: number) => string;
   onChange: (v: number) => void;
 }) {
+  useLanguage();
   // Snap to the step grid to avoid float drift (e.g. 1.7500000000001).
   const snap = (n: number) => Math.round(n / step) * step;
 
@@ -3042,6 +3044,7 @@ function StepButton({
   onClick: () => void;
   children: React.ReactNode;
 }) {
+  useLanguage();
   return (
     <button
       onClick={onClick}
@@ -3061,6 +3064,7 @@ function StepButton({
 }
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  useLanguage();
   return (
     <button
       role="switch"
@@ -3102,6 +3106,7 @@ function ThemeSection({
   deleteCustomTheme: (id: string) => void;
   showToast: (message: string, tone?: "success" | "error") => void;
 }) {
+  useLanguage();
   const all = [...BUILTIN_THEMES, ...customThemes];
   const active = all.find((t) => t.id === themeId) ?? all[0];
   const editing = active.custom ? active : null;
@@ -3113,17 +3118,17 @@ function ThemeSection({
     try {
       const picked = await open({
         multiple: true,
-        title: "选择主题 JSON",
+        title: tr("选择主题 JSON"),
         filters: [
-          { name: "主题 JSON", extensions: ["json"] },
-          { name: "所有文件", extensions: ["*"] },
+          { name: tr("主题 JSON"), extensions: ["json"] },
+          { name: tr("所有文件"), extensions: ["*"] },
         ],
       });
       if (typeof picked === "string") selected = [picked];
       else if (Array.isArray(picked)) selected = picked.filter((p): p is string => typeof p === "string");
       if (selected.length === 0) return;
     } catch {
-      showToast("无法选择主题文件", "error");
+      showToast(tr("无法选择主题文件"), "error");
       return;
     }
 
@@ -3146,13 +3151,13 @@ function ThemeSection({
     }
 
     if (imported.length === 0) {
-      showToast("没有找到可导入的主题", "error");
+      showToast(tr("没有找到可导入的主题"), "error");
     } else if (failed > 0) {
-      showToast(`已导入 ${imported.length} 个主题，${failed} 个失败`, "error");
+      showToast(tr("已导入 {{0}} 个主题，{{1}} 个失败", { 0: imported.length, 1: failed }), "error");
     } else if (imported.length === 1) {
-      showToast(`已导入主题「${imported[0]}」`);
+      showToast(tr("已导入主题「{{0}}」", { 0: imported[0] }));
     } else {
-      showToast(`已导入 ${imported.length} 个主题`);
+      showToast(tr("已导入 {{0}} 个主题", { 0: imported.length }));
     }
   };
 
@@ -3163,30 +3168,30 @@ function ThemeSection({
       2,
     );
     void copyText(json);
-    showToast("主题 JSON 已复制到剪贴板");
+    showToast(tr("主题 JSON 已复制到剪贴板"));
   };
 
   const downloadTemplate = async () => {
     let target: string | null = null;
     try {
       target = await save({
-        title: "下载主题模板",
+        title: tr("下载主题模板"),
         defaultPath: "idea-note-theme-template.json",
         filters: [
-          { name: "主题 JSON", extensions: ["json"] },
-          { name: "所有文件", extensions: ["*"] },
+          { name: tr("主题 JSON"), extensions: ["json"] },
+          { name: tr("所有文件"), extensions: ["*"] },
         ],
       });
       if (!target) return;
     } catch {
-      showToast("无法选择保存位置", "error");
+      showToast(tr("无法选择保存位置"), "error");
       return;
     }
 
     const json = JSON.stringify(
       {
         id: "my-theme",
-        name: "我的主题",
+        name: tr("我的主题"),
         dark: active.dark,
         colors: active.colors,
       },
@@ -3196,9 +3201,9 @@ function ThemeSection({
 
     try {
       await writeFile(target, `${json}\n`);
-      showToast("主题模板已下载");
+      showToast(tr("主题模板已下载"));
     } catch {
-      showToast("无法保存主题模板", "error");
+      showToast(tr("无法保存主题模板"), "error");
     }
   };
 
@@ -3209,8 +3214,7 @@ function ThemeSection({
           className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide"
           style={{ color: "var(--text-muted)" }}
         >
-          <Palette size={13} /> 主题
-        </span>
+          <Palette size={13} /> {" "}{tr("主题")}</span>
         <div className="flex items-center gap-2">
           <button
             onClick={downloadTemplate}
@@ -3218,20 +3222,18 @@ function ThemeSection({
             style={{ color: "var(--text-soft)", border: "1px solid var(--border)" }}
             onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-            title="下载可编辑的主题 JSON 模板"
+            title={tr("下载可编辑的主题 JSON 模板")}
           >
-            <DownloadCloud size={13} /> 模板
-          </button>
+            <DownloadCloud size={13} /> {" "}{tr("模板")}</button>
           <button
             onClick={importTheme}
             className="flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-medium transition-colors"
             style={{ color: "var(--text-soft)", border: "1px solid var(--border)" }}
             onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-            title="选择 JSON 文件导入主题"
+            title={tr("选择 JSON 文件导入主题")}
           >
-            <Upload size={13} /> 导入
-          </button>
+            <Upload size={13} /> {" "}{tr("导入")}</button>
         </div>
       </div>
 
@@ -3270,6 +3272,7 @@ function ThemeTile({
   selected: boolean;
   onClick: () => void;
 }) {
+  useLanguage();
   const k = theme.colors;
   const c = {
     bg: k["--bg"],
@@ -3348,7 +3351,7 @@ function ThemeTile({
           ) : (
             <Sun size={14} className="shrink-0" style={{ color: "#f59e0b" }} />
           )}
-          <span className="truncate">{theme.name}</span>
+          <span className="truncate">{theme.custom ? theme.name : tr(theme.name)}</span>
         </span>
         <span
           className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-colors"
@@ -3367,6 +3370,7 @@ function ThemeTile({
 
 /** Dashed tile that clones the active theme into a new editable custom theme. */
 function NewThemeTile({ onClick }: { onClick: () => void }) {
+  useLanguage();
   return (
     <button
       onClick={onClick}
@@ -3382,7 +3386,7 @@ function NewThemeTile({ onClick }: { onClick: () => void }) {
       }}
     >
       <Plus size={20} />
-      <span className="text-[12px] font-medium">新建主题</span>
+      <span className="text-[12px] font-medium">{tr("新建主题")}</span>
     </button>
   );
 }
@@ -3402,6 +3406,7 @@ function ThemeEditor({
   onDelete: () => void;
   onExport: () => void;
 }) {
+  useLanguage();
   return (
     <div
       className="space-y-4 rounded-xl p-4"
@@ -3409,21 +3414,21 @@ function ThemeEditor({
     >
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">
-          <Input value={theme.name} onChange={(v) => onChange({ name: v })} placeholder="主题名称" />
+          <Input value={theme.name} onChange={(v) => onChange({ name: v })} placeholder={tr("主题名称")} />
         </div>
         <button
           onClick={() => onChange({ dark: !theme.dark })}
           className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium transition-colors"
           style={{ border: "1px solid var(--border)", color: "var(--text-soft)" }}
-          title="切换深/浅基底（影响差异高亮等跟随模式的细节）"
+          title={tr("切换深/浅基底（影响差异高亮等跟随模式的细节）")}
         >
           {theme.dark ? <Moon size={14} /> : <Sun size={14} />}
-          {theme.dark ? "深色基底" : "浅色基底"}
+          {theme.dark ? tr("深色基底") : tr("浅色基底")}
         </button>
-        <IconButton title="复制主题 JSON" onClick={onExport}>
+        <IconButton title={tr("复制主题 JSON")} onClick={onExport}>
           <Copy size={15} />
         </IconButton>
-        <IconButton title="删除此主题" onClick={onDelete}>
+        <IconButton title={tr("删除此主题")} onClick={onDelete}>
           <Trash2 size={15} />
         </IconButton>
       </div>
@@ -3463,13 +3468,14 @@ function ColorField({
   value: string;
   onChange: (v: string) => void;
 }) {
+  useLanguage();
   const hex = HEX6.test(value) ? value : "#000000";
   return (
     <div className="flex items-center gap-2">
       <label
         className="relative h-6 w-6 shrink-0 cursor-pointer overflow-hidden rounded-md"
         style={{ background: value || "transparent", border: "1px solid var(--border)" }}
-        title="选择颜色"
+        title={tr("选择颜色")}
       >
         <input
           type="color"

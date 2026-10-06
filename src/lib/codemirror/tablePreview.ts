@@ -1,3 +1,5 @@
+import { localizeElement } from "../../i18n/dom.ts";
+import { tr } from "../../i18n/core.ts";
 // GFM table live preview for CodeMirror 6.
 //
 // A markdown table spans several lines, so rendering it as a real <table>
@@ -1081,7 +1083,7 @@ function createInput(host: CellHost): HTMLTextAreaElement {
   input.className = "cm-md-cell-input";
   input.rows = 1;
   input.spellcheck = false;
-  input.setAttribute("aria-label", "编辑表格单元格");
+  input.setAttribute("aria-label", tr("编辑表格单元格"));
   // The overlay covers its cell, so these would otherwise re-enter the cell
   // click handler underneath.
   input.addEventListener("mousedown", (e) => e.stopPropagation());
@@ -1219,8 +1221,8 @@ function createSourceButton(host: CellHost): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "cm-md-table-source";
-  button.title = "显示表格源码";
-  button.setAttribute("aria-label", "显示表格源码");
+  localizeElement(button, "title", () => tr("显示表格源码"));
+  button.setAttribute("aria-label", tr("显示表格源码"));
   button.innerHTML = SOURCE_ICON;
   for (const type of ["pointerdown", "mousedown", "touchstart"] as const)
     button.addEventListener(type, (event) => {
@@ -1441,7 +1443,7 @@ function openTableMenu(
   const hasSelection = selectionEnd > selectionStart;
   menu.append(
     tableMenuButton(host, {
-      label: "剪切",
+      label: tr("剪切"),
       hint: `${tableMenuMod}X`,
       disabled: !hasSelection,
       run: () => {
@@ -1458,13 +1460,13 @@ function openTableMenu(
       },
     }),
     tableMenuButton(host, {
-      label: "复制",
+      label: tr("复制"),
       hint: `${tableMenuMod}C`,
       disabled: !hasSelection,
       run: () => void copyText(selectedText),
     }),
     tableMenuButton(host, {
-      label: "粘贴",
+      label: tr("粘贴"),
       hint: `${tableMenuMod}V`,
       run: () => {
         void readClipboardText().then((text) => {
@@ -1482,49 +1484,49 @@ function openTableMenu(
       },
     }),
     tableMenuSeparator(),
-    tableSubmenu(host, "对齐方式", [
+    tableSubmenu(host, tr("对齐方式"), [
       {
-        label: "左对齐",
+        label: tr("左对齐"),
         run: () => alignColumnAt(host, row, col, "left"),
       },
       {
-        label: "居中",
+        label: tr("居中"),
         run: () => alignColumnAt(host, row, col, "center"),
       },
       {
-        label: "右对齐",
+        label: tr("右对齐"),
         run: () => alignColumnAt(host, row, col, "right"),
       },
     ]),
-    tableSubmenu(host, "新增行", [
+    tableSubmenu(host, tr("新增行"), [
       {
-        label: "上一行增加行",
+        label: tr("上一行增加行"),
         disabled: row === 0,
         run: () => insertRowAt(host, row, col, false),
       },
       {
-        label: "下一行增加行",
+        label: tr("下一行增加行"),
         run: () => insertRowAt(host, row, col, true),
       },
     ]),
-    tableSubmenu(host, "新增列", [
+    tableSubmenu(host, tr("新增列"), [
       {
-        label: "左边增加列",
+        label: tr("左边增加列"),
         run: () => insertColumnAt(host, row, col, false),
       },
       {
-        label: "右边增加列",
+        label: tr("右边增加列"),
         run: () => insertColumnAt(host, row, col, true),
       },
     ]),
-    tableSubmenu(host, "删除", [
+    tableSubmenu(host, tr("删除"), [
       {
-        label: "删除当前行",
+        label: tr("删除当前行"),
         disabled: row === 0,
         run: () => deleteRowAt(host, row, col),
       },
       {
-        label: "删除当前列",
+        label: tr("删除当前列"),
         disabled: host.model.cols <= 1,
         run: () => deleteColumnAt(host, row, col),
       },

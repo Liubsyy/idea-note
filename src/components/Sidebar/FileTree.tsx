@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import { useEffect, useState } from "react";
 import {
   ChevronRight,
@@ -49,6 +51,7 @@ function Rows({ nodes, directory, depth, onContextMenu }: Required<Pick<Props, "
   directory: string;
   onContextMenu: Props["onContextMenu"];
 }) {
+  useLanguage();
   return (
     <DirectoryEntries directory={directory} entries={nodes}>
       {(visible) => visible.map((node) => (
@@ -59,6 +62,7 @@ function Rows({ nodes, directory, depth, onContextMenu }: Required<Pick<Props, "
 }
 
 export function FileTree({ nodes, onContextMenu }: Props) {
+  useLanguage();
   const workspacePath = useAppStore((s) => s.workspacePath);
   return (
     <TreeDragProvider className="px-1.5">
@@ -76,6 +80,7 @@ function TreeRow({
   depth: number;
   onContextMenu: (e: React.MouseEvent, node: FileNode) => void;
 }) {
+  useLanguage();
   const selectedPath = useAppStore((s) => s.selectedPath);
   const selectedPaths = useAppStore((s) => s.selectedPaths);
   const openFile = useAppStore((s) => s.openFile);
@@ -158,7 +163,7 @@ function TreeRow({
             }}
             className="-m-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded p-0.5"
             style={{ color: isActive ? "var(--accent)" : "var(--text-muted)" }}
-            title={open ? "收起" : "展开"}
+            title={open ? tr("收起") : tr("展开")}
           >
             {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </span>
@@ -177,7 +182,7 @@ function TreeRow({
         </div>
         {open && node.children == null && (
           <div className="pl-6 py-1 text-xs" style={{ color: "var(--text-muted)" }}>
-            {loadError ? <button title={loadError} onClick={() => setRetry((n) => n + 1)}>加载失败，点击重试</button> : <span role="status">正在加载…</span>}
+            {loadError ? <button title={loadError} onClick={() => setRetry((n) => n + 1)}>{tr("加载失败，点击重试")}</button> : <span role="status">{tr("正在加载…")}</span>}
           </div>
         )}
         {open && node.children && (

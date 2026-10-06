@@ -1,3 +1,5 @@
+import { tr } from "../i18n/core.ts";
+import { useLanguage } from "../i18n/react";
 import { useEffect, useRef, useState } from "react";
 import { useAppStore, type PromptRequest } from "../store/useAppStore";
 
@@ -8,6 +10,7 @@ type PromptField = NonNullable<PromptRequest["fields"]>[number];
  * Replaces window.prompt, which Tauri's WKWebView does not implement.
  */
 export function PromptModal() {
+  useLanguage();
   const prompt = useAppStore((s) => s.prompt);
   const closePrompt = useAppStore((s) => s.closePrompt);
 
@@ -60,7 +63,7 @@ export function PromptModal() {
       await prompt.onSubmit(value, values);
       closePrompt();
     } catch (e) {
-      setError(typeof e === "string" ? e : (e as Error)?.message ?? "操作失败");
+      setError(typeof e === "string" ? e : (e as Error)?.message ?? tr("操作失败"));
       setBusy(false);
     }
   };
@@ -78,7 +81,7 @@ export function PromptModal() {
         }));
       }
     } catch (e) {
-      setError(typeof e === "string" ? e : (e as Error)?.message ?? "操作失败");
+      setError(typeof e === "string" ? e : (e as Error)?.message ?? tr("操作失败"));
     } finally {
       setActionBusy(null);
     }
@@ -226,16 +229,14 @@ export function PromptModal() {
             className="rounded-md px-3 py-1.5 text-sm transition-colors"
             style={{ color: "var(--text-muted)" }}
           >
-            取消
-          </button>
+            {tr("取消")}</button>
           <button
             onClick={submit}
             disabled={busy}
             className="rounded-md px-3 py-1.5 text-sm font-medium text-white transition-opacity"
             style={{ background: "var(--accent)", opacity: busy ? 0.6 : 1 }}
           >
-            确定
-          </button>
+            {tr("确定")}</button>
         </div>
       </div>
     </div>

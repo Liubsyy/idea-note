@@ -1,3 +1,5 @@
+import { tr } from "../i18n/core.ts";
+import { useLanguage } from "../i18n/react";
 // Model picker grouped by config. The top level lists the configured providers
 // ("A", "B", …); a config holding several model IDs opens a submenu with them,
 // instead of flattening every config×model pair into one long list. A config
@@ -60,7 +62,7 @@ export function ModelPicker({
   label,
   variant = "pill",
   className,
-  title = "选择模型",
+  title = tr("选择模型"),
 }: {
   configs: AiModel[];
   /** Current `configId::modelId` selection key. */
@@ -72,6 +74,7 @@ export function ModelPicker({
   className?: string;
   title?: string;
 }) {
+  useLanguage();
   const v = VARIANTS[variant];
   const [menu, setMenu] = useState<{
     left: number;
@@ -251,7 +254,7 @@ export function ModelPicker({
                   key={config.id}
                   v={v}
                   label={config.label}
-                  hint={`${ids.length} 个模型`}
+                  hint={tr("{{0}} 个模型", { 0: ids.length })}
                   selected={selected}
                   active={sub?.id === config.id}
                   onMouseEnter={(e) => openSub(config.id, e.currentTarget)}
@@ -322,6 +325,7 @@ function MenuRow({
   onMouseEnter?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   onMouseLeave?: () => void;
 }) {
+  useLanguage();
   return (
     <button
       onClick={onClick}

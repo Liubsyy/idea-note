@@ -1,3 +1,5 @@
+import { localizeElement } from "../../i18n/dom.ts";
+import { tr } from "../../i18n/core.ts";
 // Controls for ```input blocks.
 //
 // Same shape as the table / math / mermaid renderers: a StateField (block
@@ -224,7 +226,7 @@ function buildControl(
     if (field.type === "datetime") {
       const date = document.createElement("input");
       date.type = "date";
-      date.setAttribute("aria-label", `${field.label}：日期`);
+      date.setAttribute("aria-label", tr("{{0}}：日期", { 0: field.label }));
 
       const timePart = (label: string, count: number) => {
         const select = document.createElement("select");
@@ -242,9 +244,9 @@ function buildControl(
         }
         return select;
       };
-      const hour = timePart("小时", 24);
-      const minute = timePart("分钟", 60);
-      const second = timePart("秒", 60);
+      const hour = timePart(tr("小时"), 24);
+      const minute = timePart(tr("分钟"), 60);
+      const second = timePart(tr("秒"), 60);
 
       const applyBounds = () => {
         const min = typeof field.min === "string" ? field.min.split("T") : [];
@@ -374,14 +376,14 @@ class InputWidget extends WidgetType {
 
     const head = el("div", "cm-md-input-head");
     const title = el("span", "cm-md-input-title");
-    title.textContent = this.block.named ? `参数 · ${this.block.id}` : "参数";
+    localizeElement(title, "textContent", () => this.block.named ? tr("参数 · {{0}}", { 0: this.block.id }) : tr("参数"));
     head.append(title);
 
     if (this.editable) {
       const pin = el("button", "cm-md-input-btn");
       pin.type = "button";
-      pin.textContent = "固化为默认值";
-      pin.title = "把当前值写回笔记，作为这个块的新默认值";
+      localizeElement(pin, "textContent", () => tr("固化为默认值"));
+      localizeElement(pin, "title", () => tr("把当前值写回笔记，作为这个块的新默认值"));
       pin.addEventListener("click", () => pinDefaults(view, this.block, key));
       head.append(pin);
     }
@@ -389,8 +391,8 @@ class InputWidget extends WidgetType {
     if (this.interactive) {
       const reset = el("button", "cm-md-input-btn");
       reset.type = "button";
-      reset.textContent = "重置";
-      reset.title = "恢复笔记里写的默认值";
+      localizeElement(reset, "textContent", () => tr("重置"));
+      localizeElement(reset, "title", () => tr("恢复笔记里写的默认值"));
       reset.addEventListener("click", () => useInputStore.getState().reset(key));
       head.append(reset);
     }
@@ -422,12 +424,12 @@ class InputWidget extends WidgetType {
 
     for (const error of this.block.schema.errors) {
       const line = el("div", "cm-md-input-error");
-      line.textContent = `第 ${error.line} 行：${error.message}`;
+      localizeElement(line, "textContent", () => tr("第 {{0}} 行：{{1}}", { 0: error.line, 1: error.message }));
       card.append(line);
     }
     if (this.block.schema.fields.length === 0 && this.block.schema.errors.length === 0) {
       const empty = el("div", "cm-md-input-error");
-      empty.textContent = "空的 input 块。写法：名字: number = 100 {slider: 0..1000}";
+      localizeElement(empty, "textContent", () => tr("空的 input 块。写法：名字: number = 100 {slider: 0..1000}"));
       card.append(empty);
     }
 

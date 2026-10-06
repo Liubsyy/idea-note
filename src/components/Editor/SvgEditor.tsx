@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import { useEffect, useRef, useState } from "react";
 
 import { useAppStore } from "../../store/useAppStore";
@@ -7,6 +9,7 @@ import { ImageView } from "./ImageView";
 import "./svgEditor.css";
 
 export function SvgEditor({ path }: { path: string }) {
+  useLanguage();
   const content = useAppStore((s) => s.content);
   const presentationActive = useAppStore((s) => s.presentationActive);
   const presentationScale = useAppStore((s) => s.presentationScale);
@@ -22,9 +25,9 @@ export function SvgEditor({ path }: { path: string }) {
     return () => { next.dispose(); renderer.current = null; };
   }, []);
   useEffect(() => { renderer.current?.update(content); }, [content]);
-  return <PreviewEditor label="SVG 图片" image pending={preview.pending} error={preview.error} stale={!!preview.src}>
+  return <PreviewEditor label={tr("SVG 图片")} image pending={preview.pending} error={preview.error} stale={!!preview.src}>
     {preview.src ? <ImageView path={path} src={preview.src}
       presentationScale={presentationActive ? presentationScale : undefined} /> :
-      <div className="svg-editor-placeholder">{preview.pending ? "正在渲染…" : "暂无可用预览"}</div>}
+      <div className="svg-editor-placeholder">{preview.pending ? tr("正在渲染…") : tr("暂无可用预览")}</div>}
   </PreviewEditor>;
 }

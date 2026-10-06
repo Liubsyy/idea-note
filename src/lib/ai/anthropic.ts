@@ -1,3 +1,4 @@
+import { tr } from "../../i18n/core.ts";
 // Anthropic native Messages API client. Requests go through tauri-plugin-http
 // (server-to-server, so no browser CORS / no dangerous-direct-browser header
 // needed). `baseUrl` is the host root, e.g. "https://api.anthropic.com".
@@ -133,7 +134,7 @@ export async function send(
         }
         break;
       case "error":
-        throw new Error(ev.error?.message ?? "流式响应出错");
+        throw new Error(ev.error?.message ?? tr("流式响应出错"));
     }
   }
 

@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import { ChevronLeft, ChevronRight, FileText, Image as ImageIcon, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isDraftPath, useAppStore } from "../../store/useAppStore";
@@ -15,6 +17,7 @@ import { copyFileToClipboard, copyText, relativePath } from "../../lib/clipboard
  * "untitled" draft.
  */
 export function EditorTabs() {
+  useLanguage();
   const openTabs = useAppStore((s) => s.openTabs);
   const workspacePath = useAppStore((s) => s.workspacePath);
   const activeFilePath = useAppStore((s) => s.activeFilePath);
@@ -186,7 +189,7 @@ export function EditorTabs() {
                   e.preventDefault();
                   setMenu({ x: e.clientX, y: e.clientY, path });
                 }}
-                title={draft ? "未保存的草稿" : path}
+                title={draft ? tr("未保存的草稿") : path}
                 className="group relative flex max-w-[200px] shrink-0 cursor-pointer select-none items-center gap-1.5 pl-3 pr-1.5 text-[13px] transition-colors"
                 style={{
                   background: active ? "var(--bg)" : "transparent",
@@ -205,9 +208,9 @@ export function EditorTabs() {
                 {showBefore && <DropIndicator side="left" />}
                 {showAfter && <DropIndicator side="right" />}
                 <Icon size={13} className="shrink-0" style={{ color: "var(--text-muted)" }} />
-                <span className="min-w-0 truncate">{draft ? "未命名" : basename(path)}</span>
+                <span className="min-w-0 truncate">{draft ? tr("未命名") : basename(path)}</span>
                 <button
-                  title="关闭"
+                  title={tr("关闭")}
                   // Keep the tab's pointer-capture drag from starting here: with
                   // capture active, Chromium (Windows WebView2) retargets the
                   // ensuing click to the capturing tab, so this button's onClick
@@ -246,7 +249,7 @@ export function EditorTabs() {
         {canRight && <ArrowButton dir="right" onClick={() => scrollBy(1)} />}
         <button
           onClick={() => void newDraft()}
-          title="新建空白页（⌘/Ctrl+N）"
+          title={tr("新建空白页（⌘/Ctrl+N）")}
           className="flex w-8 shrink-0 items-center justify-center transition-colors hover:bg-[var(--hover)]"
           style={{ color: "var(--text-muted)", borderLeft: "1px solid var(--border)" }}
         >
@@ -270,6 +273,7 @@ export function EditorTabs() {
 
 /** Vertical bar showing where a dragged tab will be inserted. */
 function DropIndicator({ side }: { side: "left" | "right" }) {
+  useLanguage();
   return (
     <span
       className="pointer-events-none absolute top-0 bottom-0 z-10 w-0.5"
@@ -296,6 +300,7 @@ function TabContextMenu({
   onCloseOthers: () => void;
   onCloseAll: () => void;
 }) {
+  useLanguage();
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Dismiss on any click outside the menu, Escape, or window blur.
@@ -323,7 +328,7 @@ function TabContextMenu({
 
   const copyTabFile = () => {
     copyFileToClipboard(menu.path).catch((err) => {
-      window.alert(`复制失败：${err}`);
+      window.alert(tr("复制失败：{{0}}", { 0: err }));
     });
   };
   const canCopy = !isDraftPath(menu.path);
@@ -342,28 +347,24 @@ function TabContextMenu({
       onContextMenu={(e) => e.preventDefault()}
     >
       {canCopy && (
-        <SubMenuItem label="复制">
+        <SubMenuItem label={tr("复制")}>
           <MenuItem hint="⌘C" onClick={() => run(copyTabFile)}>
-            复制文件
-          </MenuItem>
-          <SubMenuItem label="复制路径">
-            <MenuItem onClick={() => run(() => void copyText(menu.path))}>绝对路径</MenuItem>
+            {tr("复制文件")}</MenuItem>
+          <SubMenuItem label={tr("复制路径")}>
+            <MenuItem onClick={() => run(() => void copyText(menu.path))}>{tr("绝对路径")}</MenuItem>
             <MenuItem
               onClick={() => run(() => void copyText(relativePath(menu.path, workspacePath)))}
             >
-              相对路径
-            </MenuItem>
+              {tr("相对路径")}</MenuItem>
           </SubMenuItem>
           <MenuItem onClick={() => run(() => void copyText(basename(menu.path)))}>
-            复制文件名
-          </MenuItem>
+            {tr("复制文件名")}</MenuItem>
         </SubMenuItem>
       )}
-      <MenuItem onClick={() => run(onCloseTab)}>关闭</MenuItem>
+      <MenuItem onClick={() => run(onCloseTab)}>{tr("关闭")}</MenuItem>
       <MenuItem disabled={!canCloseOthers} onClick={() => run(onCloseOthers)}>
-        关闭其他页
-      </MenuItem>
-      <MenuItem onClick={() => run(onCloseAll)}>关闭所有页</MenuItem>
+        {tr("关闭其他页")}</MenuItem>
+      <MenuItem onClick={() => run(onCloseAll)}>{tr("关闭所有页")}</MenuItem>
     </div>
   );
 }
@@ -375,6 +376,7 @@ function SubMenuItem({
   label: string;
   children: React.ReactNode;
 }) {
+  useLanguage();
   const [open, setOpen] = useState(false);
   return (
     <div className="relative" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
@@ -412,6 +414,7 @@ function MenuItem({
   disabled?: boolean;
   hint?: string;
 }) {
+  useLanguage();
   return (
     <button
       onClick={onClick}
@@ -434,11 +437,12 @@ function MenuItem({
 }
 /** Edge scroll button. Mirrors the toolbar background so it reads as chrome. */
 function ArrowButton({ dir, onClick }: { dir: "left" | "right"; onClick: () => void }) {
+  useLanguage();
   const Icon = dir === "left" ? ChevronLeft : ChevronRight;
   return (
     <button
       onClick={onClick}
-      title={dir === "left" ? "向左滚动" : "向右滚动"}
+      title={dir === "left" ? tr("向左滚动") : tr("向右滚动")}
       className="flex w-7 shrink-0 items-center justify-center transition-colors hover:bg-[var(--hover)]"
       style={{
         color: "var(--text-muted)",

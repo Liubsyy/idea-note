@@ -1,3 +1,4 @@
+import { tr } from "../../i18n/core.ts";
 // The user-facing actions on encrypted content: insert a new empty block,
 // encrypt a selection as a block or inline span, and lock the vault.
 //
@@ -122,7 +123,7 @@ export async function encryptSelection(view: EditorView): Promise<void> {
 
   const range = view.state.selection.main;
   if (range.empty) {
-    toast("请先选中要加密的内容。");
+    toast(tr("请先选中要加密的内容。"));
     return;
   }
 
@@ -135,7 +136,7 @@ export async function encryptSelection(view: EditorView): Promise<void> {
   const clash = (r: { from: number; to: number }) =>
     overlapping(scanSecrets(view.state.doc), r.from, r.to).length > 0;
   if (clash(wholeLines(range))) {
-    toast("选区所在的行里已经有加密内容，请先把它移出选区。", "error");
+    toast(tr("选区所在的行里已经有加密内容，请先把它移出选区。"), "error");
     return;
   }
 
@@ -145,12 +146,12 @@ export async function encryptSelection(view: EditorView): Promise<void> {
   // Re-read the document: unlocking is async and the user may have typed.
   const { from, to } = wholeLines(view.state.selection.main);
   if (clash({ from, to })) {
-    toast("选区所在的行里已经有加密内容，请先把它移出选区。", "error");
+    toast(tr("选区所在的行里已经有加密内容，请先把它移出选区。"), "error");
     return;
   }
   const plaintext = view.state.doc.sliceString(from, to);
   if (!plaintext.trim()) {
-    toast("空白内容无需加密。");
+    toast(tr("空白内容无需加密。"));
     return;
   }
 
@@ -173,7 +174,7 @@ export async function encryptSelection(view: EditorView): Promise<void> {
     // store. Deliberately not remembering this new plaintext makes the card
     // render sealed, while leaving the workspace MK and its TTL untouched.
     requestSecretRefresh(view);
-    toast("选中内容已加密，该加密块已上锁。");
+    toast(tr("选中内容已加密，该加密块已上锁。"));
   } catch (error) {
     toast(vaultErrorMessage(error), "error");
   }
@@ -194,7 +195,7 @@ export async function encryptInlineSelection(view: EditorView): Promise<void> {
 
   const range = view.state.selection.main;
   if (range.empty) {
-    toast("请先选中要加密的内容。");
+    toast(tr("请先选中要加密的内容。"));
     return;
   }
 
@@ -203,13 +204,13 @@ export async function encryptInlineSelection(view: EditorView): Promise<void> {
   const oneLine = (r: { from: number; to: number }) =>
     view.state.doc.lineAt(r.from).number === view.state.doc.lineAt(r.to).number;
   if (!oneLine(range)) {
-    toast("行内加密只能用于同一行内的选区，跨行请用「加密选区」。", "error");
+    toast(tr("行内加密只能用于同一行内的选区，跨行请用「加密选区」。"), "error");
     return;
   }
   const clash = (r: { from: number; to: number }) =>
     overlapping(scanSecrets(view.state.doc), r.from, r.to).length > 0;
   if (clash(range)) {
-    toast("选区里已经包含加密内容，请先把它移出选区。", "error");
+    toast(tr("选区里已经包含加密内容，请先把它移出选区。"), "error");
     return;
   }
 
@@ -219,12 +220,12 @@ export async function encryptInlineSelection(view: EditorView): Promise<void> {
   // Re-read the document: unlocking is async and the user may have typed.
   const live = view.state.selection.main;
   if (live.empty || !oneLine(live) || clash(live)) {
-    toast("选区已经变了，请重新选中再试。", "error");
+    toast(tr("选区已经变了，请重新选中再试。"), "error");
     return;
   }
   const plaintext = view.state.doc.sliceString(live.from, live.to);
   if (!plaintext.trim()) {
-    toast("空白内容无需加密。");
+    toast(tr("空白内容无需加密。"));
     return;
   }
 
@@ -247,7 +248,7 @@ export async function encryptInlineSelection(view: EditorView): Promise<void> {
     // while leaving the workspace key and its TTL untouched — same as the
     // block command.
     requestSecretRefresh(view);
-    toast("选中内容已加密为行内，该内容已上锁。");
+    toast(tr("选中内容已加密为行内，该内容已上锁。"));
   } catch (error) {
     toast(vaultErrorMessage(error), "error");
   }
@@ -258,5 +259,5 @@ export async function encryptInlineSelection(view: EditorView): Promise<void> {
 export async function lockNow(view?: EditorView): Promise<void> {
   await lockVault(filePathOf());
   if (view) requestSecretRefresh(view);
-  toast("加密内容已上锁。");
+  toast(tr("加密内容已上锁。"));
 }

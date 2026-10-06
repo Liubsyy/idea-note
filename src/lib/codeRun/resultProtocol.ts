@@ -1,3 +1,4 @@
+import { tr } from "../../i18n/core.ts";
 import { isOutKind, type OutKind } from "./fenceAttrs.ts";
 
 /**
@@ -64,13 +65,13 @@ function validateData(type: OutKind, data: unknown): ComponentResult | string {
   ) {
     return typeof data === "string"
       ? { type, data }
-      : `${type} 的 data 必须是 JSON 字符串`;
+      : tr("{{0}} 的 data 必须是 JSON 字符串", { 0: type });
   }
 
   if (type === "json") {
     return jsonValue(data)
       ? { type, data }
-      : "json 的 data 必须是合法 JSON 值";
+      : tr("json 的 data 必须是合法 JSON 值");
   }
 
   if (type === "image") {
@@ -81,14 +82,14 @@ function validateData(type: OutKind, data: unknown): ComponentResult | string {
         data.every((path) => typeof path === "string" && path.length > 0));
     return valid
       ? { type, data: data as string | string[] }
-      : "image 的 data 必须是非空路径字符串或路径字符串数组";
+      : tr("image 的 data 必须是非空路径字符串或路径字符串数组");
   }
 
   const table = objectValue(data);
   if (!table || !Array.isArray(table.columns) || !Array.isArray(table.rows))
-    return "table 的 data 必须包含 columns 和 rows 数组";
+    return tr("table 的 data 必须包含 columns 和 rows 数组");
   if (!table.columns.every((column) => typeof column === "string"))
-    return "table.columns 必须全部是字符串";
+    return tr("table.columns 必须全部是字符串");
   const columns = table.columns as string[];
   if (
     !table.rows.every(
@@ -98,12 +99,12 @@ function validateData(type: OutKind, data: unknown): ComponentResult | string {
         row.every(jsonValue),
     )
   )
-    return "table.rows 的每一行必须是与 columns 等长的 JSON 数组";
+    return tr("table.rows 的每一行必须是与 columns 等长的 JSON 数组");
   return { type, data: { columns, rows: table.rows as JsonValue[][] } };
 }
 
 const jsonError = (error: unknown): string =>
-  `结果不是合法的单行 JSON：${error instanceof Error ? error.message : String(error)}`;
+  tr("结果不是合法的单行 JSON：{{0}}", { 0: error instanceof Error ? error.message : String(error) });
 
 /**
  * Parse the structured component result from stdout after a successful run.
@@ -124,7 +125,7 @@ export function parseComponentOutput(
   if (declaredOut && declaredOut !== "auto") {
     const raw = lines[lines.length - 1];
     if (!raw)
-      return { result: null, error: `out=${declaredOut} 没有返回 JSON data` };
+      return { result: null, error: tr("out={{0}} 没有返回 JSON data", { 0: declaredOut }) };
     let data: unknown;
     try {
       data = JSON.parse(raw);
@@ -161,23 +162,23 @@ export function parseComponentOutput(
 
   if (!envelope) {
     if (malformedMarker)
-      return { result: null, error: "idea_note_result 不是合法的单行 JSON" };
+      return { result: null, error: tr("idea_note_result 不是合法的单行 JSON") };
     if (invalidEnvelope)
-      return { result: null, error: "idea_note_result 必须是包含 type 和 data 的对象" };
+      return { result: null, error: tr("idea_note_result 必须是包含 type 和 data 的对象") };
     // A bare fence promised nothing, so silence is a plain code block that
     // simply printed something. `out=auto` did promise an envelope, and its
     // placeholder card is already sitting in the note waiting for one — saying
     // so beats leaving that card stuck on 尚未运行.
     if (declaredOut === "auto")
-      return { result: null, error: "out=auto 没有返回 idea_note_result" };
+      return { result: null, error: tr("out=auto 没有返回 idea_note_result") };
     return { result: null, error: null };
   }
 
   const type = envelope.type;
   if (typeof type !== "string" || !isOutKind(type))
-    return { result: null, error: `不支持的组件类型：${String(type)}` };
+    return { result: null, error: tr("不支持的组件类型：{{0}}", { 0: String(type) }) };
   if (!own(envelope, "data"))
-    return { result: null, error: "idea_note_result 缺少 data" };
+    return { result: null, error: tr("idea_note_result 缺少 data") };
   const checked = validateData(type, envelope.data);
   return typeof checked === "string"
     ? { result: null, error: checked }

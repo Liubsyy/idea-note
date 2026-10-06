@@ -1,3 +1,5 @@
+import { localizeElement } from "../../i18n/dom.ts";
+import { tr } from "../../i18n/core.ts";
 // Turning a validated component result into rich, safe DOM.
 //
 // stdout framing and JSON validation live in resultProtocol.ts. Keeping those
@@ -87,7 +89,7 @@ function tableNode(data: TableResultData): HTMLElement {
   data.columns.forEach((name, i) => {
     const th = el("th");
     th.textContent = name;
-    th.title = "点击排序";
+    localizeElement(th, "title", () => tr("点击排序"));
     th.addEventListener("click", () => {
       ascending = sortCol === i ? !ascending : true;
       sortCol = i;

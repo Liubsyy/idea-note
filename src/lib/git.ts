@@ -1,3 +1,4 @@
+import { tr, currentLanguage } from "../i18n/core.ts";
 // Git-based sync. Everything shells out to the user's git CLI via the
 // `git_run` Rust command; orchestration (attach / clone / sync) lives here so
 // the UI can give step-level feedback. Conflicts are resolved by keeping both
@@ -61,7 +62,7 @@ export function friendlyGitError(stderr: string): string {
     s.includes("could not read password") ||
     s.includes("host key verification failed")
   ) {
-    return "认证失败：请配置 SSH key 或 git credential helper 后重试";
+    return tr("认证失败：请配置 SSH key 或 git credential helper 后重试");
   }
   if (
     s.includes("could not resolve host") ||
@@ -70,16 +71,16 @@ export function friendlyGitError(stderr: string): string {
     s.includes("connection refused") ||
     s.includes("network is unreachable")
   ) {
-    return "无法连接远程仓库，请检查网络";
+    return tr("无法连接远程仓库，请检查网络");
   }
   if (s.includes("not a git repository")) {
-    return "当前文件夹尚未关联 git 仓库";
+    return tr("当前文件夹尚未关联 git 仓库");
   }
   if (s.includes("repository not found") || s.includes("does not appear to be a git repository")) {
-    return "远程仓库不存在，请检查地址";
+    return tr("远程仓库不存在，请检查地址");
   }
   const firstLine = stderr.trim().split("\n")[0] ?? "";
-  return firstLine ? `git 操作失败：${firstLine}` : "git 操作失败";
+  return firstLine ? tr("git 操作失败：{{0}}", { 0: firstLine }) : tr("git 操作失败");
 }
 
 function isHttpsUrl(url: string | null | undefined): url is string {
@@ -230,7 +231,7 @@ export interface FileCommit {
 export async function listFileHistory(dir: string, relPath: string): Promise<FileCommit[]> {
   const rel = relPath.replace(/\\/g, "/");
   if (!rel || rel.startsWith("/") || /^[a-zA-Z]:/.test(rel) || rel.split("/").some(part => !part || part === "." || part === ".."))
-    throw new GitError("文件历史需要项目内的有效文件路径", relPath);
+    throw new GitError(tr("文件历史需要项目内的有效文件路径"), relPath);
   const out = await gitRun(dir, [
     "--literal-pathspecs",
     // Keep CJK filenames readable instead of octal-escaped.
@@ -322,7 +323,7 @@ export const isWorkingCommit = (c: FileCommit) => c.hash === WORKING_HASH;
  *  dirty. `path` must be repo-root-relative (it feeds `git show HEAD:path`). */
 export const workingEntry = (path: string, subject: string): FileCommit => ({
   hash: WORKING_HASH,
-  shortHash: "工作区",
+  shortHash: tr("工作区"),
   author: "",
   timestamp: Date.now(),
   subject,
@@ -566,7 +567,7 @@ export async function collectStagedChanges(
   const body = diff.stdout;
   return {
     stat: stat.stdout.trim(),
-    diff: body.length > maxDiffChars ? body.slice(0, maxDiffChars) + "\n…（diff 已截断）" : body,
+    diff: body.length > maxDiffChars ? body.slice(0, maxDiffChars) + tr("\n…（diff 已截断）") : body,
   };
 }
 
@@ -623,7 +624,7 @@ async function abortMergeIfAny(dir: string): Promise<void> {
   if (merging.code === 0) await gitRun(dir, ["merge", "--abort"]);
 }
 
-const syncCommitMessage = () => `sync: ${new Date().toLocaleString("zh-CN", { hour12: false })}`;
+const syncCommitMessage = () => `sync: ${new Date().toLocaleString(currentLanguage(), { hour12: false })}`;
 
 /**
  * Merge `origin/<branch>` into the local branch. On conflict, keep both
@@ -812,7 +813,7 @@ export async function syncWorkspace(
   const getMessage = async () => {
     if (!commitMessage) return syncCommitMessage();
     const message = (await commitMessage(dir)).trim();
-    if (!message) throw new Error("AI 提交文案生成失败：模型返回了空内容");
+    if (!message) throw new Error(tr("AI 提交文案生成失败：模型返回了空内容"));
     return message;
   };
   try {
@@ -821,7 +822,7 @@ export async function syncWorkspace(
         ok: false,
         conflictFiles: [],
         changed: false,
-        message: "尚未开启同步，请在设置中关联远程或开启本地同步",
+        message: tr("尚未开启同步，请在设置中关联远程或开启本地同步"),
       };
     }
 
@@ -830,8 +831,8 @@ export async function syncWorkspace(
     if (!remoteUrl) {
       const committed = await commitAll(dir, getMessage);
       return committed
-        ? { ok: true, conflictFiles: [], changed: true, message: "已同步到本地仓库" }
-        : { ok: true, conflictFiles: [], changed: false, message: "已是最新，无需同步" };
+        ? { ok: true, conflictFiles: [], changed: true, message: tr("已同步到本地仓库") }
+        : { ok: true, conflictFiles: [], changed: false, message: tr("已是最新，无需同步") };
     }
 
     // 1. Local edits become a commit before anything touches the network.
@@ -851,7 +852,7 @@ export async function syncWorkspace(
         ok: false,
         conflictFiles: [],
         changed: false,
-        message: `${friendlyGitError(fetch.stderr)}（本地更改已保存，恢复后重试）`,
+        message: tr("{{0}}（本地更改已保存，恢复后重试）", { 0: friendlyGitError(fetch.stderr) }),
       };
     }
 
@@ -875,7 +876,7 @@ export async function syncWorkspace(
     }
 
     if (!(await hasCommits(dir))) {
-      return { ok: true, conflictFiles: [], changed: false, message: "没有可同步的内容" };
+      return { ok: true, conflictFiles: [], changed: false, message: tr("没有可同步的内容") };
     }
 
     // 4. Push — skipped entirely when the remote already has everything,
@@ -915,7 +916,7 @@ export async function syncWorkspace(
           ok: false,
           conflictFiles: conflicts,
           changed: committed || pulled,
-          message: `${friendlyGitError(push.stderr)}（本地更改已保存）`,
+          message: tr("{{0}}（本地更改已保存）", { 0: friendlyGitError(push.stderr) }),
         };
       }
       pushed = true;
@@ -927,19 +928,19 @@ export async function syncWorkspace(
         ok: true,
         conflictFiles: conflicts,
         changed: true,
-        message: `已同步，${conflicts.length} 个文件存在冲突待处理`,
+        message: tr("已同步，{{0}} 个文件存在冲突待处理", { 0: conflicts.length }),
       };
     }
     return changed
-      ? { ok: true, conflictFiles: [], changed: true, message: "同步成功" }
-      : { ok: true, conflictFiles: [], changed: false, message: "已是最新，无需同步" };
+      ? { ok: true, conflictFiles: [], changed: true, message: tr("同步成功") }
+      : { ok: true, conflictFiles: [], changed: false, message: tr("已是最新，无需同步") };
   } catch (err) {
     // Whatever went wrong, never leave a half-finished merge behind.
     await abortMergeIfAny(dir).catch(() => {});
     const message =
       err instanceof GitError
         ? err.message
-        : `同步失败：${err instanceof Error ? err.message : String(err)}`;
+        : tr("同步失败：{{0}}", { 0: err instanceof Error ? err.message : String(err) });
     return { ok: false, conflictFiles: [], changed: false, message };
   }
 }

@@ -1,3 +1,4 @@
+import { tr } from "../../i18n/core.ts";
 // Cmd/Ctrl+click opens markdown links (Typora-style; plain click still just
 // moves the cursor so the text stays editable). External URLs go to the system
 // browser via the opener plugin; relative paths resolve against the current
@@ -105,15 +106,15 @@ export async function openLinkTarget(raw: string): Promise<void> {
       ? normalize(`${base}/${target}`)
       : null;
   if (!abs) {
-    store.showToast("无法解析链接路径", "error");
+    store.showToast(tr("无法解析链接路径"), "error");
     return;
   }
   if (await pathIsDir(abs).catch(() => false)) {
-    store.showToast("链接指向文件夹，暂不支持打开", "error");
+    store.showToast(tr("链接指向文件夹，暂不支持打开"), "error");
     return;
   }
   if (!(await fileStat(abs))) {
-    store.showToast(`文件不存在：${abs}`, "error");
+    store.showToast(tr("文件不存在：{{0}}", { 0: abs }), "error");
     return;
   }
   await store.openFile(abs);
@@ -122,7 +123,7 @@ export async function openLinkTarget(raw: string): Promise<void> {
 /** Fire-and-forget open with a toast on failure. */
 export function openLinkTargetSafe(target: string): void {
   void openLinkTarget(target).catch((e) =>
-    useAppStore.getState().showToast(`打开链接失败：${String(e)}`, "error"),
+    useAppStore.getState().showToast(tr("打开链接失败：{{0}}", { 0: String(e) }), "error"),
   );
 }
 

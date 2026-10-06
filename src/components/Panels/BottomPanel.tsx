@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import { useRef, useState } from "react";
 import { Plus, SquareTerminal, X } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
@@ -19,11 +21,12 @@ export function BottomPanel({
   visible: boolean;
   onAllClosed: () => void;
 }) {
+  useLanguage();
   const toggleBottomPanel = useAppStore((s) => s.toggleBottomPanel);
   const height = useAppStore((s) => s.bottomPanelHeight);
   const setHeight = useAppStore((s) => s.setBottomPanelHeight);
   const workspacePath = useAppStore((s) => s.workspacePath);
-  const label = workspacePath ? basename(workspacePath) : "终端";
+  const label = workspacePath ? basename(workspacePath) : tr("终端");
 
   const [tabs, setTabs] = useState<number[]>([1]);
   const [activeId, setActiveId] = useState(1);
@@ -75,7 +78,7 @@ export function BottomPanel({
       <div
         onMouseDown={startResize}
         className="absolute inset-x-0 top-0 z-10 h-1.5 -translate-y-1/2 cursor-row-resize"
-        title="拖动调整高度"
+        title={tr("拖动调整高度")}
       />
 
       {/* Tab strip — same surface as the terminal below (no divider) so the
@@ -110,7 +113,7 @@ export function BottomPanel({
                     e.stopPropagation();
                     closeTab(id);
                   }}
-                  title="关闭"
+                  title={tr("关闭")}
                   className="flex h-4 w-4 items-center justify-center rounded opacity-0 transition-opacity hover:bg-[var(--hover)] group-hover:opacity-100"
                 >
                   <X size={12} />
@@ -119,7 +122,7 @@ export function BottomPanel({
             );
           })}
           <button
-            title="新建终端"
+            title={tr("新建终端")}
             onClick={addTerminal}
             className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors"
             style={{ color: "var(--text-muted)" }}
@@ -131,7 +134,7 @@ export function BottomPanel({
         </div>
 
         <button
-          title="关闭终端面板"
+          title={tr("关闭终端面板")}
           onClick={toggleBottomPanel}
           className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors"
           style={{ color: "var(--text-muted)" }}

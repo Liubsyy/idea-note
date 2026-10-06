@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import {
   createContext,
   useCallback,
@@ -55,6 +57,7 @@ export function TreeDragProvider({
   style?: React.CSSProperties;
   children: React.ReactNode;
 }) {
+  useLanguage();
   const workspacePath = useAppStore((s) => s.workspacePath);
   const requestMoveMany = useAppStore((s) => s.requestMoveMany);
   const toggleSelection = useAppStore((s) => s.toggleSelection);
@@ -115,7 +118,7 @@ export function TreeDragProvider({
     } else {
       items = [{ path: node.path, isDir: node.is_dir }];
     }
-    const label = items.length === 1 ? node.name : `${items.length} 个项目`;
+    const label = items.length === 1 ? node.name : tr("{{0}} 个项目", { 0: items.length });
     dragRef.current = { items, label, startX: e.clientX, startY: e.clientY, active: false };
   }, []);
 

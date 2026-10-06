@@ -1,3 +1,4 @@
+import { tr } from "../../i18n/core.ts";
 // Driving one code-block run: confirm, spawn, stream, finish.
 //
 // The backend (src-tauri/src/code_run.rs) streams `code:data:{id}` events as
@@ -117,16 +118,16 @@ export async function startRun(args: StartRunArgs): Promise<void> {
   }
   useAppStore.setState({
     confirm: {
-      title: "运行代码块",
-      message: "是否确定运行此代码块？",
+      title: tr("运行代码块"),
+      message: tr("是否确定运行此代码块？"),
       hint: {
-        before: "可在",
-        actionLabel: "设置",
-        after: "中关闭当前二次确认",
+        before: tr("可在"),
+        actionLabel: tr("设置"),
+        after: tr("中关闭当前二次确认"),
         onAction: () => app.openSettings("coderun"),
       },
       placement: "editor-center",
-      confirmLabel: "确定",
+      confirmLabel: tr("确定"),
       tone: "primary",
       onConfirm: () => {
         void launch(runner, args);
@@ -190,16 +191,16 @@ export async function startAutoRun(args: StartRunArgs): Promise<void> {
   watchDismissal();
   useAppStore.setState({
     confirm: {
-      title: "自动运行",
-      message: "允许代码块按笔记里写的触发条件自动运行？本次会话内不再询问。",
+      title: tr("自动运行"),
+      message: tr("允许代码块按笔记里写的触发条件自动运行？本次会话内不再询问。"),
       hint: {
-        before: "可在",
-        actionLabel: "设置",
-        after: "中关闭运行前二次确认",
+        before: tr("可在"),
+        actionLabel: tr("设置"),
+        after: tr("中关闭运行前二次确认"),
         onAction: () => app.openSettings("coderun"),
       },
       placement: "editor-center",
-      confirmLabel: "允许",
+      confirmLabel: tr("允许"),
       tone: "primary",
       onConfirm: () => {
         autoGranted = true;
@@ -327,7 +328,7 @@ export function stopRun(runId: number): void {
     return;
   }
   void invoke("code_run_stop", { id: runId }).catch((error) => {
-    useAppStore.getState().showToast(`停止失败：${String(error)}`, "error");
+    useAppStore.getState().showToast(tr("停止失败：{{0}}", { 0: String(error) }), "error");
   });
 }
 
@@ -357,6 +358,6 @@ export async function runInTerminal(info: string, code: string): Promise<void> {
     const parts = [runner.command, ...runner.args, path].map(quote);
     app.sendToTerminal(`${parts.join(" ")}\n`);
   } catch (e) {
-    app.showToast(`无法写入临时文件：${e}`, "error");
+    app.showToast(tr("无法写入临时文件：{{0}}", { 0: e }), "error");
   }
 }

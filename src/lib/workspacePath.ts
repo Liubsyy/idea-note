@@ -1,8 +1,9 @@
+import { tr } from "../i18n/core.ts";
 export type WorkspacePathResult =
   | { ok: true; path: string }
   | { ok: false; error: string };
 
-const OUTSIDE_WORKSPACE = "路径不在当前工作区内。";
+const OUTSIDE_WORKSPACE = () => tr("路径不在当前工作区内。");
 
 /** True for POSIX, Windows drive-letter, and UNC absolute paths. */
 function isAbsolutePath(path: string): boolean {
@@ -73,7 +74,7 @@ export function resolvePathWithinWorkspace(
   const workspace = normalizePath(workspacePath.trim());
   const raw = inputPath.trim().replace(/\\/g, "/");
   if (!workspace || !raw) {
-    return { ok: false, error: raw ? OUTSIDE_WORKSPACE : "路径不能为空。" };
+    return { ok: false, error: raw ? OUTSIDE_WORKSPACE() : tr("路径不能为空。") };
   }
 
   const candidate = normalizePath(isAbsolutePath(raw) ? raw : `${workspace}/${raw}`);
@@ -87,7 +88,7 @@ export function resolvePathWithinWorkspace(
     comparableCandidate === comparableWorkspace ||
     comparableCandidate.startsWith(workspaceBoundary);
 
-  if (!isInside) return { ok: false, error: OUTSIDE_WORKSPACE };
+  if (!isInside) return { ok: false, error: OUTSIDE_WORKSPACE() };
 
   const relative = candidate.slice(workspace.length).replace(/^\//, "");
   const separator: "/" | "\\" = workspacePath.includes("\\") ? "\\" : "/";

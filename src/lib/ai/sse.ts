@@ -1,3 +1,4 @@
+import { tr } from "../../i18n/core.ts";
 // Minimal SSE reader shared by the AI providers. Reads a streaming Response
 // body line by line and yields each `data:` payload string. Stops at the
 // OpenAI-style `[DONE]` sentinel. Event names / ids are ignored — both the
@@ -6,7 +7,7 @@
 /** Yield each `data:` payload from an SSE response body. */
 export async function* sseData(res: Response): AsyncGenerator<string> {
   const body = res.body;
-  if (!body) throw new Error("响应没有可读的流式 body");
+  if (!body) throw new Error(tr("响应没有可读的流式 body"));
 
   const reader = body.getReader();
   const decoder = new TextDecoder();

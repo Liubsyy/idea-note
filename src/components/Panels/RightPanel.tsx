@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -43,6 +45,7 @@ import { ModelPicker } from "../ModelPicker";
  * independent panel in RunOutputPanel.tsx.
  */
 export function RightPanel() {
+  useLanguage();
   const sessions = useChatStore((s) => s.sessions);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
   const ensureSession = useChatStore((s) => s.ensureSession);
@@ -81,6 +84,7 @@ export function RightPanel() {
 /* ------------------------------ session tabs ----------------------------- */
 
 function SessionTabs() {
+  useLanguage();
   const sessions = useChatStore((s) => s.sessions);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
   const sendingSessionIds = useChatStore((s) => s.sendingSessionIds);
@@ -159,7 +163,7 @@ function SessionTabs() {
                 />
               )}
               <button
-                title="关闭会话（保留在历史中）"
+                title={tr("关闭会话（保留在历史中）")}
                 onClick={(e) => {
                   e.stopPropagation();
                   closeSession(s.id);
@@ -183,12 +187,13 @@ function SessionTabs() {
  * itself, so the tab row keeps its full width for tabs.
  */
 export function ChatHeaderActions() {
+  useLanguage();
   const newSession = useChatStore((s) => s.newSession);
 
   return (
     <>
       <button
-        title="新建会话"
+        title={tr("新建会话")}
         onMouseDown={(e) => e.stopPropagation()}
         onClick={newSession}
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors"
@@ -217,6 +222,7 @@ export function ChatHeaderActions() {
  * permanently.
  */
 function HistoryMenu() {
+  useLanguage();
   const sessions = useChatStore((s) => s.sessions);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
   const openSession = useChatStore((s) => s.openSession);
@@ -292,13 +298,11 @@ function HistoryMenu() {
         className="px-3 py-2 text-[0.846em] font-medium"
         style={{ color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}
       >
-        会话历史
-      </div>
+        {tr("会话历史")}</div>
       <div className="max-h-72 overflow-y-auto py-1">
         {list.length === 0 ? (
           <div className="px-3 py-3 text-[0.923em]" style={{ color: "var(--text-muted)" }}>
-            暂无会话
-          </div>
+            {tr("暂无会话")}</div>
         ) : (
           list.map((s) => {
             const isActive = s.id === activeSessionId;
@@ -330,11 +334,11 @@ function HistoryMenu() {
                     {s.title}
                   </div>
                   <div className="text-[0.769em]" style={{ color: "var(--text-muted)" }}>
-                    {s.items.length} 条消息{s.archived ? "" : " · 打开中"}
+                    {s.items.length} {" "}{tr("条消息")}{s.archived ? "" : tr(" · 打开中")}
                   </div>
                 </div>
                 <button
-                  title="删除会话（不可恢复）"
+                  title={tr("删除会话（不可恢复）")}
                   onClick={(e) => {
                     e.stopPropagation();
                     deleteSession(s.id);
@@ -357,7 +361,7 @@ function HistoryMenu() {
   return (
     <div ref={rootRef} className="relative shrink-0" onMouseDown={(e) => e.stopPropagation()}>
       <button
-        title="会话历史"
+        title={tr("会话历史")}
         onClick={() => {
           updateMenuPosition();
           setOpen((v) => !v);
@@ -388,15 +392,16 @@ function HistoryMenu() {
 
 /* ------------------------------ session view ----------------------------- */
 
-const SUGGESTIONS = [
-  "总结当前文件的要点",
-  "帮我润色这篇文档",
-  "插入一个温度换算器可交互工具",
-  "查找笔记中关于 Git 的使用技巧",
-  "把复杂内容画成一张图",
+const suggestions = () => [
+  tr("总结当前文件的要点"),
+  tr("帮我润色这篇文档"),
+  tr("插入一个温度换算器可交互工具"),
+  tr("查找笔记中关于 Git 的使用技巧"),
+  tr("把复杂内容画成一张图"),
 ];
 
 function SessionView({ session }: { session: ChatSession }) {
+  useLanguage();
   const sending = useChatStore((s) => s.sendingSessionIds.includes(session.id));
   const sendMessage = useChatStore((s) => s.sendMessage);
   const stopSending = useChatStore((s) => s.stopSending);
@@ -482,12 +487,12 @@ function SessionView({ session }: { session: ChatSession }) {
                 }
               }}
               rows={1}
-              placeholder="给 AI 发消息…"
+              placeholder={tr("给 AI 发消息…")}
               className="max-h-[170px] min-h-[46px] flex-1 resize-none bg-transparent text-[1em] leading-relaxed outline-none placeholder:text-[var(--text-muted)]"
               style={{ color: "var(--text)" }}
             />
             <button
-              title={sending ? "停止" : "发送 (Enter)"}
+              title={sending ? tr("停止") : tr("发送 (Enter)")}
               onClick={sending ? () => stopSending(session.id) : submit}
               disabled={!sending && !input.trim()}
               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl transition-all disabled:opacity-30"
@@ -499,8 +504,7 @@ function SessionView({ session }: { session: ChatSession }) {
           <ComposerControls session={session} />
         </div>
         <div className="px-1 pt-1 text-[0.769em]" style={{ color: "var(--text-muted)" }}>
-          Enter 发送 · Shift+Enter 换行
-        </div>
+          {tr("Enter 发送 · Shift+Enter 换行")}</div>
       </div>
     </>
   );
@@ -512,6 +516,7 @@ function SessionView({ session }: { session: ChatSession }) {
  * "attach" button brings it back. Hidden entirely when no file is open.
  */
 function OpenFileChip({ session }: { session: ChatSession }) {
+  useLanguage();
   const activeFilePath = useAppStore((s) => s.activeFilePath);
   const setSessionUseOpenFile = useChatStore((s) => s.setSessionUseOpenFile);
 
@@ -521,7 +526,7 @@ function OpenFileChip({ session }: { session: ChatSession }) {
     return (
       <div className="mb-1.5 flex">
         <button
-          title="把当前打开的文件重新提供给 AI"
+          title={tr("把当前打开的文件重新提供给 AI")}
           onClick={() => setSessionUseOpenFile(session.id, true)}
           className="flex h-6 items-center gap-1 rounded-full px-2 text-[0.846em] transition-colors"
           style={{ border: "1px dashed var(--border)", color: "var(--text-muted)" }}
@@ -535,8 +540,7 @@ function OpenFileChip({ session }: { session: ChatSession }) {
           }}
         >
           <Paperclip size={11} />
-          附加当前文件
-        </button>
+          {tr("附加当前文件")}</button>
       </div>
     );
   }
@@ -544,14 +548,14 @@ function OpenFileChip({ session }: { session: ChatSession }) {
   return (
     <div className="mb-1.5 flex">
       <div
-        title={`AI 可以看到当前文件：${activeFilePath}`}
+        title={tr("AI 可以看到当前文件：{{0}}", { 0: activeFilePath })}
         className="flex h-6 min-w-0 max-w-full items-center gap-1 rounded-full pl-2 pr-1 text-[0.846em]"
         style={{ border: "1px solid var(--border)", color: "var(--text-soft)" }}
       >
         <FileText size={11} className="shrink-0" style={{ color: "var(--text-muted)" }} />
         <span className="truncate">{basename(activeFilePath)}</span>
         <button
-          title="本会话不再提供当前文件"
+          title={tr("本会话不再提供当前文件")}
           onClick={() => setSessionUseOpenFile(session.id, false)}
           className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-[var(--hover)]"
           style={{ color: "var(--text-muted)" }}
@@ -564,6 +568,7 @@ function OpenFileChip({ session }: { session: ChatSession }) {
 }
 
 function EmptyState({ onPick }: { onPick: (text: string) => void }) {
+  useLanguage();
   return (
     <div className="flex h-full flex-col items-center justify-center px-4 text-center">
       <div
@@ -573,13 +578,11 @@ function EmptyState({ onPick }: { onPick: (text: string) => void }) {
         <Sparkles size={24} />
       </div>
       <div className="text-[1.077em] font-semibold" style={{ color: "var(--text)" }}>
-        AI 笔记助手
-      </div>
+        {tr("AI 笔记助手")}</div>
       <div className="mt-1 max-w-[220px] text-[0.923em] leading-relaxed" style={{ color: "var(--text-muted)" }}>
-        我可以读取并修改你正在编辑的文件。试试：
-      </div>
+        {tr("我可以读取并修改你正在编辑的文件。试试：")}</div>
       <div className="mt-3 flex w-full flex-col gap-1.5">
-        {SUGGESTIONS.map((s) => (
+        {suggestions().map((s) => (
           <button
             key={s}
             onClick={() => onPick(s)}
@@ -597,6 +600,7 @@ function EmptyState({ onPick }: { onPick: (text: string) => void }) {
 }
 
 function TypingIndicator() {
+  useLanguage();
   return (
     <div className="ai-msg-in flex items-center gap-2.5">
       <AssistantAvatar />
@@ -613,6 +617,7 @@ function TypingIndicator() {
 }
 
 function AssistantAvatar() {
+  useLanguage();
   return (
     <div
       className="flex h-7 w-7 shrink-0 items-center justify-center self-start rounded-lg"
@@ -629,6 +634,7 @@ function AssistantAvatar() {
 const COMPOSER_WIDE_W = 348;
 
 function ComposerControls({ session }: { session: ChatSession }) {
+  useLanguage();
   const aiModels = useAppStore((s) => s.aiModels);
   const rightPanelWidth = useAppStore((s) => s.rightPanelWidth);
   const openSettings = useAppStore((s) => s.openSettings);
@@ -665,8 +671,7 @@ function ComposerControls({ session }: { session: ChatSession }) {
           onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
         >
           <Settings2 size={13} />
-          去设置添加
-        </button>
+          {tr("去设置添加")}</button>
       </div>
     );
   }
@@ -690,22 +695,22 @@ function ComposerControls({ session }: { session: ChatSession }) {
           onChange={(v) => setSessionModel(session.id, v)}
           className="max-w-[132px]"
           label={
-            selectedValue ? shortModelLabel(selectedValue, modelOptions) : "选择模型"
+            selectedValue ? shortModelLabel(selectedValue, modelOptions) : tr("选择模型")
           }
         />
         <CompactSelect
           value={session.thinkingLevel}
           onChange={(v) => setSessionThinkingLevel(session.id, v as ThinkingLevel)}
           className="w-[58px] shrink-0"
-          title="思考级别"
+          title={tr("思考级别")}
           label={thinkingLabel(session.thinkingLevel)}
         >
-          <option value="default">默认</option>
-          <option value="low">低</option>
-          <option value="medium">中</option>
-          <option value="high">高</option>
-          <option value="xhigh">超高</option>
-          <option value="max">最高</option>
+          <option value="default">{tr("默认")}</option>
+          <option value="low">{tr("低")}</option>
+          <option value="medium">{tr("中")}</option>
+          <option value="high">{tr("高")}</option>
+          <option value="xhigh">{tr("超高")}</option>
+          <option value="max">{tr("最高")}</option>
         </CompactSelect>
       </div>
     </div>
@@ -723,42 +728,43 @@ function PermissionSelect({
    *  an ellipsis. The mode still shows in the tooltip and in the open list. */
   iconOnly?: boolean;
 }) {
+  useLanguage();
   return (
     <CompactSelect
       value={value}
       onChange={(v) => onChange(v as ToolMode)}
       className={iconOnly ? "w-[46px] shrink-0" : "w-[112px]"}
-      title={`操作确认 · ${modeLabel(value)}`}
+      title={tr("操作确认 · {{0}}", { 0: modeLabel(value) })}
       label={iconOnly ? "" : modeLabel(value)}
       tone="accent"
       icon={<ShieldCheck size={14} />}
     >
-      <option value="ask">编辑前确认</option>
-      <option value="auto">自动编辑</option>
-      <option value="ask_all">每次询问</option>
+      <option value="ask">{tr("编辑前确认")}</option>
+      <option value="auto">{tr("自动编辑")}</option>
+      <option value="ask_all">{tr("每次询问")}</option>
     </CompactSelect>
   );
 }
 
 function modeLabel(mode: ToolMode): string {
-  if (mode === "auto") return "自动编辑";
-  if (mode === "ask_all") return "每次询问";
-  return "编辑前确认";
+  if (mode === "auto") return tr("自动编辑");
+  if (mode === "ask_all") return tr("每次询问");
+  return tr("编辑前确认");
 }
 
 function thinkingLabel(level: ThinkingLevel): string {
-  if (level === "default") return "默认";
-  if (level === "max") return "最高";
-  if (level === "xhigh") return "超高";
-  if (level === "high") return "高";
-  return level === "low" ? "低" : "中";
+  if (level === "default") return tr("默认");
+  if (level === "max") return tr("最高");
+  if (level === "xhigh") return tr("超高");
+  if (level === "high") return tr("高");
+  return level === "low" ? tr("低") : tr("中");
 }
 
 function shortModelLabel(
   value: string,
   options: { key: string; label: string }[],
 ): string {
-  const full = options.find((m) => m.key === value)?.label ?? "模型";
+  const full = options.find((m) => m.key === value)?.label ?? tr("模型");
   const modelId = full.includes(" · ") ? full.split(" · ").pop()! : full;
   return modelId
     .replace(/^claude-/, "")
@@ -786,6 +792,7 @@ function CompactSelect({
   tone?: "normal" | "accent";
   icon?: React.ReactNode;
 }) {
+  useLanguage();
   return (
     <label
       title={title}
@@ -816,6 +823,7 @@ function CompactSelect({
 /* --------------------------------- items --------------------------------- */
 
 function Item({ item }: { item: ChatItem }) {
+  useLanguage();
   if (item.kind === "user") {
     return (
       <div className="ai-msg-in flex justify-end">
@@ -855,17 +863,18 @@ function Item({ item }: { item: ChatItem }) {
 /* ------------------------------- tool card ------------------------------- */
 
 const STATUS_META: Record<ToolStatus, { label: string; color: string }> = {
-  running: { label: "处理中", color: "var(--accent)" },
-  done: { label: "完成", color: "#2ea043" },
-  pending: { label: "待确认", color: "#d97706" },
-  applied: { label: "已应用", color: "#2ea043" },
-  rejected: { label: "已拒绝", color: "var(--text-muted)" },
-  undone: { label: "已撤销", color: "var(--text-muted)" },
-  cancelled: { label: "已停止", color: "var(--text-muted)" },
-  error: { label: "失败", color: "#f85149" },
+  running: { get label() { return tr("处理中"); }, color: "var(--accent)" },
+  done: { get label() { return tr("完成"); }, color: "#2ea043" },
+  pending: { get label() { return tr("待确认"); }, color: "#d97706" },
+  applied: { get label() { return tr("已应用"); }, color: "#2ea043" },
+  rejected: { get label() { return tr("已拒绝"); }, color: "var(--text-muted)" },
+  undone: { get label() { return tr("已撤销"); }, color: "var(--text-muted)" },
+  cancelled: { get label() { return tr("已停止"); }, color: "var(--text-muted)" },
+  error: { get label() { return tr("失败"); }, color: "#f85149" },
 };
 
 function StatusPill({ status, label }: { status: ToolStatus; label?: string }) {
+  useLanguage();
   const meta = STATUS_META[status];
   return (
     <span className="flex shrink-0 items-center gap-1 text-[0.846em] font-medium" style={{ color: meta.color }}>
@@ -883,22 +892,23 @@ const TOOL_META: Record<
   Extract<ChatItem, { kind: "tool" }>["tool"],
   { verb: string; Icon: typeof FileText }
 > = {
-  read: { verb: "读取", Icon: FileText },
-  edit: { verb: "修改", Icon: Pencil },
-  create: { verb: "新建", Icon: FilePlus2 },
-  delete: { verb: "删除", Icon: Trash2 },
-  search: { verb: "搜索", Icon: Search },
-  guide: { verb: "查阅", Icon: BookOpen },
+  read: { get verb() { return tr("读取"); }, Icon: FileText },
+  edit: { get verb() { return tr("修改"); }, Icon: Pencil },
+  create: { get verb() { return tr("新建"); }, Icon: FilePlus2 },
+  delete: { get verb() { return tr("删除"); }, Icon: Trash2 },
+  search: { get verb() { return tr("搜索"); }, Icon: Search },
+  guide: { get verb() { return tr("查阅"); }, Icon: BookOpen },
 };
 
 function ToolCard({ item }: { item: Extract<ChatItem, { kind: "tool" }> }) {
+  useLanguage();
   const resolvePendingEdit = useChatStore((s) => s.resolvePendingEdit);
   const undoEdit = useChatStore((s) => s.undoEdit);
 
   const { verb, Icon } = TOOL_META[item.tool];
   // For deletes "applied" means the file is gone, not an editor change.
   const statusLabel =
-    item.tool === "delete" && item.status === "applied" ? "已删除" : undefined;
+    item.tool === "delete" && item.status === "applied" ? tr("已删除") : undefined;
 
   return (
     <div
@@ -933,12 +943,11 @@ function ToolCard({ item }: { item: Extract<ChatItem, { kind: "tool" }> }) {
           className="flex items-center justify-between gap-2 px-2.5 py-2"
           style={{ borderTop: "1px solid var(--border)" }}
         >
-          <span style={{ color: "var(--text-muted)" }}>确认删除？此操作不可撤销。</span>
+          <span style={{ color: "var(--text-muted)" }}>{tr("确认删除？此操作不可撤销。")}</span>
           <div className="flex gap-1.5">
-            <CardButton onClick={() => resolvePendingEdit(item.id, false)}>取消</CardButton>
+            <CardButton onClick={() => resolvePendingEdit(item.id, false)}>{tr("取消")}</CardButton>
             <CardButton danger onClick={() => resolvePendingEdit(item.id, true)}>
-              <Trash2 size={12} /> 确认删除
-            </CardButton>
+              <Trash2 size={12} /> {" "}{tr("确认删除")}</CardButton>
           </div>
         </div>
       )}
@@ -948,12 +957,11 @@ function ToolCard({ item }: { item: Extract<ChatItem, { kind: "tool" }> }) {
           className="flex items-center justify-between gap-2 px-2.5 py-2"
           style={{ borderTop: "1px solid var(--border)" }}
         >
-          <span style={{ color: "var(--text-muted)" }}>允许执行这次{verb}？</span>
+          <span style={{ color: "var(--text-muted)" }}>{tr("允许执行这次")}{verb}？</span>
           <div className="flex gap-1.5">
-            <CardButton onClick={() => resolvePendingEdit(item.id, false)}>取消</CardButton>
+            <CardButton onClick={() => resolvePendingEdit(item.id, false)}>{tr("取消")}</CardButton>
             <CardButton primary onClick={() => resolvePendingEdit(item.id, true)}>
-              <Check size={12} /> 允许
-            </CardButton>
+              <Check size={12} /> {" "}{tr("允许")}</CardButton>
           </div>
         </div>
       )}
@@ -965,20 +973,18 @@ function ToolCard({ item }: { item: Extract<ChatItem, { kind: "tool" }> }) {
         >
           {item.status === "pending" ? (
             <>
-              <span style={{ color: "var(--text-muted)" }}>应用这次修改？</span>
+              <span style={{ color: "var(--text-muted)" }}>{tr("应用这次修改？")}</span>
               <div className="flex gap-1.5">
-                <CardButton onClick={() => resolvePendingEdit(item.id, false)}>拒绝</CardButton>
+                <CardButton onClick={() => resolvePendingEdit(item.id, false)}>{tr("拒绝")}</CardButton>
                 <CardButton primary onClick={() => resolvePendingEdit(item.id, true)}>
-                  <Check size={12} /> 应用
-                </CardButton>
+                  <Check size={12} /> {" "}{tr("应用")}</CardButton>
               </div>
             </>
           ) : (
             <>
-              <span style={{ color: "var(--text-muted)" }}>已写入编辑器，尚未保存</span>
+              <span style={{ color: "var(--text-muted)" }}>{tr("已写入编辑器，尚未保存")}</span>
               <CardButton onClick={() => undoEdit(item.id)}>
-                <Undo2 size={12} /> 撤销
-              </CardButton>
+                <Undo2 size={12} /> {" "}{tr("撤销")}</CardButton>
             </>
           )}
         </div>
@@ -990,6 +996,7 @@ function ToolCard({ item }: { item: Extract<ChatItem, { kind: "tool" }> }) {
 const MAX_DIFF_ROWS = 200;
 
 function DiffBlock({ diff }: { diff: DiffView }) {
+  useLanguage();
   const rows = diff.rows.slice(0, MAX_DIFF_ROWS);
   const hidden = diff.rows.length - rows.length;
   if (rows.length === 0) return null;
@@ -1017,8 +1024,7 @@ function DiffBlock({ diff }: { diff: DiffView }) {
       ))}
       {hidden > 0 && (
         <div className="px-2.5 py-0.5" style={{ color: "var(--text-muted)" }}>
-          … 其余 {hidden} 行省略
-        </div>
+          {tr("… 其余")}{" "}{hidden} {" "}{tr("行省略")}</div>
       )}
     </div>
   );
@@ -1035,6 +1041,7 @@ function CardButton({
   primary?: boolean;
   danger?: boolean;
 }) {
+  useLanguage();
   const filled = primary || danger;
   return (
     <button

@@ -1,3 +1,5 @@
+import { tr, currentLanguage } from "../i18n/core.ts";
+import { useLanguage } from "../i18n/react";
 import { useState, type ReactNode } from "react";
 
 const BATCH_SIZE = 1000;
@@ -14,10 +16,11 @@ export function DirectoryEntries<T>({ directory, ...props }: Props<T>) {
 }
 
 function Batch<T>({ entries, children }: Omit<Props<T>, "directory">) {
+  useLanguage();
   const [limit, setLimit] = useState(BATCH_SIZE);
   const shown = Math.min(limit, entries.length);
   const remaining = entries.length - shown;
-  const format = (count: number) => count.toLocaleString("zh-CN");
+  const format = (count: number) => count.toLocaleString(currentLanguage());
 
   return (
     <>
@@ -29,7 +32,7 @@ function Batch<T>({ entries, children }: Omit<Props<T>, "directory">) {
           // Loading more is not a click on empty sidebar space: keep selection.
           onClick={(e) => e.stopPropagation()}
         >
-          <div role="status">已显示 {format(shown)} / {format(entries.length)} 项</div>
+          <div role="status">{tr("已显示")} {format(shown)} / {format(entries.length)} {tr("项")}</div>
           {remaining > 0 ? (
             <button
               type="button"
@@ -37,10 +40,9 @@ function Batch<T>({ entries, children }: Omit<Props<T>, "directory">) {
               style={{ color: "var(--accent)", background: "var(--active)" }}
               onClick={() => setLimit((current) => Math.min(Math.min(current, entries.length) + BATCH_SIZE, entries.length))}
             >
-              显示更多
-            </button>
+              {tr("显示更多")}</button>
           ) : (
-            <div className="mt-1">已全部显示</div>
+            <div className="mt-1">{tr("已全部显示")}</div>
           )}
         </div>
       )}

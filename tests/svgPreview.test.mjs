@@ -1,3 +1,4 @@
+import { i18nDependency } from './i18nHarness.mjs';
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -16,6 +17,7 @@ function setup() {
   const exports = {};
   vm.runInNewContext(code, {
     exports, Blob,
+    require: (name) => { assert.ok(name.includes('/i18n/')); return i18nDependency(name); },
     DOMParser: class {
       parseFromString(source) {
         return {

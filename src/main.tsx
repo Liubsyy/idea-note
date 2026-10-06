@@ -5,6 +5,7 @@ import { SettingsWindow } from "./components/SettingsWindow";
 import { GitCredentialModal } from "./components/GitCredentialModal";
 import "./styles/globals.css";
 import "./styles/print.css";
+import { initializeNativeLanguage } from "./i18n/native";
 
 // The settings UI lives in its own standalone Tauri window (label "settings")
 // so it can be dragged off the main window and leave the editor usable. Both
@@ -20,12 +21,12 @@ function isSettingsWindow(): boolean {
 // Note: StrictMode is intentionally omitted — its double-mount in dev would
 // rebuild the CodeMirror EditorView twice (it self-cleans, but it's wasteful).
 const settingsWindow = isSettingsWindow();
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+void initializeNativeLanguage().catch(console.error).then(() => ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <>
     {settingsWindow ? <SettingsWindow /> : <App />}
     <GitCredentialModal />
   </>,
-);
+));
 
 // Dev-only automated test hook for the native PDF export pipeline; see
 // lib/print/pdfExportTest.ts. Tree-shaken out of production builds.

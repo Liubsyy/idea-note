@@ -1,5 +1,7 @@
 # Idea Note
 
+**简体中文** | [English](./README.en.md)
+
 <p align="center">
   <img src="./src-tauri/icons/icon.png" alt="Idea Note icon" width="96" />
 </p>
@@ -31,6 +33,7 @@
 - **文件管理**：除markdown外还可编辑其他文本文件，可作为轻量级项目文件管理器。
 - **AI 笔记助手**：用自然语言对当前笔记进行问答、总结、润色，并通过工具直接读取、搜索、新建、编辑或删除笔记，还能按需写出可交互组件。
 - **内置工具**：内置git远程同步、终端、导出PDF和打印。
+- **中英文界面**：首次启动自动匹配系统语言，可在“设置 → 外观 → 语言 / Language”中切换，立即生效并同步到所有窗口。
 
 更新日志详见：[CHANGELOG.md](./CHANGELOG.md)
 
@@ -158,7 +161,7 @@ xattr -rd com.apple.quarantine /Applications/Idea\ Note.app
 
 在侧栏底部齿轮图标打开设置窗口，包含以下配置项：
 
-- **外观**：明暗主题与主题色、界面缩放、紧凑排版，支持导入自定义主题 JSON
+- **外观**：中英文语言切换、明暗主题与主题色、界面缩放、紧凑排版，支持导入自定义主题 JSON
 - **左侧列表**：各视图的字体大小与字重
 - **编辑器**：字体、字号、字重、行高与标题缩放
 - **快捷键**：自定义编辑器快捷键
@@ -232,6 +235,7 @@ npm run tauri build
 | `npm run preview` | 预览前端构建产物 |
 | `npm run mock:ai` | 启动本地固定问答 AI 测试服务 |
 | `npm run test:mock-ai` | 测试本地 AI 测试服务 |
+| `npm run test:i18n` | 验证翻译完整性、语言保存和切换 |
 | `npm run build` | 执行 TypeScript 检查并构建前端 |
 | `npm run tauri build` | 构建桌面应用安装包 |
 | `cargo check --manifest-path src-tauri/Cargo.toml` | 检查 Rust / Tauri 侧代码 |

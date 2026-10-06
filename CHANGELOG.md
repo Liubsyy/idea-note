@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.6
+
+**简体中文**
+
+- 新增中英文界面，自动匹配系统语言并支持手动切换；README 支持中英文。
+
+**English**
+
+- Added Chinese and English interfaces with automatic language detection and manual switching, plus a bilingual README.
+
 ## 1.2.5
 - JSON/YAML 格式化视图支持查找、匹配高亮和上下项跳转，支持自定义查找快捷键，保持只读
 - 将 `@tauri-apps/cli` 升级并固定为 `2.12.0`，修复 AppImage 的 `.DirIcon` 符号链接问题，并取消启动时强制使用 X11 的限制

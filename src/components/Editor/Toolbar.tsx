@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -74,6 +76,7 @@ const TABLE_CELL_COMMANDS = new Set([
 
 /** Text-colour glyph without the extra baseline drawn by Lucide's Baseline icon. */
 function TextColorIcon({ size }: { size: number }) {
+  useLanguage();
   return (
     <svg
       width={size}
@@ -93,6 +96,7 @@ function TextColorIcon({ size }: { size: number }) {
 }
 
 function Divider() {
+  useLanguage();
   return (
     <span
       className="mx-1 h-5 w-px shrink-0"
@@ -108,6 +112,7 @@ interface BtnProps {
   active?: boolean;
 }
 function Btn({ title, onClick, children, active }: BtnProps) {
+  useLanguage();
   return (
     <button
       title={title}
@@ -162,6 +167,7 @@ function Dropdown({
   /** Fired whenever the menu closes, so `render` can reset its own view. */
   onClose?: () => void;
 }) {
+  useLanguage();
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const triggerRef = useRef<HTMLDivElement>(null);
@@ -292,6 +298,7 @@ function MenuItem({
   onClick: () => void;
   style?: React.CSSProperties;
 }) {
+  useLanguage();
   return (
     <button
       title={title}
@@ -332,6 +339,7 @@ function SubMenu({
   label: React.ReactNode;
   children: React.ReactNode;
 }) {
+  useLanguage();
   const [open, setOpen] = useState(false);
   return (
     <div
@@ -384,6 +392,7 @@ function Swatches({
   current: string | null;
   onPick: (color: string) => void;
 }) {
+  useLanguage();
   const active = current?.toLowerCase();
   return (
     <div className="grid grid-cols-8 gap-1 px-2 py-1.5">
@@ -430,11 +439,11 @@ const HIGHLIGHT_OPTIONS: {
   label: string;
   swatch: string;
 }[] = [
-  { color: "blue", label: "蓝色", swatch: "#3b82f6" },
-  { color: "yellow", label: "黄色", swatch: "#eab308" },
-  { color: "green", label: "绿色", swatch: "#22c55e" },
-  { color: "red", label: "红色", swatch: "#ef4444" },
-  { color: "purple", label: "紫色", swatch: "#a855f7" },
+  { color: "blue", get label() { return tr("蓝色"); }, swatch: "#3b82f6" },
+  { color: "yellow", get label() { return tr("黄色"); }, swatch: "#eab308" },
+  { color: "green", get label() { return tr("绿色"); }, swatch: "#22c55e" },
+  { color: "red", get label() { return tr("红色"); }, swatch: "#ef4444" },
+  { color: "purple", get label() { return tr("紫色"); }, swatch: "#a855f7" },
 ];
 
 /**
@@ -467,6 +476,7 @@ function ColorDropdown({
   onPick: (color: string) => void;
   onClear: () => void;
 }) {
+  useLanguage();
   const [custom, setCustom] = useState(false);
   return (
     <Dropdown
@@ -508,12 +518,12 @@ function ColorDropdown({
             <div className="my-1 h-px" style={{ background: "var(--border)" }} />
             <MenuItem
               icon={<Pipette size={15} />}
-              label="自定义…"
+              label={tr("自定义…")}
               onClick={() => setCustom(true)}
             />
             <MenuItem
               icon={<Ban size={15} />}
-              label="清除颜色"
+              label={tr("清除颜色")}
               title={clearTitle}
               onClick={() => {
                 onClear();
@@ -542,13 +552,14 @@ function HighlightBlockDropdown({
   onPrimary: () => void;
   onPick: (color: HighlightColor) => void;
 }) {
+  useLanguage();
   const [custom, setCustom] = useState(false);
   const defaultColor = highlightColorCss("blue");
   const pickerColor = highlightColorCss(current ?? "blue");
 
   return (
     <Dropdown
-      title="高亮块颜色"
+      title={tr("高亮块颜色")}
       primaryTitle={primaryTitle}
       active={current !== null}
       menuWidth={212}
@@ -598,8 +609,7 @@ function HighlightBlockDropdown({
               className="px-2 pt-1 text-xs"
               style={{ color: "var(--text-muted)" }}
             >
-              更多颜色
-            </div>
+              {tr("更多颜色")}</div>
             <Swatches
               colors={BG_COLORS}
               current={current}
@@ -612,7 +622,7 @@ function HighlightBlockDropdown({
             <div className="my-1 h-px" style={{ background: "var(--border)" }} />
             <MenuItem
               icon={<Pipette size={15} />}
-              label="自定义…"
+              label={tr("自定义…")}
               onClick={() => setCustom(true)}
             />
           </>
@@ -623,6 +633,7 @@ function HighlightBlockDropdown({
 }
 
 export function Toolbar() {
+  useLanguage();
   const active = useAppStore((s) => s.activeFormats);
   const editorKeybindings = useAppStore((s) => s.editorKeybindings);
   const [lastColors, setLastColors] = useState(loadLastMarkdownColors);
@@ -647,7 +658,7 @@ export function Toolbar() {
     if (inTable && !cell) {
       useAppStore
         .getState()
-        .showToast("请只选择一个表格单元格", "error");
+        .showToast(tr("请只选择一个表格单元格"), "error");
       return;
     }
     fn(v);
@@ -660,14 +671,14 @@ export function Toolbar() {
     if (inTable && !TABLE_CELL_COMMANDS.has(id)) {
       useAppStore
         .getState()
-        .showToast("表格单元格仅支持行内格式", "error");
+        .showToast(tr("表格单元格仅支持行内格式"), "error");
       return;
     }
     const cell = prepareActiveTableCellSelection(v);
     if (inTable && !cell) {
       useAppStore
         .getState()
-        .showToast("请只选择一个表格单元格", "error");
+        .showToast(tr("请只选择一个表格单元格"), "error");
       return;
     }
     const handled = runEditorCommand(id, v);
@@ -681,7 +692,7 @@ export function Toolbar() {
     if (hasActiveTableCell(v)) {
       useAppStore
         .getState()
-        .showToast("表格单元格仅支持行内格式", "error");
+        .showToast(tr("表格单元格仅支持行内格式"), "error");
       return;
     }
     md.highlightBlockColor(v, color);
@@ -691,7 +702,7 @@ export function Toolbar() {
     <div className="flex items-center gap-0.5 overflow-x-auto px-2">
       {/* Heading dropdown */}
       <Dropdown
-        title="标题"
+        title={tr("标题")}
         active={active.heading > 0}
         menuWidth={128}
         trigger={<Heading size={iconSize} />}
@@ -700,8 +711,8 @@ export function Toolbar() {
             {[1, 2, 3, 4, 5, 6].map((lvl) => (
               <MenuItem
                 key={lvl}
-                label={`标题 ${lvl}`}
-                title={shortcut(`标题 ${lvl}`, `markdownHeading${lvl}`)}
+                label={tr("标题 {{0}}", { 0: lvl })}
+                title={shortcut(tr("标题 {{0}}", { 0: lvl }), `markdownHeading${lvl}`)}
                 active={active.heading === lvl}
                 style={{ fontSize: `${20 - lvl}px` }}
                 onClick={() => {
@@ -715,8 +726,8 @@ export function Toolbar() {
               style={{ background: "var(--border)" }}
             />
             <MenuItem
-              label="正文"
-              title={shortcut("正文", "markdownParagraph")}
+              label={tr("正文")}
+              title={shortcut(tr("正文"), "markdownParagraph")}
               onClick={() => {
                 runCommand("markdownParagraph");
                 close();
@@ -729,28 +740,28 @@ export function Toolbar() {
       <Divider />
 
       <Btn
-        title={shortcut("加粗", "markdownBold")}
+        title={shortcut(tr("加粗"), "markdownBold")}
         active={active.bold}
         onClick={() => runCommand("markdownBold")}
       >
         <Bold size={iconSize} />
       </Btn>
       <Btn
-        title={shortcut("斜体", "markdownItalic")}
+        title={shortcut(tr("斜体"), "markdownItalic")}
         active={active.italic}
         onClick={() => runCommand("markdownItalic")}
       >
         <Italic size={iconSize} />
       </Btn>
       <Btn
-        title={shortcut("删除线", "markdownStrike")}
+        title={shortcut(tr("删除线"), "markdownStrike")}
         active={active.strike}
         onClick={() => runCommand("markdownStrike")}
       >
         <Strikethrough size={iconSize} />
       </Btn>
       <Btn
-        title={shortcut("行内代码", "markdownInlineCode")}
+        title={shortcut(tr("行内代码"), "markdownInlineCode")}
         active={active.code}
         onClick={() => runCommand("markdownInlineCode")}
       >
@@ -761,12 +772,12 @@ export function Toolbar() {
           selection, the one form every markdown renderer understands. The icon
           half reapplies the colour under the bar; the chevron opens the palette. */}
       <ColorDropdown
-        title="文字颜色"
+        title={tr("文字颜色")}
         primaryTitle={shortcut(
-          `应用文字颜色 ${lastColors.text}`,
+          tr("应用文字颜色 {{0}}", { 0: lastColors.text }),
           "markdownTextColor",
         )}
-        clearTitle={shortcut("清除颜色", "markdownClearColor")}
+        clearTitle={shortcut(tr("清除颜色"), "markdownClearColor")}
         icon={<TextColorIcon size={iconSize} />}
         colors={TEXT_COLORS}
         last={lastColors.text}
@@ -776,12 +787,12 @@ export function Toolbar() {
         onClear={() => runCommand("markdownClearColor")}
       />
       <ColorDropdown
-        title="背景色"
+        title={tr("背景色")}
         primaryTitle={shortcut(
-          `应用背景色 ${lastColors.bg}`,
+          tr("应用背景色 {{0}}", { 0: lastColors.bg }),
           "markdownBgColor",
         )}
-        clearTitle={shortcut("清除颜色", "markdownClearColor")}
+        clearTitle={shortcut(tr("清除颜色"), "markdownClearColor")}
         icon={<Highlighter size={iconSize} />}
         colors={BG_COLORS}
         last={lastColors.bg}
@@ -794,21 +805,21 @@ export function Toolbar() {
       <Divider />
 
       <Btn
-        title={shortcut("无序列表", "markdownBulletList")}
+        title={shortcut(tr("无序列表"), "markdownBulletList")}
         active={active.bulletList}
         onClick={() => runCommand("markdownBulletList")}
       >
         <List size={iconSize} />
       </Btn>
       <Btn
-        title={shortcut("有序列表", "markdownOrderedList")}
+        title={shortcut(tr("有序列表"), "markdownOrderedList")}
         active={active.orderedList}
         onClick={() => runCommand("markdownOrderedList")}
       >
         <ListOrdered size={iconSize} />
       </Btn>
       <Btn
-        title={shortcut("任务列表", "markdownTaskList")}
+        title={shortcut(tr("任务列表"), "markdownTaskList")}
         onClick={() => runCommand("markdownTaskList")}
       >
         <ListChecks size={iconSize} />
@@ -817,14 +828,14 @@ export function Toolbar() {
       <Divider />
 
       <Btn
-        title={shortcut("引用", "markdownQuote")}
+        title={shortcut(tr("引用"), "markdownQuote")}
         active={active.blockquote}
         onClick={() => runCommand("markdownQuote")}
       >
         <Quote size={iconSize} />
       </Btn>
       <HighlightBlockDropdown
-        primaryTitle={shortcut("高亮块", "markdownHighlightBlock")}
+        primaryTitle={shortcut(tr("高亮块"), "markdownHighlightBlock")}
         current={active.highlightColor}
         iconSize={iconSize}
         onPrimary={() => runCommand("markdownHighlightBlock")}
@@ -833,8 +844,8 @@ export function Toolbar() {
       {/* Code block: the icon inserts a plain fence (unchanged), while the
           chevron also exposes the parameterised and encrypted block forms. */}
       <Dropdown
-        title="代码块"
-        primaryTitle={shortcut("代码块", "markdownCodeBlock")}
+        title={tr("代码块")}
+        primaryTitle={shortcut(tr("代码块"), "markdownCodeBlock")}
         active={active.codeBlock}
         menuWidth={168}
         trigger={<Braces size={iconSize} />}
@@ -842,24 +853,24 @@ export function Toolbar() {
         render={(close) => (
           <>
             <MenuItem
-              label="普通代码块"
-              title={shortcut("代码块", "markdownCodeBlock")}
+              label={tr("普通代码块")}
+              title={shortcut(tr("代码块"), "markdownCodeBlock")}
               onClick={() => {
                 runCommand("markdownCodeBlock");
                 close();
               }}
             />
             <MenuItem
-              label="可交互组件"
-              title="带参数控件和输出渲染的可交互代码块"
+              label={tr("可交互组件")}
+              title={tr("带参数控件和输出渲染的可交互代码块")}
               onClick={() => {
                 close();
                 setComponentOpen(true);
               }}
             />
             <MenuItem
-              label="加密内容块"
-              title="插入新的加密内容块"
+              label={tr("加密内容块")}
+              title={tr("插入新的加密内容块")}
               onClick={() => {
                 close();
                 const view = getActiveView();
@@ -867,7 +878,7 @@ export function Toolbar() {
                 if (hasActiveTableCell(view)) {
                   useAppStore
                     .getState()
-                    .showToast("表格单元格仅支持行内格式", "error");
+                    .showToast(tr("表格单元格仅支持行内格式"), "error");
                   return;
                 }
                 void insertSecretBlock(view);
@@ -877,7 +888,7 @@ export function Toolbar() {
         )}
       />
       <Btn
-        title={shortcut("分割线", "markdownHr")}
+        title={shortcut(tr("分割线"), "markdownHr")}
         onClick={() => runCommand("markdownHr")}
       >
         <Minus size={iconSize} />
@@ -886,14 +897,14 @@ export function Toolbar() {
       <Divider />
 
       <Btn
-        title={shortcut("链接", "markdownLink")}
+        title={shortcut(tr("链接"), "markdownLink")}
         active={active.link}
         onClick={() => runCommand("markdownLink")}
       >
         <LinkIcon size={iconSize} />
       </Btn>
       <Btn
-        title={shortcut(active.image ? "编辑图片" : "图片", "markdownImage")}
+        title={shortcut(active.image ? tr("编辑图片") : tr("图片"), "markdownImage")}
         active={active.image}
         onClick={() => runCommand("markdownImage")}
       >
@@ -903,15 +914,15 @@ export function Toolbar() {
       {/* Insert dropdown — block templates the editor renders but that have no
           single-key syntax: table, task list, math, mermaid. */}
       <Dropdown
-        title="插入"
+        title={tr("插入")}
         menuWidth={168}
         trigger={<Shapes size={iconSize} />}
         render={(close) => (
           <>
             <MenuItem
               icon={<Table size={15} />}
-              label="表格"
-              title={shortcut("表格", "markdownTable")}
+              label={tr("表格")}
+              title={shortcut(tr("表格"), "markdownTable")}
               onClick={() => {
                 runCommand("markdownTable");
                 close();
@@ -919,14 +930,14 @@ export function Toolbar() {
             />
             <MenuItem
               icon={<Sigma size={15} />}
-              label="数学公式"
-              title={shortcut("数学公式", "markdownMathBlock")}
+              label={tr("数学公式")}
+              title={shortcut(tr("数学公式"), "markdownMathBlock")}
               onClick={() => {
                 runCommand("markdownMathBlock");
                 close();
               }}
             />
-            <SubMenu icon={<Workflow size={15} />} label="Mermaid 图表">
+            <SubMenu icon={<Workflow size={15} />} label={tr("Mermaid 图表")}>
               {MERMAID_TYPES.map((t) => (
                 <MenuItem
                   key={t.label}
@@ -945,10 +956,10 @@ export function Toolbar() {
 
       <Divider />
 
-      <Btn title={shortcut("撤销", "undo")} onClick={() => runCommand("undo")}>
+      <Btn title={shortcut(tr("撤销"), "undo")} onClick={() => runCommand("undo")}>
         <Undo2 size={iconSize} />
       </Btn>
-      <Btn title={shortcut("重做", "redo")} onClick={() => runCommand("redo")}>
+      <Btn title={shortcut(tr("重做"), "redo")} onClick={() => runCommand("redo")}>
         <Redo2 size={iconSize} />
       </Btn>
 

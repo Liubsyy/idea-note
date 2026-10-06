@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import { useEffect, useRef, useState } from "react";
 import { AlignLeft, Search } from "lucide-react";
 import { openSearchPanel } from "@codemirror/search";
@@ -10,6 +12,7 @@ import { PreviewEditor } from "./PreviewEditor";
 import { FormattedCodeView } from "./FormattedCodeView";
 
 export function StructuredEditor({ kind }: { kind: StructuredKind }) {
+  useLanguage();
   const content = useAppStore(s => s.content);
   const editorKeybindings = useAppStore(s => s.editorKeybindings);
   const [result, setResult] = useState(() => formatStructured(content, kind));
@@ -37,7 +40,7 @@ export function StructuredEditor({ kind }: { kind: StructuredKind }) {
     setFormatError(next.error);
     if (next.text === null) return;
     if (next.text === source) {
-      useAppStore.getState().showToast("源码格式已规范", "success");
+      useAppStore.getState().showToast(tr("源码格式已规范"), "success");
       return;
     }
     view.dispatch({
@@ -48,18 +51,18 @@ export function StructuredEditor({ kind }: { kind: StructuredKind }) {
     view.focus();
   };
 
-  return <PreviewEditor label={kind.toUpperCase()} previewTitle="格式化视图" allowSplit={false}
+  return <PreviewEditor label={kind.toUpperCase()} previewTitle={tr("格式化视图")} allowSplit={false}
     pending={pending} error={formatError ?? result.error} stale={result.text !== null}
     previewActions={<button type="button" className="preview-editor-refresh" disabled={result.text === null}
-      title={commandTitle("查找", "find", editorKeybindings)} aria-label="查找" onClick={() => {
+      title={commandTitle(tr("查找"), "find", editorKeybindings)} aria-label={tr("查找")} onClick={() => {
         const view = getSearchView();
         if (view) openSearchPanel(view);
       }}><Search size={14} /></button>}
     sourceActions={<button type="button" className="structured-format-source" onClick={formatSource}
-      title="格式化源码（可撤销，保存后写入文件）" aria-label="格式化源码">
-      <AlignLeft size={13} /><span>格式化源码</span>
+      title={tr("格式化源码（可撤销，保存后写入文件）")} aria-label={tr("格式化源码")}>
+      <AlignLeft size={13} /><span>{tr("格式化源码")}</span>
     </button>}>
     {mode => result.text !== null ? <FormattedCodeView text={result.text} kind={kind} active={mode !== "source"} /> :
-      <div className="svg-editor-placeholder">修正源码后将自动显示格式化视图</div>}
+      <div className="svg-editor-placeholder">{tr("修正源码后将自动显示格式化视图")}</div>}
   </PreviewEditor>;
 }

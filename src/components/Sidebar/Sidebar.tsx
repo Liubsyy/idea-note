@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -53,9 +55,9 @@ import { isMac } from "../../lib/platform";
 type BrowseSidebarMode = Exclude<SidebarMode, "search">;
 
 const MODES: { id: BrowseSidebarMode; title: string; icon: React.ReactNode }[] = [
-  { id: "files", title: "文件模式", icon: <Folder size={14} /> },
-  { id: "notes", title: "笔记模式", icon: <NotebookText size={14} /> },
-  { id: "outline", title: "预览大纲", icon: <TableOfContents size={14} /> },
+  { id: "files", get title() { return tr("文件模式"); }, icon: <Folder size={14} /> },
+  { id: "notes", get title() { return tr("笔记模式"); }, icon: <NotebookText size={14} /> },
+  { id: "outline", get title() { return tr("预览大纲"); }, icon: <TableOfContents size={14} /> },
 ];
 
 interface MenuState {
@@ -110,6 +112,7 @@ function clampMenuPosition(x: number, y: number, estimatedHeight: number) {
 }
 
 export function Sidebar() {
+  useLanguage();
   const workspacePath = useAppStore((s) => s.workspacePath);
   const tree = useAppStore((s) => s.tree);
   const loadingWorkspace = useAppStore((s) => s.loadingWorkspace);
@@ -275,7 +278,7 @@ export function Sidebar() {
 
   const copyNodesToClipboard = (paths: string[]) => {
     copyFilesToClipboard(paths).catch((err) => {
-      window.alert(`复制失败：${err}`);
+      window.alert(tr("复制失败：{{0}}", { 0: err }));
     });
   };
 
@@ -294,18 +297,18 @@ export function Sidebar() {
       // " 2" copy. Errors thrown by either action surface inside the dialog.
       const listed = conflicts.slice(0, 3).map((name) => `「${name}」`).join("、");
       openConfirm({
-        title: "存在同名项目",
+        title: tr("存在同名项目"),
         message:
           conflicts.length === 1
-            ? `目标文件夹中已有 ${listed}。覆盖会替换现有项目（文件夹整体替换），保留两份则以「${conflicts[0]} 2」这样的名称粘贴。`
-            : `目标文件夹中已有 ${conflicts.length} 个同名项目（${listed}${conflicts.length > 3 ? " 等" : ""}）。覆盖会替换现有项目（文件夹整体替换），保留两份则以「名称 2」这样的名称粘贴。`,
-        confirmLabel: "覆盖",
+            ? tr("目标文件夹中已有 {{0}}。覆盖会替换现有项目（文件夹整体替换），保留两份则以「{{1}} 2」这样的名称粘贴。", { 0: listed, 1: conflicts[0] })
+            : tr("目标文件夹中已有 {{0}} 个同名项目（{{1}}{{2}}）。覆盖会替换现有项目（文件夹整体替换），保留两份则以「名称 2」这样的名称粘贴。", { 0: conflicts.length, 1: listed, 2: conflicts.length > 3 ? tr(" 等") : "" }),
+        confirmLabel: tr("覆盖"),
         onConfirm: () => paste(true),
-        altLabel: "保留两份",
+        altLabel: tr("保留两份"),
         onAlt: () => paste(false),
       });
     } catch (err) {
-      window.alert(`粘贴失败：${err}`);
+      window.alert(tr("粘贴失败：{{0}}", { 0: err }));
     }
   };
 
@@ -380,7 +383,7 @@ export function Sidebar() {
                 e.stopPropagation();
                 setWsMenuOpen((v) => !v);
               }}
-              title={workspacePath ?? "打开文件夹"}
+              title={workspacePath ?? tr("打开文件夹")}
               className="flex max-w-full items-center gap-1 rounded-md px-1.5 py-1 text-[13px] font-semibold transition-colors"
               style={{ color: "var(--text)" }}
               onMouseEnter={(e) => {
@@ -391,7 +394,7 @@ export function Sidebar() {
               }}
             >
               <span className="truncate">
-                {workspacePath ? basename(workspacePath) : "未打开工作区"}
+                {workspacePath ? basename(workspacePath) : tr("未打开工作区")}
               </span>
               <ChevronDown size={13} className="shrink-0" />
             </button>
@@ -413,8 +416,7 @@ export function Sidebar() {
                   }}
                 >
                   <span className="flex items-center gap-2">
-                    <AppWindow size={14} /> 新窗口
-                  </span>
+                    <AppWindow size={14} /> {" "}{tr("新窗口")}</span>
                 </MenuItem>
                 <MenuItem
                   onClick={() => {
@@ -423,8 +425,7 @@ export function Sidebar() {
                   }}
                 >
                   <span className="flex items-center gap-2">
-                    <FolderOpen size={14} /> 打开文件夹
-                  </span>
+                    <FolderOpen size={14} /> {" "}{tr("打开文件夹")}</span>
                 </MenuItem>
                 {workspacePath && (
                   <MenuItem
@@ -434,8 +435,7 @@ export function Sidebar() {
                     }}
                   >
                     <span className="flex items-center gap-2">
-                      <FolderX size={14} /> 关闭当前项目
-                    </span>
+                      <FolderX size={14} /> {" "}{tr("关闭当前项目")}</span>
                   </MenuItem>
                 )}
                 {workspacePath && (
@@ -446,11 +446,10 @@ export function Sidebar() {
                     }}
                   >
                     <span className="flex items-center gap-2">
-                      <Folders size={14} /> 关闭所有项目
-                    </span>
+                      <Folders size={14} /> {" "}{tr("关闭所有项目")}</span>
                   </MenuItem>
                 )}
-                <SubMenuItem label="最近的项目">
+                <SubMenuItem label={tr("最近的项目")}>
                   {recents.length ? (
                     recents.map((p) => (
                       <MenuItem
@@ -466,8 +465,7 @@ export function Sidebar() {
                     ))
                   ) : (
                     <div className="px-3 py-1.5" style={{ color: "var(--text-muted)" }}>
-                      暂无记录
-                    </div>
+                      {tr("暂无记录")}</div>
                   )}
                 </SubMenuItem>
               </div>
@@ -477,13 +475,13 @@ export function Sidebar() {
             {workspacePath && (
               <>
                 <IconButton
-                  title="新建文件"
+                  title={tr("新建文件")}
                   onClick={() => requestNewRawFile(pasteTarget() ?? undefined)}
                 >
                   <FilePlus2 size={15} />
                 </IconButton>
                 <IconButton
-                  title="新建文件夹"
+                  title={tr("新建文件夹")}
                   onClick={() => requestNewFolder(pasteTarget() ?? undefined)}
                 >
                   <FolderPlus size={15} />
@@ -492,7 +490,7 @@ export function Sidebar() {
             )}
             <SearchModeButton active={searchActive} onClick={toggleSearchMode} />
             {workspacePath && (
-              <IconButton title="刷新文件列表" onClick={handleRefresh}>
+              <IconButton title={tr("刷新文件列表")} onClick={handleRefresh}>
                 <RefreshCw
                   size={15}
                   className={refreshing ? "animate-spin" : undefined}
@@ -557,7 +555,7 @@ export function Sidebar() {
           {loadingWorkspace ? (
             <p role="status" className="flex items-center justify-center gap-2 px-4 py-6 text-xs" style={{ color: "var(--text-muted)" }}>
               <RefreshCw size={14} className="animate-spin shrink-0" />
-              正在打开 {basename(loadingWorkspace)}…
+              {tr("正在打开")}{" "}{basename(loadingWorkspace)}…
             </p>
           ) : workspacePath ? (
             sidebarMode === "search" ? (
@@ -566,14 +564,14 @@ export function Sidebar() {
               <OutlinePanel />
             ) : sidebarMode === "notes" ? (
               notesLoading && !notesTree.length ? (
-                <p role="status" className="px-4 py-6 text-center text-xs" style={{ color: "var(--text-muted)" }}>正在查找笔记…</p>
+                <p role="status" className="px-4 py-6 text-center text-xs" style={{ color: "var(--text-muted)" }}>{tr("正在查找笔记…")}</p>
               ) : notesError ? (
                 <div role="alert" className="px-4 py-6 text-center text-xs">
                   <p>{notesError}</p>
-                  <button className="mt-2 underline" onClick={() => void loadNotes()}>重试</button>
+                  <button className="mt-2 underline" onClick={() => void loadNotes()}>{tr("重试")}</button>
                 </div>
               ) : <>
-                {notesLoading && <p role="status" className="px-3 py-1 text-xs" style={{ color: "var(--text-muted)" }}>正在更新笔记…</p>}
+                {notesLoading && <p role="status" className="px-3 py-1 text-xs" style={{ color: "var(--text-muted)" }}>{tr("正在更新笔记…")}</p>}
                 <NotesTree nodes={notesTree} onContextMenu={openContextMenu} />
               </>
             ) : tree.length ? (
@@ -583,8 +581,7 @@ export function Sidebar() {
                 className="px-4 py-6 text-center text-xs"
                 style={{ color: "var(--text-muted)" }}
               >
-                这个文件夹是空的。
-              </p>
+                {tr("这个文件夹是空的。")}</p>
             )
           ) : (
             <button
@@ -592,8 +589,7 @@ export function Sidebar() {
               className="mx-3 mt-4 flex w-[calc(100%-1.5rem)] items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
               style={{ background: "var(--accent)" }}
             >
-              <FolderOpen size={16} /> 打开文件夹
-            </button>
+              <FolderOpen size={16} /> {" "}{tr("打开文件夹")}</button>
           )}
         </div>
         <ZoomScrollbar targetRef={listRef} enabled={needsManualZoomScroll} />
@@ -624,7 +620,7 @@ export function Sidebar() {
         </span>
         <div className="flex shrink-0 items-center gap-0.5">
           <ExportMenu />
-          <IconButton title="设置" onClick={openSettings}>
+          <IconButton title={tr("设置")} onClick={openSettings}>
             <Settings size={15} />
           </IconButton>
         </div>
@@ -655,24 +651,21 @@ export function Sidebar() {
                       setMenu(null);
                     }}
                   >
-                    新建笔记
-                  </MenuItem>
+                    {tr("新建笔记")}</MenuItem>
                   <MenuItem
                     onClick={() => {
                       requestNewRawFile(menuNode.path);
                       setMenu(null);
                     }}
                   >
-                    新建文件
-                  </MenuItem>
+                    {tr("新建文件")}</MenuItem>
                   <MenuItem
                     onClick={() => {
                       requestNewFolder(menuNode.path);
                       setMenu(null);
                     }}
                   >
-                    新建文件夹
-                  </MenuItem>
+                    {tr("新建文件夹")}</MenuItem>
                 </>
               )}
               {!menuNode.is_dir && (
@@ -683,19 +676,17 @@ export function Sidebar() {
                       setMenu(null);
                     }}
                   >
-                    同级新建笔记
-                  </MenuItem>
+                    {tr("同级新建笔记")}</MenuItem>
                   <MenuItem
                     onClick={() => {
                       requestNewRawFile(dirname(menuNode.path));
                       setMenu(null);
                     }}
                   >
-                    同级新建文件
-                  </MenuItem>
+                    {tr("同级新建文件")}</MenuItem>
                 </>
               )}
-              <SubMenuItem label="复制">
+              <SubMenuItem label={tr("复制")}>
                 <MenuItem
                   hint="⌘C"
                   onClick={() => {
@@ -704,28 +695,26 @@ export function Sidebar() {
                   }}
                 >
                   {menuHasMultiple
-                    ? `复制 ${menuPaths.length} 个项目`
+                    ? tr("复制 {{0}} 个项目", { 0: menuPaths.length })
                     : menuNode.is_dir
-                      ? "复制文件夹"
-                      : "复制文件"}
+                      ? tr("复制文件夹")
+                      : tr("复制文件")}
                 </MenuItem>
-                <SubMenuItem label="复制路径" disabled={menuHasMultiple}>
+                <SubMenuItem label={tr("复制路径")} disabled={menuHasMultiple}>
                   <MenuItem
                     onClick={() => {
                       void copyText(menuNode.path);
                       setMenu(null);
                     }}
                   >
-                    绝对路径
-                  </MenuItem>
+                    {tr("绝对路径")}</MenuItem>
                   <MenuItem
                     onClick={() => {
                       void copyText(relativePath(menuNode.path, workspacePath));
                       setMenu(null);
                     }}
                   >
-                    相对路径
-                  </MenuItem>
+                    {tr("相对路径")}</MenuItem>
                 </SubMenuItem>
                 <MenuItem
                   disabled={menuHasMultiple}
@@ -734,8 +723,7 @@ export function Sidebar() {
                     setMenu(null);
                   }}
                 >
-                  复制文件名
-                </MenuItem>
+                  {tr("复制文件名")}</MenuItem>
               </SubMenuItem>
               <MenuItem
                 hint="⌘V"
@@ -744,26 +732,23 @@ export function Sidebar() {
                   setMenu(null);
                 }}
               >
-                粘贴
-              </MenuItem>
+                {tr("粘贴")}</MenuItem>
               <MenuItem
                 onClick={() => {
                   void revealItemInDir(menuNode.path);
                   setMenu(null);
                 }}
               >
-                打开所在目录
-              </MenuItem>
+                {tr("打开所在目录")}</MenuItem>
               <MenuItem
                 onClick={() => {
                   showFileInfo(menuNode.path).catch((err) => {
-                    window.alert(`显示简介失败：${err}`);
+                    window.alert(tr("显示简介失败：{{0}}", { 0: err }));
                   });
                   setMenu(null);
                 }}
               >
-                显示简介
-              </MenuItem>
+                {tr("显示简介")}</MenuItem>
               {/* History needs a repo; the file-level diff is text-only, so
                   images only get history at folder granularity. */}
               {gitInfo?.isRepo && (menuNode.is_dir || !isImageFile(menuNode.path)) && (
@@ -773,7 +758,7 @@ export function Sidebar() {
                     setMenu(null);
                   }}
                 >
-                  {menuNode.is_dir ? "文件夹历史" : "文件历史"}
+                  {menuNode.is_dir ? tr("文件夹历史") : tr("文件历史")}
                 </MenuItem>
               )}
               <MenuItem
@@ -782,8 +767,7 @@ export function Sidebar() {
                   setMenu(null);
                 }}
               >
-                重命名
-              </MenuItem>
+                {tr("重命名")}</MenuItem>
               <MenuItem
                 danger
                 hint={isMac ? "⌫" : "Delete"}
@@ -792,7 +776,7 @@ export function Sidebar() {
                   setMenu(null);
                 }}
               >
-                {menuHasMultiple ? `删除 ${menuPaths.length} 个项目` : "删除"}
+                {menuHasMultiple ? tr("删除 {{0}} 个项目", { 0: menuPaths.length }) : tr("删除")}
               </MenuItem>
             </>
           ) : (
@@ -803,24 +787,21 @@ export function Sidebar() {
                   setMenu(null);
                 }}
               >
-                新建笔记
-              </MenuItem>
+                {tr("新建笔记")}</MenuItem>
               <MenuItem
                 onClick={() => {
                   requestNewRawFile();
                   setMenu(null);
                 }}
               >
-                新建文件
-              </MenuItem>
+                {tr("新建文件")}</MenuItem>
               <MenuItem
                 onClick={() => {
                   requestNewFolder();
                   setMenu(null);
                 }}
               >
-                新建文件夹
-              </MenuItem>
+                {tr("新建文件夹")}</MenuItem>
               <MenuItem
                 hint="⌘V"
                 onClick={() => {
@@ -828,28 +809,25 @@ export function Sidebar() {
                   setMenu(null);
                 }}
               >
-                粘贴
-              </MenuItem>
+                {tr("粘贴")}</MenuItem>
               <MenuItem
                 onClick={() => {
                   if (workspacePath) void revealItemInDir(workspacePath);
                   setMenu(null);
                 }}
               >
-                打开所在目录
-              </MenuItem>
+                {tr("打开所在目录")}</MenuItem>
               <MenuItem
                 onClick={() => {
                   if (workspacePath) {
                     showFileInfo(workspacePath).catch((err) => {
-                      window.alert(`显示简介失败：${err}`);
+                      window.alert(tr("显示简介失败：{{0}}", { 0: err }));
                     });
                   }
                   setMenu(null);
                 }}
               >
-                显示简介
-              </MenuItem>
+                {tr("显示简介")}</MenuItem>
               {gitInfo?.isRepo && workspacePath && (
                 <MenuItem
                   onClick={() => {
@@ -857,8 +835,7 @@ export function Sidebar() {
                     setMenu(null);
                   }}
                 >
-                  项目历史
-                </MenuItem>
+                  {tr("项目历史")}</MenuItem>
               )}
               <MenuItem
                 onClick={() => {
@@ -866,8 +843,7 @@ export function Sidebar() {
                   setMenu(null);
                 }}
               >
-                刷新
-              </MenuItem>
+                {tr("刷新")}</MenuItem>
             </>
           )}
         </div>
@@ -885,6 +861,7 @@ function IconButton({
   onClick: () => void;
   children: React.ReactNode;
 }) {
+  useLanguage();
   return (
     <button
       title={title}
@@ -911,6 +888,7 @@ function IconButton({
  * add more <ExportMenuItem>s here to extend it (导出 PDF/Word/HTML…).
  */
 function ExportMenu() {
+  useLanguage();
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ right: number; bottom: number } | null>(
     null,
@@ -961,7 +939,7 @@ function ExportMenu() {
     <>
       <button
         ref={triggerRef}
-        title={exportable ? "导出" : "打开 Markdown 笔记后可导出"}
+        title={exportable ? tr("导出") : tr("打开 Markdown 笔记后可导出")}
         disabled={!exportable}
         onClick={toggle}
         className="flex h-7 w-7 items-center justify-center rounded-md transition-colors"
@@ -1001,7 +979,7 @@ function ExportMenu() {
           >
             <ExportMenuItem
               icon={<FileDown size={14} />}
-              label="导出 PDF"
+              label={tr("导出 PDF")}
               onClick={() => {
                 setOpen(false);
                 void exportCurrentNoteAsPdf();
@@ -1009,7 +987,7 @@ function ExportMenu() {
             />
             <ExportMenuItem
               icon={<Printer size={14} />}
-              label="打印"
+              label={tr("打印")}
               onClick={() => {
                 setOpen(false);
                 void printCurrentNote();
@@ -1032,6 +1010,7 @@ function ExportMenuItem({
   label: string;
   onClick: () => void;
 }) {
+  useLanguage();
   return (
     <button
       onClick={onClick}
@@ -1057,9 +1036,10 @@ function SearchModeButton({
   active: boolean;
   onClick: () => void;
 }) {
+  useLanguage();
   return (
     <button
-      title={active ? "关闭全局搜索" : "全局搜索 (⌘⇧F)"}
+      title={active ? tr("关闭全局搜索") : tr("全局搜索 (⌘⇧F)")}
       onClick={onClick}
       className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors"
       style={{
@@ -1094,6 +1074,7 @@ function SegmentButton({
   onClick: () => void;
   children: React.ReactNode;
 }) {
+  useLanguage();
   return (
     <button
       title={title}
@@ -1138,6 +1119,7 @@ function MenuItem({
   hint?: string;
   disabled?: boolean;
 }) {
+  useLanguage();
   return (
     <button
       onClick={onClick}

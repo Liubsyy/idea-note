@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import { useRef, useState } from "react";
 
 /**
@@ -45,6 +47,7 @@ export function hexToHsv(hex: string): { h: number; s: number; v: number } | nul
 
 /** Drag handle drawn on both tracks. */
 function Handle({ style }: { style: React.CSSProperties }) {
+  useLanguage();
   return (
     <span
       className="pointer-events-none absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white"
@@ -63,6 +66,7 @@ export function ColorPicker({
   onBack: () => void;
   onSubmit: (color: string) => void;
 }) {
+  useLanguage();
   const [hsv, setHsv] = useState(
     () => hexToHsv(initial) ?? { h: 0, s: 1, v: 1 },
   );
@@ -179,16 +183,14 @@ export function ColorPicker({
           className="rounded-md px-2.5 py-1 text-sm transition-colors"
           style={{ color: "var(--text-muted)" }}
         >
-          返回
-        </button>
+          {tr("返回")}</button>
         <button
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => onSubmit(hex)}
           className="rounded-md px-3 py-1 text-sm font-medium text-white"
           style={{ background: "var(--accent)" }}
         >
-          确定
-        </button>
+          {tr("确定")}</button>
       </div>
     </div>
   );

@@ -1,12 +1,13 @@
+import { tr } from "../../i18n/core.ts";
 export function throwIfAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) throw new DOMException("已停止", "AbortError");
+  if (signal?.aborted) throw new DOMException(tr("已停止"), "AbortError");
 }
 
 /** Stop waiting immediately. The operation must separately cancel its native
  * work; attaching both handlers also consumes late failures after cancellation. */
 export function abortable<T>(signal: AbortSignal | undefined, operation: () => Promise<T>): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const abort = () => reject(new DOMException("已停止", "AbortError"));
+    const abort = () => reject(new DOMException(tr("已停止"), "AbortError"));
     if (signal?.aborted) {
       abort();
       return;

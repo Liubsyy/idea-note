@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/core.ts";
+import { useLanguage } from "../../i18n/react";
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 
@@ -175,6 +177,7 @@ function renderInline(text: string): React.ReactNode[] {
 }
 
 function CodeBlock({ lang, code }: { lang: string; code: string }) {
+  useLanguage();
   const [copied, setCopied] = useState(false);
   const copy = () => {
     navigator.clipboard
@@ -189,9 +192,9 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
     <div className="ai-codeblock">
       <div className="ai-codeblock-head">
         <span>{lang || "code"}</span>
-        <button onClick={copy} title="复制代码">
+        <button onClick={copy} title={tr("复制代码")}>
           {copied ? <Check size={12} /> : <Copy size={12} />}
-          {copied ? "已复制" : "复制"}
+          {copied ? tr("已复制") : tr("复制")}
         </button>
       </div>
       <pre>
@@ -268,5 +271,6 @@ function renderBlock(b: Block, key: number): React.ReactNode {
 }
 
 export function Markdown({ text }: { text: string }) {
+  useLanguage();
   return <div className="ai-prose">{parseBlocks(text).map(renderBlock)}</div>;
 }

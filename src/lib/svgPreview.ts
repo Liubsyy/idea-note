@@ -1,3 +1,4 @@
+import { tr } from "../i18n/core.ts";
 export interface SvgPreviewState {
   src: string | null;
   error: string | null;
@@ -10,11 +11,11 @@ export function svgValidationError(source: string): string | null {
   const error = doc.querySelector("parsererror");
   if (error) {
     const detail = error.textContent?.replace(/\s+/g, " ").trim().slice(0, 180);
-    return `SVG 语法错误${detail ? `：${detail}` : "，请检查标签和属性"}`;
+    return tr("SVG 语法错误{{0}}", { 0: detail ? `：${detail}` : tr("，请检查标签和属性") });
   }
   if (doc.documentElement.localName !== "svg" ||
       doc.documentElement.namespaceURI !== "http://www.w3.org/2000/svg") {
-    return '根元素必须是 <svg>，并包含 xmlns="http://www.w3.org/2000/svg"';
+    return tr("根元素必须是 <svg>，并包含 xmlns=\"http://www.w3.org/2000/svg\"");
   }
   return null;
 }
@@ -69,7 +70,7 @@ export function createSvgPreview(onChange: (state: SvgPreviewState) => void) {
         image.onerror = () => {
           if (disposed || current !== generation) return;
           cancelPending();
-          publish({ error: "SVG 无法渲染，请检查图片尺寸和内容", pending: false });
+          publish({ error: tr("SVG 无法渲染，请检查图片尺寸和内容"), pending: false });
         };
         image.src = url;
       };

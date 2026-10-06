@@ -1,3 +1,4 @@
+import { tr } from "../i18n/core.ts";
 // Paste or drop images / files into a markdown note: the real file is written
 // to the directory configured in Settings › 图片/附件, and a markdown reference
 // (image embed or attachment link) is inserted. Three sources are handled:
@@ -79,7 +80,7 @@ function resolveTarget(kind: Kind): Target | null {
   if (location === "absolute") {
     const base = rawDir.trim().replace(/[\\/]+$/g, "");
     if (!base) {
-      s.showToast("请先在设置中填写绝对目录", "error");
+      s.showToast(tr("请先在设置中填写绝对目录"), "error");
       return null;
     }
     return { dir: base, makeLink: (f) => joinPath(base, f) };
@@ -90,12 +91,12 @@ function resolveTarget(kind: Kind): Target | null {
   if (location === "project") {
     const ws = s.workspacePath;
     if (!ws) {
-      s.showToast("当前没有打开的工程，无法保存到工程目录", "error");
+      s.showToast(tr("当前没有打开的工程，无法保存到工程目录"), "error");
       return null;
     }
     const dir = joinPath(ws, sub);
     if (!mdDir) {
-      s.showToast("请先保存笔记后再插入文件", "error");
+      s.showToast(tr("请先保存笔记后再插入文件"), "error");
       return null;
     }
     return { dir, makeLink: (f) => relativeFrom(mdDir, joinPath(dir, f)) };
@@ -103,7 +104,7 @@ function resolveTarget(kind: Kind): Target | null {
 
   // "relative": a sub-folder beside the note itself.
   if (!mdDir) {
-    s.showToast("请先保存笔记后再插入文件", "error");
+    s.showToast(tr("请先保存笔记后再插入文件"), "error");
     return null;
   }
   return { dir: joinPath(mdDir, sub), makeLink: (f) => joinPath(sub, f) };
