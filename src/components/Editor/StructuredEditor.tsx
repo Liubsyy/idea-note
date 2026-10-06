@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { AlignLeft } from "lucide-react";
+import { AlignLeft, Search } from "lucide-react";
+import { openSearchPanel } from "@codemirror/search";
 import { isolateHistory } from "@codemirror/commands";
 import { useAppStore } from "../../store/useAppStore";
 import { formatStructured, type StructuredKind } from "../../lib/structuredPreview";
-import { getActiveView } from "../../lib/codemirror/activeView";
+import { getActiveView, getSearchView } from "../../lib/codemirror/activeView";
+import { commandTitle } from "../../lib/codemirror/keybindings";
 import { PreviewEditor } from "./PreviewEditor";
 import { FormattedCodeView } from "./FormattedCodeView";
 
 export function StructuredEditor({ kind }: { kind: StructuredKind }) {
   const content = useAppStore(s => s.content);
+  const editorKeybindings = useAppStore(s => s.editorKeybindings);
   const [result, setResult] = useState(() => formatStructured(content, kind));
   const [pending, setPending] = useState(false);
   const [formatError, setFormatError] = useState<string | null>(null);
@@ -47,11 +50,16 @@ export function StructuredEditor({ kind }: { kind: StructuredKind }) {
 
   return <PreviewEditor label={kind.toUpperCase()} previewTitle="格式化视图" allowSplit={false}
     pending={pending} error={formatError ?? result.error} stale={result.text !== null}
+    previewActions={<button type="button" className="preview-editor-refresh" disabled={result.text === null}
+      title={commandTitle("查找", "find", editorKeybindings)} aria-label="查找" onClick={() => {
+        const view = getSearchView();
+        if (view) openSearchPanel(view);
+      }}><Search size={14} /></button>}
     sourceActions={<button type="button" className="structured-format-source" onClick={formatSource}
       title="格式化源码（可撤销，保存后写入文件）" aria-label="格式化源码">
       <AlignLeft size={13} /><span>格式化源码</span>
     </button>}>
-    {result.text !== null ? <FormattedCodeView text={result.text} kind={kind} /> :
+    {mode => result.text !== null ? <FormattedCodeView text={result.text} kind={kind} active={mode !== "source"} /> :
       <div className="svg-editor-placeholder">修正源码后将自动显示格式化视图</div>}
   </PreviewEditor>;
 }

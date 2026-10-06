@@ -41,7 +41,9 @@ try {
   const { useAppStore } = await import('../src/store/useAppStore');
   const { FilePreviewEditor } = await import('../src/components/Editor/FilePreviewEditor');
   const { filePreviewKind } = await import('../src/lib/filePreview');
-  const { getActiveView } = await import('../src/lib/codemirror/activeView');
+  const { getActiveView, getSearchView } = await import('../src/lib/codemirror/activeView');
+  const { runScopeHandlers } = await import('@codemirror/view');
+  const { closeSearchPanel } = await import('@codemirror/search');
   useAppStore.setState({ workspacePath: native ? fixtureRoot : null, refreshTree:async()=>{} });
   function Fixture() {
     const path = useAppStore(s=>s.activeFilePath);
@@ -57,6 +59,32 @@ try {
     const view = getActiveView(); check(view, 'active source editor');
     view.dispatch({changes:{from:0,to:view.state.doc.length,insert:text}}); return view;
   };
+  function checkFormattedSearch(term: string, original: string) {
+    const view = getSearchView(); check(view && !getActiveView(), 'preview is only the search target');
+    const key = (letter: string, alt = false) => new KeyboardEvent('keydown', {
+      key: letter, code: 'Key' + letter.toUpperCase(), bubbles: true, cancelable: true,
+      metaKey: /Mac|iP(hone|ad)/.test(navigator.platform), ctrlKey: !/Mac|iP(hone|ad)/.test(navigator.platform), altKey: alt,
+    });
+    check(runScopeHandlers(view, key('f'), 'search-open'), 'global find opens formatted view');
+    const field = view.dom.querySelector<HTMLInputElement>('input[placeholder="查找"]');
+    check(field && document.activeElement === field, 'find field receives focus');
+    field.value = term; field.dispatchEvent(new Event('input', { bubbles: true }));
+    check(view.dom.querySelector('.cm-find-count')?.textContent?.includes('/'), 'formatted matches counted');
+    const first = view.state.selection.main.from;
+    view.dom.querySelector<HTMLButtonElement>('button[title="下一个 (↵)"]')!.click();
+    check(view.state.selection.main.from !== first, 'next formatted match');
+    view.dom.querySelector<HTMLButtonElement>('button[title="上一个 (⇧↵)"]')!.click();
+    check(view.state.selection.main.from === first, 'previous formatted match');
+    check(view.dom.querySelector<HTMLButtonElement>('.cm-find-mode')?.hidden, 'read-only search hides replacement toggle');
+    check(runScopeHandlers(view, key('r'), 'search-open'), 'replace shortcut remains handled');
+    check(view.dom.querySelector<HTMLInputElement>('input[placeholder="替换为"]')?.parentElement?.style.display === 'none', 'replacement stays hidden');
+    check(useAppStore.getState().content === original && !useAppStore.getState().isDirty, 'search preserves source and dirty state');
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    check(!view.dom.querySelector('.cm-find-panel'), 'Escape closes search');
+    click('查找'); check(view.dom.querySelector('.cm-find-panel'), 'toolbar opens search');
+    closeSearchPanel(view);
+    return { view, key };
+  }
   let report:any = null, reports = 0;
   window.addEventListener('message', event => {
     if(event.source === host.querySelector('iframe')?.contentWindow && event.data?.type === 'preview-fixture') { report=event.data; reports++; }
@@ -105,7 +133,16 @@ try {
   check(!getActiveView() && !useAppStore.getState().isDirty && useAppStore.getState().content===originalJson,'view does not edit source');
   check(formatted()?.getAttribute('contenteditable')==='false','formatted document is read-only');
   check(!host.querySelector('[aria-label="分屏"]') && !host.querySelector('[aria-label="格式化源码"]'),'only two modes; no source action in read-only mode');
+  const jsonSearch = checkFormattedSearch(':', originalJson);
+  useAppStore.setState({editorKeybindings:{find:'Mod-Alt-j'}});
+  await delay(60);
+  check(!runScopeHandlers(jsonSearch.view, jsonSearch.key('f'), 'search-open'), 'custom shortcut removes old find binding');
+  check(runScopeHandlers(jsonSearch.view, jsonSearch.key('j', true), 'search-open'), 'custom find opens formatted view');
+  closeSearchPanel(jsonSearch.view);
+  useAppStore.setState({editorKeybindings:{}});
+  await delay(60);
   click('源码'); await until(()=>getActiveView(),'JSON source');
+  check(getSearchView()===getActiveView(), 'source mode restores search target');
   const jsonView=getActiveView()!;
   jsonView.dispatch({selection:{anchor:12}});
   click('格式化视图'); await until(()=>!getActiveView(),'formatted view');
@@ -137,6 +174,8 @@ try {
   await until(()=>formatted()?.textContent?.includes('*node'),'YAML formatted view');
   check(formatted()?.textContent?.includes('---') && formatted()?.textContent?.includes('# comment'),'YAML documents and comments');
   check(useAppStore.getState().content===yamlSource && !useAppStore.getState().isDirty,'YAML viewing leaves source intact');
+  checkFormattedSearch('node', yamlSource);
+  passed.push('JSON/YAML formatted search, next/previous, read-only state, toolbar, custom shortcuts and source target');
   click('源码'); await until(()=>getActiveView(),'YAML source');
   const yamlView=getActiveView()!;
   click('格式化源码'); await until(()=>useAppStore.getState().isDirty,'YAML format');
@@ -147,6 +186,7 @@ try {
   check(host.scrollWidth<=host.clientWidth,'no horizontal overflow');
   passed.push('YAML formatted view, multi-documents, cyclic aliases, comments, source undo and compact layout');
   root.unmount(); await delay(50);
+  check(!getSearchView(), "unmount clears search target");
   if(!native) check(sessionClosed>0,'session disposed');
   if(native) {
     const session=await invoke<any>('create_preview_session',{path:htmlPath,workspaceRoot:fixtureRoot});

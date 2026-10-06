@@ -9,3 +9,10 @@ export const setActiveView = (v: EditorView | null) => {
   current = v;
 };
 export const getActiveView = (): EditorView | null => current;
+
+// A formatted preview can be searched without becoming the source-editing target.
+let previewSearchView: EditorView | null = null;
+export const setPreviewSearchView = (view: EditorView | null) => {
+  previewSearchView = view;
+};
+export const getSearchView = (): EditorView | null => previewSearchView ?? current;

@@ -52,7 +52,7 @@ import {
 } from "./lib/fs";
 import { runScopeHandlers, type EditorView } from "@codemirror/view";
 import { matchesAppCommand } from "./lib/codemirror/keybindings";
-import { getActiveView } from "./lib/codemirror/activeView";
+import { getActiveView, getSearchView } from "./lib/codemirror/activeView";
 import { handleEditorDrop } from "./lib/attachments";
 import { setFileDropCursor } from "./lib/codemirror/fileDropCursor";
 import { isWindows } from "./lib/platform";
@@ -431,7 +431,7 @@ function App() {
     const onKey = (e: KeyboardEvent) => {
       const state = useAppStore.getState();
       if (e.defaultPrevented || e.isComposing || state.presentationActive || state.loadingWorkspace) return;
-      const view = getActiveView();
+      const view = getSearchView();
       const target = e.target as HTMLElement | null;
       const inOtherInput =
         !!target && !view?.dom.contains(target) &&

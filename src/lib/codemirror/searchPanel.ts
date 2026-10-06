@@ -189,6 +189,7 @@ class FindPanel implements Panel {
     this.dom.addEventListener("mousedown", (e) => {
       if (!(e.target instanceof HTMLInputElement)) e.preventDefault();
     });
+    this.modeBtn.hidden = view.state.readOnly;
     this.dom.append(this.modeBtn, rows);
   }
 
@@ -208,6 +209,8 @@ class FindPanel implements Panel {
   }
 
   update(update: ViewUpdate) {
+    this.modeBtn.hidden = update.state.readOnly;
+    if (update.state.readOnly) this.setReplaceVisible(false);
     if (
       update.docChanged ||
       update.selectionSet ||
@@ -222,6 +225,7 @@ class FindPanel implements Panel {
   }
 
   setReplaceVisible(visible: boolean) {
+    visible = visible && !this.view.state.readOnly;
     this.replaceRow.style.display = visible ? "" : "none";
     this.modeBtn.innerHTML = visible ? icons.chevronDown : icons.chevronRight;
     if (visible) this.replaceField.focus();
