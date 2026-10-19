@@ -263,12 +263,13 @@ function HistoryMenu() {
       if (target instanceof Node && menuRef.current?.contains(target)) return;
       setOpen(false);
     };
-    document.addEventListener("mousedown", onDown);
+    // Window capture: Tauri's drag-region handler stops mousedown at the document.
+    window.addEventListener("mousedown", onDown, true);
     document.addEventListener("keydown", onKey);
     window.addEventListener("resize", onLeave);
     window.addEventListener("scroll", onScroll, true);
     return () => {
-      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("mousedown", onDown, true);
       document.removeEventListener("keydown", onKey);
       window.removeEventListener("resize", onLeave);
       window.removeEventListener("scroll", onScroll, true);

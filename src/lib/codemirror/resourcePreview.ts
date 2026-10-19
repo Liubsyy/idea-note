@@ -1,7 +1,7 @@
 import { localizeElement } from "../../i18n/dom.ts";
 import { tr } from "../../i18n/core.ts";
 import { EditorState, StateEffect, StateField } from "@codemirror/state";
-import { EditorView, WidgetType } from "@codemirror/view";
+import { EditorView, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
 import { renderInlineHtml, sanitizeHtml } from "./inlineHtml";
 import { openLinkTargetSafe } from "./linkClick";
 import { openResourcePrompt } from "./markdownActions";
@@ -35,6 +35,31 @@ export function resourceSourceVisible(state: EditorState, from: number): boolean
 export function resourceSelected(state: EditorState, from: number, to: number): boolean {
   return state.selection.ranges.some((range) => !range.empty && range.from <= from && range.to >= to);
 }
+
+/** A selection of exactly one rendered resource is shown by its outline alone.
+ * Native selection would paint as well, unevenly: an inline widget (Markdown
+ * image, file chip) sits inside the DOM selection, so WebKit tints the <img>
+ * and fills selection gaps over the blank lines above it, while an HTML <img>
+ * block gets a collapsed DOM selection beside it. Flag the scroller so the
+ * stylesheet can drop the native highlight while that selection lasts. */
+export const resourceSelectionHighlight = ViewPlugin.fromClass(class {
+  constructor(view: EditorView) { this.sync(view); }
+  update(update: ViewUpdate) {
+    if (update.selectionSet || update.docChanged || update.viewportChanged) this.sync(update.view);
+  }
+  sync(view: EditorView) {
+    view.requestMeasure({
+      key: this,
+      read: (view) => {
+        const { ranges, main } = view.state.selection;
+        return ranges.length === 1 && !main.empty && !!view.contentDOM.querySelector(
+          `.cm-md-resource-selected[data-resource-from="${main.from}"][data-resource-to="${main.to}"]`,
+        );
+      },
+      write: (only, view) => view.scrollDOM.classList.toggle("cm-resource-selection", only),
+    });
+  }
+});
 
 const SOURCE_ICON = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m18 16 4-4-4-4M6 8l-4 4 4 4m8.5-12-5 16" /></svg>';
 

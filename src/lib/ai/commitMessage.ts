@@ -1,4 +1,6 @@
-import { tr } from "../../i18n/core.ts";
+import { currentLanguage, tr } from "../../i18n/core.ts";
+import zhCommitGuide from "../../../GIT_COMMIT_GUIDE.md?raw";
+import enCommitGuide from "../../../GIT_COMMIT_GUIDE.en.md?raw";
 // One-shot AI commit-message generation for git sync. Reads the staged diff,
 // asks the configured model (no tools, no streaming UI) and returns a cleaned
 // single message. AI mode is strict: generation failures abort the sync so the
@@ -12,7 +14,13 @@ import { collectStagedChanges } from "../git";
 /** Hard cap so a hung API can't stall an (auto-)sync indefinitely. */
 const TIMEOUT_MS = 120_000;
 
-const BASE_PROMPT = () => tr("你是笔记应用的 git 提交信息生成器。根据下面的暂存区改动，生成一条简洁的中文提交信息，概括本次对笔记的新增、修改或删除。\n要求：\n- 只输出提交信息本身，不要任何解释、引号或代码块\n- 默认输出一行，不超过 50 字");
+export function defaultCommitConvention(): string {
+  return (currentLanguage() === "en" ? enCommitGuide : zhCommitGuide).trim();
+}
+
+function basePrompt(): string {
+  return tr("你是笔记应用的 Git 提交信息生成器。根据暂存区改动，遵循以下规范生成一条提交信息。只输出提交信息本身，不要解释、引号或代码块。\n\n{{0}}", { 0: defaultCommitConvention() });
+}
 
 /** Strip code fences / surrounding quotes the model may wrap the message in. */
 function cleanMessage(text: string): string {
@@ -26,7 +34,7 @@ function cleanMessage(text: string): string {
 /**
  * Generate a commit message from the currently staged changes. `convention`
  * is the user's natural-language commit spec (设置 → 远程同步 → 提交规范),
- * appended to the prompt verbatim; empty means "just summarize".
+ * appended to the localized bundled guide; empty uses that guide's defaults.
  */
 export async function generateCommitMessage(
   model: AiModel,
@@ -40,9 +48,10 @@ export async function generateCommitMessage(
     if (!stat && !diff.trim()) throw new Error(tr("暂存区没有可用于生成提交文案的改动"));
 
     const spec = convention.trim();
-    const system = spec
-      ? tr("{{0}}\n\n用户的提交规范（优先于以上默认格式，严格遵守）：\n{{1}}", { 0: BASE_PROMPT(), 1: spec })
-      : BASE_PROMPT();
+    const defaults = basePrompt();
+    const system = spec && spec !== defaultCommitConvention()
+      ? tr("{{0}}\n\n用户的提交规范（优先于以上默认格式，严格遵守）：\n{{1}}", { 0: defaults, 1: spec })
+      : defaults;
     const history: ChatMsg[] = [
       { role: "user", content: tr("变更概览：\n{{0}}\n\n变更内容：\n{{1}}", { 0: stat, 1: diff }) },
     ];

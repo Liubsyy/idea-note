@@ -381,67 +381,115 @@
    left padding (numbers would then overlap the code). */
 .cm-content .cm-code-line {
   position: relative;
-  padding-left: 3.1em;
+  padding-left: calc(var(--cm-code-line-digits, 2) * 1ch + 1.7em);
   padding-right: 1em;
 }
-/* Only the first line runs under the action row, so only it reserves space:
-   copy alone (26px + 4px right inset + 4px breathing room) or the full
-   run/output/copy trio (3 × 26px + 2 × 4px gap + 4px inset + 4px breathing
-   room). Keep in sync with .cm-md-code-actions. */
-.cm-content .cm-code-first {
-  padding-right: 34px;
-}
-.cm-content .cm-code-first.cm-code-runnable {
-  padding-right: 94px;
+/* A dedicated title row keeps controls clear of code and line numbers. */
+.cm-content .cm-code-line {
+  --cm-code-header-height: 40px;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
 }
 .cm-content .cm-code-line::before {
   content: attr(data-ln);
   position: absolute;
   left: 0;
   top: 0;
-  bottom: 0;
-  width: 2em;
+  box-sizing: content-box;
+  width: calc(var(--cm-code-line-digits, 2) * 1ch);
+  padding-left: 0.6em;
   padding-right: 0.6em;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+  text-indent: 0;
   text-align: right;
   color: var(--text-muted);
   opacity: 0.7;
-  border-right: 1px solid var(--border);
   -webkit-user-select: none;
   user-select: none;
   pointer-events: none;
 }
-/* The code-bg is painted per line; rounding only the first/last lines makes the
-   edges look broken against the square middle lines. Keep the band flat and
-   continuous — the 1.75 line-height already gives each line its own padding. */
-
-/* Breathing room at the block's top/bottom edges (the ``` fences are collapsed,
-   so the first/last code lines are the visual edges). The first line's gutter
-   number is padded by the same amount so it stays aligned with its code. */
 .cm-content .cm-code-first {
-  padding-top: 0.7em;
+  padding-top: calc(var(--cm-code-header-height) + 0.7em);
+  border-top: 1px solid var(--border);
+  border-top-left-radius: 9px;
+  border-top-right-radius: 9px;
 }
 .cm-content .cm-code-first::before {
-  padding-top: 0.7em;
+  padding-top: calc(var(--cm-code-header-height) + 0.7em);
 }
 .cm-content .cm-code-last {
   padding-bottom: 0.7em;
+  border-bottom: 1px solid var(--border);
+  border-bottom-left-radius: 9px;
+  border-bottom-right-radius: 9px;
 }
-
-/* Action buttons floated in the code block's top-right corner. The row is a widget on the
-   first code line (already position:relative for the line-number gutter), so it
-   sits in the block's top padding. Always visible and styled as a solid,
-   obviously-clickable control — a faint/ghosted chip reads as disabled. */
-/* Action row (run / output / copy) pinned to a code block's first line. One flex
-   container so the buttons don't need hard-coded offsets from each other. */
-.cm-md-code-actions {
+.cm-content .cm-code-collapsed {
+  padding-top: var(--cm-code-header-height);
+  padding-bottom: 0;
+  font-size: 0;
+  line-height: 0;
+}
+.cm-code-collapsed::before {
+  display: none;
+}
+.cm-md-code-header {
   position: absolute;
-  top: 4px;
-  right: 4px;
-  z-index: 2;
+  box-sizing: border-box;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--cm-code-header-height);
+  padding: 0 8px;
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font-size: 12px;
+  line-height: 1.4;
+  text-indent: 0;
+  color: var(--text-soft);
+  -webkit-user-select: none;
+  user-select: none;
+}
+.cm-code-collapsed .cm-md-code-header {
+  border-bottom-color: transparent;
+}
+.cm-md-code-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 4px;
+  color: var(--text-soft);
+  font: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+}
+.cm-content .cm-md-code-language {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--text);
+}
+.cm-content .cm-md-code-count {
+  flex-shrink: 0;
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+.cm-md-code-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
   gap: 4px;
 }
-
 .cm-md-code-action-btn {
   display: flex;
   width: 26px;
@@ -454,35 +502,53 @@
   border: 1px solid var(--border);
   border-radius: 6px;
   cursor: pointer;
+  flex-shrink: 0;
   transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.cm-md-code-header svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.cm-md-code-fold-btn {
+  cursor: pointer;
 }
 .cm-md-code-action-btn svg {
   width: 12px;
   height: 12px;
-  fill: none;
-  stroke: currentColor;
   stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
-.cm-md-code-action-btn:hover {
+.cm-md-code-action-btn:hover,
+.cm-md-code-fold-btn:hover {
   color: var(--text);
   background: var(--hover);
+}
+.cm-md-code-action-btn:active,
+.cm-md-code-fold-btn:active {
+  background: var(--active);
+}
+.cm-md-code-action-btn:hover {
   border-color: var(--text-muted);
 }
 .cm-md-code-action-btn:active {
-  background: var(--active);
   border-color: var(--accent);
+}
+.cm-md-code-action-done,
+.cm-md-run-btn {
+  color: var(--accent);
 }
 .cm-md-code-action-done {
   opacity: 1;
-  color: var(--accent);
   border-color: var(--accent);
 }
-
-/* Run reads as the primary action of the pair. */
-.cm-md-run-btn {
-  color: var(--accent);
+@media (max-width: 480px) {
+  .cm-md-code-header { padding: 0 4px; gap: 4px; }
+  .cm-md-code-meta { gap: 5px; }
 }
 
 /* List items — indent is set inline per line (padding-left, derived from the
@@ -560,6 +626,18 @@
   outline-offset: 2px;
   background: var(--hover);
 }
+/* Selection is exactly one resource (resourceSelectionHighlight): the outline
+   above is its only highlight, for Markdown and HTML images alike. Three
+   classes so this beats the theme's `.cm-content ::selection`. The caret goes
+   too: an HTML <img> block maps the DOM selection to a caret on the line
+   beside it, which would blink under the selected image. */
+.cm-scroller.cm-resource-selection .cm-content::selection,
+.cm-scroller.cm-resource-selection .cm-content ::selection {
+  background: transparent;
+}
+.cm-scroller.cm-resource-selection .cm-content {
+  caret-color: transparent;
+}
 .cm-mod-down .cm-md-resource {
   cursor: pointer;
 }
@@ -613,6 +691,14 @@
 }
 .cm-md-image-wrap.cm-md-resource-editable {
   max-width: calc(100% - 26px);
+}
+/* The wrap owns every image interaction (bindResourcePreview), so keep the
+   mouse off the <img>. WebKit runs Live Text OCR on an <img> hovered for 250ms
+   and lays the recognised words over it in a shadow root whose
+   `::selection { background-color: highlight }` no page CSS can override;
+   selecting the image then lit up every word in the picture. */
+.cm-md-image-wrap img {
+  pointer-events: none;
 }
 
 .cm-md-image {
@@ -1261,6 +1347,7 @@
 
 .cm-md-input-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5em;
   margin-bottom: 0.6em;
@@ -1286,6 +1373,19 @@
   color: var(--text);
   background: var(--hover);
   border-color: var(--text-muted);
+}
+.cm-md-input-run {
+  color: var(--accent);
+}
+.cm-md-input-run-target {
+  min-width: 0;
+  max-width: 12em;
+  padding: 0.15em 0.4em;
+  color: var(--text-soft);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 0.8em;
 }
 
 /* Label column sized to its content so short and long names stay aligned. */

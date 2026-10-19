@@ -10,6 +10,10 @@ import { tr } from "../../i18n/core.ts";
 // until their source button is explicitly pressed.
 
 import {
+  codeFolding,
+  foldEffect,
+  foldedRanges,
+  unfoldEffect,
   ensureSyntaxTree,
   syntaxTree,
   syntaxTreeAvailable,
@@ -32,6 +36,7 @@ import {
   isResourceLink,
   ResourceWidget,
   resourceSelected,
+  resourceSelectionHighlight,
   resourceSourceField,
   resourceSourceVisible,
   setResourceSource,
@@ -155,17 +160,27 @@ class ImageWidget extends WidgetType {
     super();
   }
   eq(o: ImageWidget) {
+    return o.selected === this.selected && this.sameImage(o);
+  }
+  sameImage(o: ImageWidget) {
     return (
       o.url === this.url &&
       o.alt === this.alt &&
       o.title === this.title &&
       o.from === this.from &&
       o.to === this.to &&
-      o.selected === this.selected &&
       o.readOnly === this.readOnly &&
       o.size.width === this.size.width &&
       o.size.height === this.size.height
     );
+  }
+  // Selecting only restyles the outline. Rebuilding would swap in a fresh
+  // <img>, which lays out at zero height until it decodes, so the image (and
+  // everything below it) flashed on every click.
+  updateDOM(dom: HTMLElement, _view: EditorView, prev: ImageWidget) {
+    if (!this.sameImage(prev)) return false;
+    dom.classList.toggle("cm-md-resource-selected", this.selected);
+    return true;
   }
   toDOM(view: EditorView) {
     const wrap = document.createElement("span");
@@ -291,9 +306,11 @@ class BrWidget extends WidgetType {
   }
 }
 
-type CodeActionIcon = "play" | "panelOpen" | "panelClose" | "copy" | "check";
+type CodeActionIcon = "play" | "panelOpen" | "panelClose" | "copy" | "check" | "collapse" | "expand";
 
 const CODE_ACTION_ICON_PATHS: Record<CodeActionIcon, string[]> = {
+  collapse: ["m6 9 6 6 6-6"],
+  expand: ["m9 6 6 6-6 6"],
   play: ["M6 3l14 9-14 9V3z"],
   panelOpen: ["M3 3h18v18H3z", "M15 3v18", "m7 9 3 3-3 3"],
   panelClose: ["M3 3h18v18H3z", "M15 3v18", "m10 9-3 3 3 3"],
@@ -326,26 +343,61 @@ function setRunPanelButtonState(button: HTMLButtonElement, open: boolean): void 
 
 const CODE_ACTION_CLEANUPS = new WeakMap<HTMLElement, () => void>();
 
-/** The action buttons floated in a code block's top-right corner: "运行" and
- *  "输出" when the fence's language has an enabled runner, plus "复制". They
- *  share one absolutely positioned row so none has to know the others' width.
- *  Anchored to the first code line, which CSS makes `position: relative`. */
+/** A header anchored above the first code line, retained when its body folds. */
 class CodeActionsWidget extends WidgetType {
   constructor(
     readonly code: string,
     /** Info string when the block is runnable, else null (no run button). */
     readonly runInfo: string | null,
+    readonly foldFrom: number,
+    readonly foldTo: number,
+    readonly collapsed: boolean,
+    readonly language: string,
+    readonly lineCount: number,
   ) {
     super();
   }
   eq(o: CodeActionsWidget) {
-    return o.code === this.code && o.runInfo === this.runInfo;
+    return o.code === this.code && o.runInfo === this.runInfo &&
+      o.foldFrom === this.foldFrom && o.foldTo === this.foldTo && o.collapsed === this.collapsed &&
+      o.language === this.language && o.lineCount === this.lineCount;
   }
   toDOM(view: EditorView) {
     const wrap = document.createElement("div");
-    wrap.className = "cm-md-code-actions";
+    wrap.className = "cm-md-code-header";
+    wrap.contentEditable = "false";
     // Don't let a press move the editor cursor or steal focus.
     wrap.addEventListener("mousedown", (e) => e.preventDefault());
+
+    const foldable = this.foldFrom < this.foldTo;
+    const toggle = document.createElement(foldable ? "button" : "span");
+    toggle.className = "cm-md-code-meta";
+    if (toggle instanceof HTMLButtonElement) {
+      toggle.type = "button";
+      toggle.classList.add("cm-md-code-fold-btn");
+      const label = () => this.collapsed ? tr("展开代码块") : tr("折叠代码块");
+      localizeElement(toggle, "title", label);
+      localizeElement(toggle, "ariaLabel", label);
+      toggle.setAttribute("aria-expanded", String(!this.collapsed));
+      setCodeActionIcon(toggle, this.collapsed ? "expand" : "collapse");
+      toggle.addEventListener("click", () => {
+        view.dispatch({ effects: (this.collapsed ? unfoldEffect : foldEffect).of({
+          from: this.foldFrom, to: this.foldTo,
+        }) });
+      });
+    }
+    const language = document.createElement("span");
+    language.className = "cm-md-code-language";
+    const languageNames: Record<string, string> = { javascript: "JavaScript", typescript: "TypeScript", python: "Python", json: "JSON", html: "HTML", css: "CSS", sql: "SQL" };
+    localizeElement(language, "textContent", () => languageNames[this.language] || this.language || tr("代码块"));
+    const count = document.createElement("span");
+    count.className = "cm-md-code-count";
+    localizeElement(count, "textContent", () => tr("{{0}} 行", { 0: this.lineCount }));
+    toggle.append(language, count);
+    wrap.append(toggle);
+    const actions = document.createElement("div");
+    actions.className = "cm-md-code-actions";
+    wrap.append(actions);
 
     if (this.runInfo !== null) {
       const run = document.createElement("button");
@@ -360,7 +412,6 @@ class CodeActionsWidget extends WidgetType {
         // the click carries the block's parameters with it.
         void runBlock(view, this.runInfo ?? "", this.code);
       });
-      wrap.append(run);
 
       const output = document.createElement("button");
       output.type = "button";
@@ -370,7 +421,7 @@ class CodeActionsWidget extends WidgetType {
         e.preventDefault();
         useAppStore.getState().toggleRunPanel();
       });
-      wrap.append(output);
+      actions.append(run, output);
 
       const unsubscribe = useAppStore.subscribe((state, previous) => {
         if (state.runPanelOpen !== previous.runPanelOpen) {
@@ -404,7 +455,7 @@ class CodeActionsWidget extends WidgetType {
         })
         .catch(() => useAppStore.getState().showToast(tr("复制失败"), "error"));
     });
-    wrap.append(btn);
+    actions.append(btn);
     return wrap;
   }
   ignoreEvent() {
@@ -475,6 +526,8 @@ function buildDecorations(view: EditorView): DecorationSet {
   // nodes, so we skip those to avoid overlapping replace decorations.
   let coveredTo = 0;
   const renderedImageLines = new Set<number>();
+  // A folded body splits visibleRanges, so its enclosing node may be visited twice.
+  const renderedCodeBlocks = new Set<number>();
 
   for (const { from, to } of view.visibleRanges) {
     tree.iterate({
@@ -576,15 +629,19 @@ function buildDecorations(view: EditorView): DecorationSet {
             return;
           case "FencedCode":
           case "CodeBlock": {
+            if (renderedCodeBlocks.has(nFrom)) return false;
+            renderedCodeBlocks.add(nFrom);
             const a = state.doc.lineAt(nFrom).number;
             const b = state.doc.lineAt(nTo).number;
             const fenced = name === "FencedCode";
+            let collapsed = false;
+            foldedRanges(state).between(nFrom, nTo, () => { collapsed = true; });
             // Reveal the ``` fences whenever the cursor is anywhere inside the
             // block (not only on the fence line itself — which is collapsed and
             // unreachable), so you can see and edit the full source.
             let blockActive = false;
             for (let n = a; n <= b; n++)
-              if (active.has(n)) {
+              if (!collapsed && active.has(n)) {
                 blockActive = true;
                 break;
               }
@@ -641,21 +698,27 @@ function buildDecorations(view: EditorView): DecorationSet {
                 fenceInfo.lang,
                 useAppStore.getState().codeRunConfig,
               ) !== null;
-            // Number the real code lines (1-based, per block) for the gutter.
-            // Only the first line sits under the action buttons, so only it
-            // reserves right padding — wider when run/output join copy.
+            const foldFrom = codeLines.length ? state.doc.line(codeLines[0]).from : 0;
+            // Diagram and input blocks already have their own preview controls.
+            const specialized = fenced && (MERMAID_FENCE.test(state.doc.line(a).text) || INPUT_FENCE.test(state.doc.line(a).text));
+            const foldTo = codeLines.length && !specialized ? state.doc.line(codeLines[codeLines.length - 1]).to : foldFrom;
+            // Reserve a separate header above the first line, keeping the gutter intact.
+            const lineDigits = Math.max(2, String(codeLines.length).length);
             codeLines.forEach((n, i) => {
               const ln = state.doc.line(n);
               const cls =
                 "cm-md-codeblock cm-code-line" +
                 (plain ? " cm-code-plain" : "") +
                 (i === 0 ? " cm-code-first" : "") +
-                (i === 0 && runnable ? " cm-code-runnable" : "") +
-                (i === codeLines.length - 1 ? " cm-code-last" : "");
+                (i === 0 && collapsed ? " cm-code-collapsed" : "") +
+                (i === codeLines.length - 1 || collapsed ? " cm-code-last" : "");
               ranges.push(
                 Decoration.line({
                   class: cls,
-                  attributes: { "data-ln": String(i + 1) },
+                  attributes: {
+                    "data-ln": String(i + 1),
+                    style: `--cm-code-line-digits:${lineDigits}`,
+                  },
                 }).range(ln.from),
               );
             });
@@ -671,7 +734,7 @@ function buildDecorations(view: EditorView): DecorationSet {
                 .join("\n");
               ranges.push(
                 Decoration.widget({
-                  widget: new CodeActionsWidget(code, runnable ? rawInfo : null),
+                  widget: new CodeActionsWidget(code, runnable ? rawInfo : null, foldFrom, foldTo, collapsed, fenceInfo.lang, codeLines.length),
                   side: -1,
                 }).range(state.doc.line(codeLines[0]).from),
               );
@@ -1084,6 +1147,7 @@ const livePreviewPlugin = ViewPlugin.fromClass(
         u.selectionSet ||
         u.viewportChanged ||
         u.focusChanged ||
+        foldedRanges(u.startState) !== foldedRanges(u.state) ||
         // Switching in/out of read-only mode changes whether the cursor line is
         // revealed as source, so rebuild when the readOnly facet toggles.
         u.startState.readOnly !== u.state.readOnly ||
@@ -1101,7 +1165,40 @@ const livePreviewPlugin = ViewPlugin.fromClass(
   },
 );
 
-export const livePreview = [resourceSourceField, livePreviewPlugin];
+const codeBlockFolding = codeFolding({
+  placeholderDOM() {
+    // All visible controls and metadata live in the persistent header.
+    const placeholder = document.createElement("span");
+    placeholder.setAttribute("aria-hidden", "true");
+    return placeholder;
+  },
+});
+
+/** Component source is secondary to its controls/output. Apply this only when
+ * opening a preview without a valid session snapshot, never on every render. */
+export function defaultComponentFoldEffects(state: EditorState) {
+  const effects: StateEffect<{ from: number; to: number }>[] = [];
+  const tree = ensureSyntaxTree(state, state.doc.length, 100) ?? syntaxTree(state);
+  tree.iterate({ enter(node) {
+    if (node.name !== "FencedCode") return;
+    const first = state.doc.lineAt(node.from);
+    const last = state.doc.lineAt(node.to);
+    const opening = openingFenceOf(first.text);
+    if (!opening || !isCloseFenceFor(last.text, opening)) return false;
+    const { lang, attrs } = parseFenceInfo(opening.info);
+    // Input controls, diagrams and encrypted cards have their own renderers.
+    if (!lang || lang === "input" || lang === "mermaid" || lang === "secret") return false;
+    if (!attrs.input && !attrs.outExplicit && !attrs.outAuto && attrs.triggers.length === 0) return false;
+    if (last.number <= first.number + 1) return false;
+    const from = state.doc.line(first.number + 1).from;
+    const to = state.doc.line(last.number - 1).to;
+    if (from < to) effects.push(foldEffect.of({ from, to }));
+    return false;
+  } });
+  return effects;
+}
+
+export const livePreview = [resourceSourceField, resourceSelectionHighlight, codeBlockFolding, livePreviewPlugin];
 
 /**
  * Dispatched by {@link syntaxParseDriver} once async parsing has advanced, so

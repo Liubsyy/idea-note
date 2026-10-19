@@ -98,32 +98,51 @@ export const takePendingOpenFiles = () =>
 export const writeFile = (path: string, content: string) =>
   invoke<void>("write_file", { path, content });
 
+let pathsCreated: (paths: string[]) => void = () => {};
+/** Register the one listener told about paths the app itself just created
+ *  (new, pasted, dropped, renamed or moved files), so the store can add them
+ *  to git. */
+export function onPathsCreated(listener: (paths: string[]) => void): void {
+  pathsCreated = listener;
+}
+/** Report paths the app created by other means (e.g. saving a draft). */
+export function notifyPathsCreated(paths: (string | null | undefined)[]): void {
+  const created = paths.filter((p): p is string => !!p);
+  if (created.length) pathsCreated(created);
+}
+/** Resolve a creating command and report what it created. */
+export async function reportCreated<T extends string | string[] | null>(request: Promise<T>): Promise<T> {
+  const result = await request;
+  notifyPathsCreated(Array.isArray(result) ? result : [result]);
+  return result;
+}
+
 /** Write raw bytes into `dir/name` (created if needed; clashes get a " 2"
  *  suffix). Returns the path actually written. Backs pasting an image blob. */
 export const writeBinaryFile = (dir: string, name: string, data: number[]) =>
-  invoke<string>("write_binary_file", { dir, name, data });
+  reportCreated(invoke<string>("write_binary_file", { dir, name, data }));
 
 /** Copy an existing file into `dir` under `name`. Returns the created path.
  *  Backs pasting a real file that was copied in Finder/Explorer into a note. */
 export const saveFileToDir = (src: string, dir: string, name: string) =>
-  invoke<string>("save_file_to_dir", { src, dir, name });
+  reportCreated(invoke<string>("save_file_to_dir", { src, dir, name }));
 
 export const createFile = (dir: string, name: string) =>
-  invoke<string>("create_file", { dir, name });
+  reportCreated(invoke<string>("create_file", { dir, name }));
 
 /** Create a file with the exact given name (extension required, no `.md` defaulting). */
 export const createRawFile = (dir: string, name: string) =>
-  invoke<string>("create_raw_file", { dir, name });
+  reportCreated(invoke<string>("create_raw_file", { dir, name }));
 
 export const createFolder = (dir: string, name: string) =>
   invoke<string>("create_folder", { dir, name });
 
 export const renamePath = (path: string, newName: string) =>
-  invoke<string>("rename", { path, newName });
+  reportCreated(invoke<string>("rename", { path, newName }));
 
 /** Move `path` into `destDir`, keeping its name. Returns the new path. */
 export const movePath = (path: string, destDir: string) =>
-  invoke<string>("move_path", { path, destDir });
+  reportCreated(invoke<string>("move_path", { path, destDir }));
 
 export const deletePath = (path: string) => invoke<void>("delete", { path });
 

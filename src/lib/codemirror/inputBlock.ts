@@ -38,6 +38,10 @@ import {
 import { inputKey, useInputStore, valuesFor } from "../../store/useInputStore";
 import { useAppStore } from "../../store/useAppStore";
 import { canInteract, presentationInteraction } from "./interaction";
+import { inputRunTargets, type InputRunTarget } from "../codeRun/inputRunTargets";
+import { parseFenceInfo } from "../codeRun/fenceAttrs";
+import { runBlock } from "../codeRun/runBlock";
+import { codeRunnersChanged } from "./livePreview";
 
 const el = <K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -346,6 +350,7 @@ class InputWidget extends WidgetType {
     readonly filePath: string,
     readonly editable: boolean,
     readonly interactive: boolean,
+    readonly runTargets: InputRunTarget[],
   ) {
     super();
   }
@@ -358,7 +363,9 @@ class InputWidget extends WidgetType {
       o.block.from === this.block.from &&
       o.filePath === this.filePath &&
       o.editable === this.editable &&
-      o.interactive === this.interactive
+      o.interactive === this.interactive &&
+      o.runTargets.length === this.runTargets.length &&
+      o.runTargets.every((target, i) => target.info === this.runTargets[i].info && target.code === this.runTargets[i].code)
     );
   }
   get estimatedHeight() {
@@ -389,12 +396,42 @@ class InputWidget extends WidgetType {
     }
 
     if (this.interactive) {
+      // Multiple code blocks may consume one input block. Let the user choose
+      // one rather than launching several or replacing confirmation dialogs.
+      let targetPicker: HTMLSelectElement | undefined;
+      if (this.runTargets.length > 1) {
+        targetPicker = el("select", "cm-md-input-run-target");
+        localizeElement(targetPicker, "ariaLabel", () => tr("选择要运行的代码块"));
+        this.runTargets.forEach((target, index) => {
+          const option = el("option");
+          option.value = String(index);
+          option.textContent = `${parseFenceInfo(target.info).lang} · ${target.code.split("\n").find(line => line.trim())?.trim().slice(0, 60) ?? ""}`;
+          targetPicker!.append(option);
+        });
+        head.append(targetPicker);
+      }
       const reset = el("button", "cm-md-input-btn");
       reset.type = "button";
       localizeElement(reset, "textContent", () => tr("重置"));
       localizeElement(reset, "title", () => tr("恢复笔记里写的默认值"));
       reset.addEventListener("click", () => useInputStore.getState().reset(key));
       head.append(reset);
+      if (this.runTargets.length) {
+        const run = el("button", "cm-md-input-btn cm-md-input-run");
+        run.type = "button";
+        localizeElement(run, "textContent", () => tr("运行"));
+        localizeElement(run, "title", () => tr("运行代码块"));
+        localizeElement(run, "ariaLabel", () => tr("运行代码块"));
+        run.addEventListener("click", async () => {
+          if (!view.dom.isConnected || !canInteract(view.state) ||
+              useAppStore.getState().activeFilePath !== this.filePath) return;
+          const targets = inputRunTargets(view.state.doc, useAppStore.getState().codeRunConfig)
+            .filter(target => target.inputId === this.block.id);
+          const target = targets[Number(targetPicker?.value ?? 0)];
+          if (target) await runBlock(view, target.info, target.code);
+        });
+        head.append(run);
+      }
     }
     card.append(head);
 
@@ -470,6 +507,7 @@ const CLEANUPS = new WeakMap<HTMLElement, () => void>();
 function buildInputs(state: EditorState): DecorationSet {
   const ranges: Range<Decoration>[] = [];
   const filePath = useAppStore.getState().activeFilePath ?? "";
+  const runTargets = inputRunTargets(state.doc, useAppStore.getState().codeRunConfig);
   for (const block of scanInputBlocks(state.doc)) {
     const inside =
       !state.readOnly &&
@@ -477,7 +515,7 @@ function buildInputs(state: EditorState): DecorationSet {
     if (inside) continue;
     ranges.push(
       Decoration.replace({
-        widget: new InputWidget(block, filePath, !state.readOnly, canInteract(state)),
+        widget: new InputWidget(block, filePath, !state.readOnly, canInteract(state), runTargets.filter(target => target.inputId === block.id)),
         block: true,
       }).range(block.from, block.to),
     );
@@ -491,6 +529,7 @@ export const inputBlock = StateField.define<DecorationSet>({
     if (
       tr.docChanged ||
       tr.selection ||
+      tr.effects.some(effect => effect.is(codeRunnersChanged)) ||
       tr.startState.readOnly !== tr.state.readOnly ||
       tr.startState.facet(presentationInteraction) !== tr.state.facet(presentationInteraction)
     )

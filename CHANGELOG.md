@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.2.7
+
+**简体中文**
+
+**主要更新**
+
+- 新增分支管理：查看本地与远程分支，支持切换、新建、重命名和确认后删除已合并的本地分支。
+- 新增手动同步：选择文件提交或提交并推送，支持 AI 文案、差异预览和确认后撤销；新文件支持添加到 Git 或忽略，自动提交可配置。
+
+**优化与修复**
+
+- 代码块支持折叠并记住状态，可交互组件默认折叠；参数组件支持直接运行代码。
+- 侧栏新增定位当前文件、全部展开/折叠和 `.gitignore` 管理，简化新建与同步菜单；同步菜单可直达远程同步设置。
+- AI 提交文案采用中英文 Conventional Commits 规范，支持自动填充和自定义。
+- 立即同步、手动同步、历史记录和分支管理支持自定义快捷键，菜单同步显示当前绑定。
+- 优化图片选中和菜单交互，修复异常高亮、闪烁、多余光标及英文文字截断。
+
+**English**
+
+**Major updates**
+
+- Added branch management for local and remote branches, with switching, creation, renaming, and confirmed deletion of merged local branches.
+- Added Manual sync with file selection, Commit only or Commit and push, AI messages, diff previews, and confirmed discard. New files can be added to Git or ignored; automatic committing is configurable.
+
+**Improvements and fixes**
+
+- Added persistent code block folding, with interactive components collapsed by default, and direct code execution from input components.
+- Added Locate current file, Expand/Collapse all, and .gitignore management; simplified creation and sync menus, with direct access to remote sync settings.
+- AI commit messages use Chinese and English Conventional Commits guidelines with automatic defaults and customization.
+- Added customizable shortcuts for Sync now, Manual sync, History, and Branch manager, with current bindings shown in the menu.
+- Improved image selection and menu interactions, fixing unwanted highlighting, flicker, stray carets, and truncated English labels.
+
 ## 1.2.6
 
 **简体中文**

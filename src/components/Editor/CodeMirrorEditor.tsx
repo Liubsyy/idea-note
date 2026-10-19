@@ -1,7 +1,7 @@
 import { tr } from "../../i18n/core.ts";
 import { useLanguage } from "../../i18n/react";
 import { useEffect, useRef, useState } from "react";
-import { Compartment, EditorState, type StateEffect } from "@codemirror/state";
+import { Compartment, EditorState, type StateEffect, type Text } from "@codemirror/state";
 import {
   EditorView,
   dropCursor,
@@ -9,12 +9,13 @@ import {
 } from "@codemirror/view";
 import { history } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { LanguageDescription } from "@codemirror/language";
+import { LanguageDescription, foldEffect, foldedRanges, foldState } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import { GFM } from "@lezer/markdown";
 
 import {
   codeRunnersChanged,
+  defaultComponentFoldEffects,
   livePreview,
   syntaxParseDriver,
 } from "../../lib/codemirror/livePreview";
@@ -100,14 +101,46 @@ function modeExtensions(mode: MdViewMode, showLineNumbers: boolean) {
   return previewPlugins;
 }
 
-// Per-file cursor + scroll position, captured when a file's editor unmounts
-// and restored when that file mounts again. The editor is recreated on every
-// tab switch (App keys it on docKey), so without this each switch would land
-// at the top of the document.
+type FoldSnapshot = {
+  documentKey: string;
+  ranges: { from: number; to: number }[];
+};
+
+// Weak keys avoid retaining closed documents. An immutable document is scanned
+// once; cursor moves and scrolling reuse its small content checksum.
+const documentKeys = new WeakMap<Text, string>();
+function documentKey(doc: Text): string {
+  const cached = documentKeys.get(doc);
+  if (cached !== undefined) return cached;
+  let first = 0x811c9dc5;
+  let second = 0x9e3779b9;
+  for (const chunk of doc.iter()) {
+    for (let i = 0; i < chunk.length; i++) {
+      const char = chunk.charCodeAt(i);
+      first = Math.imul(first ^ char, 0x01000193);
+      second = Math.imul(second ^ char, 0x85ebca6b);
+    }
+  }
+  const key = `${doc.length}:${first >>> 0}:${second >>> 0}`;
+  documentKeys.set(doc, key);
+  return key;
+}
+
+// Session-only, bounded view metadata. Neither folds nor scroll snapshots hold
+// a document, editor state or DOM. Least recently used entries are discarded.
+const VIEW_STATE_CACHE_LIMIT = 100;
 const viewStateCache = new Map<
   string,
-  { anchor: number; head: number; scroll: StateEffect<unknown> }
+  { anchor: number; head: number; scroll: StateEffect<unknown>; folds?: FoldSnapshot }
 >();
+
+function restoreFoldEffects(state: EditorState, snapshot?: FoldSnapshot) {
+  // Positions are safe only for the document they were captured from. An
+  // externally changed note uses defaults instead of stale fold positions.
+  if (!state.field(foldState, false)) return [];
+  if (!snapshot || documentKey(state.doc) !== snapshot.documentKey) return defaultComponentFoldEffects(state);
+  return snapshot.ranges.map(range => foldEffect.of(range));
+}
 
 /**
  * CodeMirror 6 surface with Typora-style live preview: the document is plain
@@ -151,7 +184,20 @@ export function CodeMirrorEditor({ active = true }: { active?: boolean }) {
     const captureViewState = (v: EditorView) => {
       if (!path) return;
       const { anchor, head } = v.state.selection.main;
-      viewStateCache.set(path, { anchor, head, scroll: v.scrollSnapshot() });
+      // Source mode removes the folding extension; keep the last preview
+      // snapshot until preview returns, without interpreting that as unfold-all.
+      let folds = viewStateCache.get(path)?.folds;
+      if (v.state.field(foldState, false)) {
+        const ranges: FoldSnapshot["ranges"] = [];
+        foldedRanges(v.state).between(0, v.state.doc.length, (from, to) => {
+          ranges.push({ from, to });
+        });
+        folds = { documentKey: documentKey(v.state.doc), ranges };
+      }
+      viewStateCache.delete(path);
+      viewStateCache.set(path, { anchor, head, scroll: v.scrollSnapshot(), folds });
+      if (viewStateCache.size > VIEW_STATE_CACHE_LIMIT)
+        viewStateCache.delete(viewStateCache.keys().next().value!);
     };
 
     const updateListener = EditorView.updateListener.of((u) => {
@@ -167,8 +213,9 @@ export function CodeMirrorEditor({ active = true }: { active?: boolean }) {
         setActiveFormats(
           u.state.readOnly ? emptyFormats : computeActiveFormats(u.state),
         );
-        captureViewState(u.view);
       }
+      if (u.docChanged || u.selectionSet || foldedRanges(u.startState) !== foldedRanges(u.state))
+        captureViewState(u.view);
     });
 
     const common = [
@@ -275,8 +322,14 @@ export function CodeMirrorEditor({ active = true }: { active?: boolean }) {
           anchor: Math.min(cached.anchor, len),
           head: Math.min(cached.head, len),
         },
-        effects: cached.scroll,
       });
+      // Restore folds after selection: CodeMirror unfolds a range touched by
+      // an explicit selection in the same transaction. Keep that behavior for
+      // later navigation/search, but not for this cached cursor restoration.
+      view.dispatch({ effects: [...restoreFoldEffects(view.state, cached.folds), cached.scroll] });
+    } else {
+      const effects = restoreFoldEffects(view.state);
+      if (effects.length) view.dispatch({ effects });
     }
 
     // Auto-hiding scrollbar: reveal the thumb while scrolling, hide it after a
@@ -356,6 +409,8 @@ export function CodeMirrorEditor({ active = true }: { active?: boolean }) {
     if (!path || (!isMarkdownFile(path) && !isDraftPath(path))) return;
     const applyMode = () => {
       if (viewRef.current !== view) return;
+      const hadFolding = !!view.state.field(foldState, false);
+      const savedFolds = viewStateCache.get(path)?.folds;
       view.dispatch({
         effects: previewCompartment.current.reconfigure(
           modeExtensions(
@@ -364,6 +419,10 @@ export function CodeMirrorEditor({ active = true }: { active?: boolean }) {
           ),
         ),
       });
+      if (!hadFolding) {
+        const effects = restoreFoldEffects(view.state, savedFolds);
+        if (effects.length) view.dispatch({ effects });
+      }
     };
     // Encrypt anything still pending in a nested block editor before the
     // reconfigure tears those editors down. In source mode the user is about to

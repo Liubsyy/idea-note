@@ -349,6 +349,26 @@ function unquotePath(s: string): string {
  * Paths are repo-root-relative, matching `CommitFile` from commits.
  */
 export async function listWorkingChanges(dir: string, relPath = ""): Promise<CommitFile[]> {
+  // Untracked (??) reads as "new file" here.
+  return (await readStatus(dir, relPath)).map(({ untracked, ...file }) =>
+    untracked ? { ...file, status: "A" } : file,
+  );
+}
+
+/** Working changes split for 手动同步: tracked changes (including files added
+ *  but never committed) versus untracked files, which are never committed
+ *  until added. Paths are repo-root-relative. */
+export async function listCommitCandidates(
+  dir: string,
+): Promise<{ changes: CommitFile[]; untracked: string[] }> {
+  const entries = await readStatus(dir);
+  return {
+    changes: entries.filter((e) => !e.untracked).map(({ untracked: _, ...file }) => file),
+    untracked: entries.filter((e) => e.untracked).map((e) => e.path),
+  };
+}
+
+async function readStatus(dir: string, relPath = ""): Promise<(CommitFile & { untracked: boolean })[]> {
   const rel = relPath.replace(/\\/g, "/");
   // -uall lists files inside untracked directories individually instead of
   // collapsing them to "dir/".
@@ -356,7 +376,7 @@ export async function listWorkingChanges(dir: string, relPath = ""): Promise<Com
   if (rel) args.push("--", "./" + rel);
   const out = await gitOk(dir, args);
 
-  const files: CommitFile[] = [];
+  const files: (CommitFile & { untracked: boolean })[] = [];
   for (const line of out.stdout.split("\n")) {
     if (!line.trim()) continue;
     const x = line[0];
@@ -368,11 +388,11 @@ export async function listWorkingChanges(dir: string, relPath = ""): Promise<Com
       oldPath = unquotePath(rest.slice(0, arrow));
       rest = rest.slice(arrow + 4);
     }
-    // Untracked (??) reads as "new file"; otherwise prefer the staged column.
-    const status = x === "?" ? "A" : x === " " ? y : x;
+    // Prefer the staged column; " A" is an intent-to-add (added, not staged).
     files.push({
-      status,
+      status: x === "?" ? "?" : x === " " ? y : x,
       path: unquotePath(rest),
+      untracked: x === "?",
       ...(oldPath ? { oldPath } : {}),
     });
   }
@@ -385,7 +405,7 @@ async function pathExistsAtHead(dir: string, path: string): Promise<boolean> {
 }
 
 async function pathKnownToIndex(dir: string, path: string): Promise<boolean> {
-  const out = await gitRun(dir, ["ls-files", "--error-unmatch", "--", path]);
+  const out = await gitRun(dir, ["--literal-pathspecs", "ls-files", "--error-unmatch", "--", path]);
   return out.code === 0;
 }
 
@@ -403,10 +423,11 @@ export async function discardWorkingChanges(
     ),
   );
   if (targets.length === 0) return;
+  const root = await getRepoRoot(dir);
 
-  if (!(await hasCommits(dir))) {
-    await gitRun(dir, ["rm", "-r", "--cached", "--ignore-unmatch", "--", ...targets]);
-    await gitOk(dir, ["clean", "-fd", "--", ...files.map((f) => f.path)]);
+  if (!(await hasCommits(root))) {
+    await gitPaths(root, ["rm", "-r", "--cached", "--ignore-unmatch"], targets);
+    await gitPaths(root, ["clean", "-fd"], files.map((f) => f.path));
     return;
   }
 
@@ -414,20 +435,20 @@ export async function discardWorkingChanges(
   const headTargets: string[] = [];
   for (const target of targets) {
     const [inIndex, inHead] = await Promise.all([
-      pathKnownToIndex(dir, target),
-      pathExistsAtHead(dir, target),
+      pathKnownToIndex(root, target),
+      pathExistsAtHead(root, target),
     ]);
     if (inIndex || inHead) resetTargets.push(target);
     if (inHead) headTargets.push(target);
   }
 
   if (resetTargets.length > 0) {
-    await gitOk(dir, ["reset", "-q", "HEAD", "--", ...resetTargets]);
+    await gitPaths(root, ["reset", "-q", "HEAD"], resetTargets);
   }
   if (headTargets.length > 0) {
-    await gitOk(dir, ["checkout", "-f", "HEAD", "--", ...headTargets]);
+    await gitPaths(root, ["checkout", "-f", "HEAD"], headTargets);
   }
-  await gitOk(dir, ["clean", "-fd", "--", ...files.map((f) => f.path)]);
+  await gitPaths(root, ["clean", "-fd"], files.map((f) => f.path));
 }
 
 /** Absolute path of the repo root ( workspace may be a subfolder of it). */
@@ -501,6 +522,22 @@ export async function readFileAtRev(
   return out.code === 0 ? out.stdout : null;
 }
 
+/** HEAD versus the working file, including additions, deletions and renames.
+ * Reads only: previewing never changes the index or working tree. */
+export async function readWorkingChange(
+  dir: string,
+  file: CommitFile,
+): Promise<{ oldText: string; newText: string }> {
+  const root = await getRepoRoot(dir);
+  const [oldText, newText] = await Promise.all([
+    readFileAtRev(root, "HEAD", file.oldPath ?? file.path),
+    file.status === "D"
+      ? Promise.resolve("")
+      : invoke<string>("read_file", { path: `${root}/${file.path}` }),
+  ]);
+  return { oldText: oldText ?? "", newText };
+}
+
 /** Full file content at a given commit (text files only). */
 export async function readFileAtCommit(dir: string, commit: FileCommit): Promise<string> {
   // commit.path comes from --name-only, i.e. repo-root-relative — exactly
@@ -534,23 +571,102 @@ async function ensureIdentity(dir: string): Promise<void> {
     await gitOk(dir, ["config", "user.email", "idea-note@local"]);
 }
 
-async function hasLocalChanges(dir: string): Promise<boolean> {
-  const out = await gitOk(dir, ["status", "--porcelain"]);
-  return out.stdout.trim().length > 0;
-}
-
-/** Stage everything and commit if there is anything to commit; returns
- *  whether a commit was actually created. `getMessage` runs only when a commit
- *  will happen and after staging, so it can inspect the staged diff (this is
- *  where AI-generated messages hook in). */
+/** Stage every tracked change — edits, deletions and files added to git
+ *  (`add -u`; untracked files stay out until added) — and commit if there is
+ *  anything; returns whether a commit was actually created. `getMessage` runs
+ *  only when a commit will happen and after staging, so it can inspect the
+ *  staged diff (this is where AI-generated messages hook in). */
 async function commitAll(
   dir: string,
   getMessage: () => string | Promise<string>,
 ): Promise<boolean> {
-  await gitOk(dir, ["add", "-A"]);
-  if (!(await hasLocalChanges(dir))) return false;
+  await gitOk(dir, ["add", "-u", ":/"]);
+  if ((await gitRun(dir, ["diff", "--cached", "--quiet"])).code === 0) return false;
   await ensureIdentity(dir);
   await gitOk(dir, ["commit", "-m", await getMessage()]);
+  return true;
+}
+
+/** Every path a working change touches (both sides of a rename), for use as
+ *  pathspecs when staging or committing a hand-picked set of changes. */
+export function changePaths(files: CommitFile[]): string[] {
+  return [...new Set(files.flatMap((f) => (f.oldPath ? [f.oldPath, f.path] : [f.path])))];
+}
+
+/** Run `git <args> -- <paths>` in chunks, so a large selection stays under
+ *  the command-line length limit. */
+async function gitPaths(dir: string, args: string[], paths: string[]): Promise<void> {
+  for (let i = 0; i < paths.length; i += 100)
+    await gitOk(dir, ["--literal-pathspecs", ...args, "--", ...paths.slice(i, i + 100)]);
+}
+
+/** Index entries HEAD doesn't have: files added (or intent-to-add) but never
+ *  committed. A reset would forget them, turning them untracked again. */
+async function listAddedPaths(root: string): Promise<string[]> {
+  const index = (await gitOk(root, ["ls-files", "-z"])).stdout.split("\0").filter(Boolean);
+  if (!(await hasCommits(root))) return index;
+  const head = new Set(
+    (await gitOk(root, ["ls-tree", "-r", "-z", "--name-only", "HEAD"])).stdout.split("\0").filter(Boolean),
+  );
+  return index.filter((path) => !head.has(path));
+}
+
+/** Make the index hold exactly HEAD plus the working-tree state of `paths`
+ *  (repo-root-relative), so a plain commit or `--cached` diff covers just
+ *  those files. Anything else stays an uncommitted working-tree change, and
+ *  added-but-unselected files keep their "added" mark. */
+export async function stageOnly(dir: string, paths: string[]): Promise<void> {
+  // Pathspecs are root-relative (as listWorkingChanges returns them).
+  const root = await getRepoRoot(dir);
+  const selected = new Set(paths);
+  const keepAdded = (await listAddedPaths(root)).filter((path) => !selected.has(path));
+  await gitOk(root, (await hasCommits(root)) ? ["reset", "-q"] : ["read-tree", "--empty"]);
+  await gitPaths(root, ["add", "-N"], keepAdded);
+  await gitPaths(root, ["add", "-A"], paths);
+}
+
+/** 添加到 Git: mark untracked `paths` (relative to `dir`) as added, so syncs
+ *  commit them from now on. Intent-to-add only: nothing is staged yet. */
+export async function addToGit(dir: string, paths: string[]): Promise<void> {
+  await gitPaths(dir, ["add", "-N"], paths);
+}
+
+/** Root-relative variant of addToGit (paths as listCommitCandidates returns). */
+export async function addUntracked(dir: string, paths: string[]): Promise<void> {
+  await addToGit(await getRepoRoot(dir), paths);
+}
+
+/** Number of untracked (never added, not ignored) files in the repo. */
+export async function countUntracked(dir: string): Promise<number> {
+  const out = await gitOk(await getRepoRoot(dir), ["ls-files", "--others", "--exclude-standard", "-z"]);
+  return out.stdout.split("\0").filter(Boolean).length;
+}
+
+/** Escape a root-relative path into an exact, root-anchored .gitignore rule. */
+function ignoreRule(path: string): string {
+  return "/" + path.replace(/[\\*?[\]!#]/g, "\\$&").replace(/ $/, "\\ ");
+}
+
+/** 忽略: append exact rules for `paths` (root-relative) to the repo root's
+ *  .gitignore, creating it (and adding it to git) when missing. */
+export async function ignoreUntracked(dir: string, paths: string[]): Promise<void> {
+  const root = await getRepoRoot(dir);
+  const file = `${root}/.gitignore`;
+  // Plain read/write commands (not lib/fs) keep this module's only import the Tauri core.
+  const existing = await invoke<string>("read_file", { path: file }).catch(() => "");
+  const rules = paths.map(ignoreRule).filter((rule) => !existing.split(/\r?\n/).includes(rule));
+  if (!rules.length) return;
+  const sep = existing && !existing.endsWith("\n") ? "\n" : "";
+  await invoke<void>("write_file", { path: file, content: `${existing}${sep}${rules.join("\n")}\n` });
+  await addToGit(root, [".gitignore"]);
+}
+
+/** Commit only `paths` (manual sync); returns whether a commit was created. */
+export async function commitSelected(dir: string, paths: string[], message: string): Promise<boolean> {
+  await stageOnly(dir, paths);
+  if ((await gitRun(dir, ["diff", "--cached", "--quiet"])).code === 0) return false;
+  await ensureIdentity(dir);
+  await gitOk(dir, ["commit", "-m", message]);
   return true;
 }
 
@@ -608,14 +724,10 @@ async function remoteBranchExists(dir: string, branch: string): Promise<boolean>
   return out.code === 0;
 }
 
-/** Files left in a conflicted state by the last merge (porcelain XY codes). */
+/** Unmerged paths, NUL-separated so spaces, quotes and Unicode stay literal. */
 async function listConflictFiles(dir: string): Promise<string[]> {
-  const out = await gitOk(dir, ["status", "--porcelain"]);
-  return out.stdout
-    .split("\n")
-    .filter((line) => /^(UU|AA|DD|AU|UA|DU|UD) /.test(line))
-    .map((line) => line.slice(3).trim())
-    .filter(Boolean);
+  const out = await gitOk(dir, ["diff", "--name-only", "--diff-filter=U", "-z"]);
+  return out.stdout.split("\0").filter(Boolean);
 }
 
 /** If a merge is half-done (MERGE_HEAD exists), abort it to restore a clean state. */
@@ -624,7 +736,8 @@ async function abortMergeIfAny(dir: string): Promise<void> {
   if (merging.code === 0) await gitRun(dir, ["merge", "--abort"]);
 }
 
-const syncCommitMessage = () => `sync: ${new Date().toLocaleString(currentLanguage(), { hour12: false })}`;
+/** Default commit message: `sync: <local date and time>`. */
+export const syncCommitMessage = () => `sync: ${new Date().toLocaleString(currentLanguage(), { hour12: false })}`;
 
 /**
  * Merge `origin/<branch>` into the local branch. On conflict, keep both
@@ -636,18 +749,21 @@ async function mergeRemote(
   branch: string,
   extraArgs: string[] = [],
 ): Promise<string[]> {
-  const merge = await gitRun(dir, ["merge", `origin/${branch}`, "--no-edit", ...extraArgs]);
+  const root = await getRepoRoot(dir);
+  const merge = await gitRun(root, ["merge", `origin/${branch}`, "--no-edit", ...extraArgs]);
   if (merge.code === 0) return [];
-  const conflicts = await listConflictFiles(dir);
+  const conflicts = await listConflictFiles(root);
   if (conflicts.length === 0) {
     // Failed for a non-conflict reason — restore a clean state and surface it.
-    await abortMergeIfAny(dir);
+    await abortMergeIfAny(root);
     throw new GitError(friendlyGitError(merge.stderr), merge.stderr);
   }
-  await gitOk(dir, ["add", "-A"]);
-  const commit = await gitRun(dir, ["commit", "--no-edit"]);
+  // Git already stages clean merge results. Resolve only the conflicted paths;
+  // unchecked edits and untracked files must stay out of the merge commit.
+  await gitPaths(root, ["add", "-A"], conflicts);
+  const commit = await gitRun(root, ["commit", "--no-edit"]);
   if (commit.code !== 0) {
-    await abortMergeIfAny(dir);
+    await abortMergeIfAny(root);
     throw new GitError(friendlyGitError(commit.stderr), commit.stderr);
   }
   return conflicts;
@@ -809,6 +925,9 @@ export async function syncWorkspace(
   proxy?: string,
   credentialProvider?: GitCredentialProvider,
   commitMessage?: CommitMessageProvider,
+  /** false = leave local edits uncommitted and only pull/push (auto-sync in
+   *  manual-commit mode, or the push half of a manual sync). */
+  commitLocal = true,
 ): Promise<SyncResult> {
   const getMessage = async () => {
     if (!commitMessage) return syncCommitMessage();
@@ -829,14 +948,14 @@ export async function syncWorkspace(
     // No remote configured → local-only sync: just commit, skip fetch/merge/push.
     const remoteUrl = await getRemoteUrl(dir);
     if (!remoteUrl) {
-      const committed = await commitAll(dir, getMessage);
+      const committed = commitLocal && (await commitAll(dir, getMessage));
       return committed
         ? { ok: true, conflictFiles: [], changed: true, message: tr("已同步到本地仓库") }
         : { ok: true, conflictFiles: [], changed: false, message: tr("已是最新，无需同步") };
     }
 
     // 1. Local edits become a commit before anything touches the network.
-    const committed = await commitAll(dir, getMessage);
+    const committed = commitLocal && (await commitAll(dir, getMessage));
     const credentialRef = { current: null as GitCredential | null };
 
     // 2. Fetch; offline is fine — the local commit already protects the data.

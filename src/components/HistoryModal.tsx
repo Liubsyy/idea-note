@@ -74,7 +74,7 @@ function HistoryShell({
 }) {
   useLanguage();
   // Escape closes the dialog — unless a confirmation is stacked on top
-  // (z-60), which owns Escape at that moment.
+  // and owns Escape at that moment.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && useAppStore.getState().confirm === null) onClose();
@@ -835,7 +835,7 @@ function ScopedDirHistoryContent({ workspacePath, relPath }: { workspacePath: st
 }
 
 /** Read-only side-by-side diff: old version (a, red) vs new (b, green). */
-function DiffView({
+export function DiffView({
   oldText,
   newText,
   path,

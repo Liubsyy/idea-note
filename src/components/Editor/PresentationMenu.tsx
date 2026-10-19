@@ -2,7 +2,7 @@ import { tr } from "../../i18n/core.ts";
 import { useLanguage } from "../../i18n/react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, GalleryVerticalEnd, Maximize2, Presentation } from "lucide-react";
+import { GalleryVerticalEnd, Maximize2, Presentation } from "lucide-react";
 import { useAppStore, type PresentationMode } from "../../store/useAppStore";
 
 export function PresentationMenu() {
@@ -27,11 +27,12 @@ export function PresentationMenu() {
       }
     };
     const close = () => setPosition(null);
-    document.addEventListener("mousedown", closeOutside);
+    // Window capture: Tauri's drag-region handler stops mousedown at the document.
+    window.addEventListener("mousedown", closeOutside, true);
     document.addEventListener("keydown", onKey, true);
     window.addEventListener("resize", close);
     return () => {
-      document.removeEventListener("mousedown", closeOutside);
+      window.removeEventListener("mousedown", closeOutside, true);
       document.removeEventListener("keydown", onKey, true);
       window.removeEventListener("resize", close);
     };
@@ -60,10 +61,10 @@ export function PresentationMenu() {
       onKeyDown={(e) => {
         if (e.key === "ArrowDown") { e.preventDefault(); open(); }
       }}
-      className="flex h-7 items-center gap-0.5 rounded-md px-1 transition-colors hover:bg-[var(--hover)]"
+      className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-[var(--hover)]"
       style={{ color: position ? "var(--accent)" : "var(--text-muted)", background: position ? "var(--active)" : undefined }}
     >
-      <Presentation size={16} /><ChevronDown size={10} />
+      <Presentation size={16} />
     </button>
     {position && createPortal(
       <div

@@ -139,8 +139,16 @@ export const EDITOR_COMMANDS: EditorCommandDef[] = [
  * keydown listener matches them with matchesAppCommand. They share the
  * override map (and conflict checks) with the editor commands.
  */
+export const SYNC_COMMANDS: ShortcutDef[] = [
+  { id: "syncNow", get label() { return tr("立即同步"); }, get desc() { return tr("提交当前改动并同步仓库"); }, defaultKey: "Mod-Alt-s" },
+  { id: "manualSync", get label() { return tr("手动同步"); }, get desc() { return tr("选择要提交的文件并编辑提交文案"); }, defaultKey: "Mod-Alt-Shift-s" },
+  { id: "openHistory", get label() { return tr("历史记录"); }, get desc() { return tr("查看当前文件或项目的历史记录"); }, defaultKey: "Mod-Alt-y" },
+  { id: "branchManager", get label() { return tr("分支管理"); }, get desc() { return tr("查看和管理本地及远程分支"); }, defaultKey: "Mod-Alt-b" },
+];
+
 export const APP_COMMANDS: ShortcutDef[] = [
   { id: "closeTab", get label() { return tr("关闭标签页"); }, get desc() { return tr("关闭当前标签页，不会关闭窗口"); }, defaultKey: "Mod-w" },
+  ...SYNC_COMMANDS,
 ];
 
 /** Run-functions the registry owns, so we can strip their stock bindings. */
@@ -201,7 +209,7 @@ export function runEditorCommand(id: string, view: EditorView): boolean {
 
 /** Current shortcut label, shared by settings and editor menus. */
 export function commandKeyLabel(id: string, overrides: Record<string, string>): string {
-  const cmd = EDITOR_COMMANDS.find((item) => item.id === id);
+  const cmd = [...APP_COMMANDS, ...EDITOR_COMMANDS].find((item) => item.id === id);
   return cmd ? formatKey(effectiveKey(cmd, overrides)) : "";
 }
 

@@ -190,11 +190,12 @@ function Dropdown({
         setOpen(false);
     };
     const onLeave = () => setOpen(false);
-    document.addEventListener("mousedown", onDoc);
+    // Window capture: Tauri's drag-region handler stops mousedown at the document.
+    window.addEventListener("mousedown", onDoc, true);
     window.addEventListener("resize", onLeave);
     window.addEventListener("scroll", onLeave, true);
     return () => {
-      document.removeEventListener("mousedown", onDoc);
+      window.removeEventListener("mousedown", onDoc, true);
       window.removeEventListener("resize", onLeave);
       window.removeEventListener("scroll", onLeave, true);
     };

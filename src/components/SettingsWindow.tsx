@@ -89,6 +89,7 @@ import {
   type SyncState,
 } from "../store/useAppStore";
 import { fetchUpstreamModels } from "../lib/ai/modelCatalog";
+import { defaultCommitConvention } from "../lib/ai/commitMessage";
 import {
   CODE_RUN_FONT_SIZE_MAX,
   CODE_RUN_FONT_SIZE_MIN,
@@ -127,6 +128,7 @@ import {
 } from "../themes";
 import {
   APP_COMMANDS,
+  SYNC_COMMANDS,
   canonicalKey,
   EDITOR_COMMANDS,
   effectiveKey,
@@ -663,7 +665,8 @@ function ShortcutsTab({
   }
   const hasOverrides = Object.keys(overrides).length > 0;
   const groups: { id: string; label: string; commands: ShortcutDef[] }[] = [
-    { id: "app", label: tr("标签页"), commands: APP_COMMANDS },
+    { id: "app", label: tr("标签页"), commands: APP_COMMANDS.filter((cmd) => !SYNC_COMMANDS.some((sync) => sync.id === cmd.id)) },
+    { id: "sync", label: tr("同步与版本"), commands: SYNC_COMMANDS },
     {
       id: "general" as const,
       label: tr("通用编辑"),
@@ -1226,6 +1229,18 @@ function ConnectedSection({
             onChange={(intervalMin) => updateConfig({ intervalMin })}
           />
         </Row>
+        <Row
+          title={tr("自动同步时提交更改")}
+          desc={tr("关闭后自动同步只拉取和推送，提交在标题栏同步菜单的“手动同步”中完成")}
+        >
+          <Toggle checked={config.autoCommit} onChange={(autoCommit) => updateConfig({ autoCommit })} />
+        </Row>
+        <Row
+          title={tr("新建的文件自动添加到 Git")}
+          desc={tr("在 Idea Note 中新建、粘贴、拖入的文件立即纳入同步；其他新文件需在“手动同步”中添加后才会提交")}
+        >
+          <Toggle checked={config.autoAddNew} onChange={(autoAddNew) => updateConfig({ autoAddNew })} />
+        </Row>
         {!local && (
           <Row title={tr("同步代理")} desc={tr("全局设置，所有笔记库共用；仅同步时经此 HTTP 代理，不写入 git 全局配置")}>
             <div className="w-[260px]">
@@ -1259,12 +1274,23 @@ function CommitMessageCard({ ws }: { ws: string }) {
   const aiModels = useAppStore((s) => s.aiModels);
   const [config, setConfig] = useState<CommitMessageConfig>(readCommitMessageConfig);
 
-  const update = (patch: Partial<CommitMessageConfig>) => {
-    const next = { ...config, ...patch };
+  const persist = useCallback((next: CommitMessageConfig) => {
     setConfig(next);
     saveCommitMessageConfig(next);
     emit(SYNC_CONFIG_EVENT, { workspace: ws }).catch(() => {});
+  }, [ws]);
+
+  const update = (patch: Partial<CommitMessageConfig>) => {
+    persist({ ...config, ...patch });
   };
+
+  // Populate older AI settings as well as newly selected AI mode below.
+  useEffect(() => {
+    const saved = readCommitMessageConfig();
+    if (saved.mode === "ai" && !saved.convention.trim()) {
+      persist({ ...saved, convention: defaultCommitConvention() });
+    }
+  }, [persist]);
 
   const modelOptions = aiModels.flatMap((m) =>
     modelIdsOf(m).map((id) => ({
@@ -1296,7 +1322,12 @@ function CommitMessageCard({ ws }: { ws: string }) {
               { value: "default", label: tr("默认（时间）") },
               { value: "ai", label: tr("AI 生成") },
             ]}
-            onChange={(v) => update({ mode: v as CommitMessageConfig["mode"] })}
+            onChange={(v) => update({
+              mode: v as CommitMessageConfig["mode"],
+              convention: v === "ai" && !config.convention.trim()
+                ? defaultCommitConvention()
+                : config.convention,
+            })}
           />
         </div>
       </Row>
@@ -1328,15 +1359,18 @@ function CommitMessageCard({ ws }: { ws: string }) {
             <div className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
               {tr("提交规范")}</div>
             <div className="mb-2 mt-0.5 text-[11px] leading-snug" style={{ color: "var(--text-muted)" }}>
-              {tr("用自然语言描述提交文案的要求，会作为提示词交给 AI；留空则由 AI 自行概括改动")}</div>
+              {tr("为空时自动填充当前界面语言的默认规范，可直接编辑；切换生成方式会保留内容")}</div>
             <textarea
               value={config.convention}
               placeholder={tr("例如：以「笔记:」开头，用一句话概括本次改动，不超过 30 字")}
               onChange={(e) => update({ convention: e.target.value })}
-              className="min-h-[64px] w-full resize-y rounded-lg px-2.5 py-2 text-[13px] leading-5 outline-none"
+              className="h-48 min-h-[64px] w-full resize-y rounded-lg px-2.5 py-2 text-[13px] leading-5 outline-none"
               style={{ background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)" }}
               onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
-              onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = "var(--border)";
+                if (!e.currentTarget.value.trim()) update({ convention: defaultCommitConvention() });
+              }}
             />
           </div>
         </>

@@ -1,9 +1,13 @@
 import { tr, currentLanguage } from "../i18n/core.ts";
 import { useLanguage } from "../i18n/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Bot,
   History,
+  ListChecks,
+  GitBranch,
+  Settings,
   PanelBottom,
   PanelLeft,
   PanelLeftClose,
@@ -14,6 +18,7 @@ import { isImageFile } from "../lib/fs";
 import { isWindows } from "../lib/platform";
 import { ChatHeaderActions } from "./Panels/RightPanel";
 import { PresentationMenu } from "./Editor/PresentationMenu";
+import { commandKeyLabel } from "../lib/codemirror/keybindings";
 
 /** Count words: CJK characters count individually, latin runs as words. */
 function countWords(text: string): number {
@@ -52,6 +57,10 @@ export function TitleBar({ leftWidth }: { leftWidth: number }) {
   const lastSyncAt = useAppStore((s) => s.lastSyncAt);
   const syncNow = useAppStore((s) => s.syncNow);
   const openHistory = useAppStore((s) => s.openHistory);
+  const openSettings = useAppStore((s) => s.openSettings);
+  const setManualSyncOpen = useAppStore((s) => s.setManualSyncOpen);
+  const setBranchManagerOpen = useAppStore((s) => s.setBranchManagerOpen);
+  const branchTaskBusy = useAppStore((s) => s.branchTaskBusy);
 
   const words = activeFilePath ? countWords(content) : 0;
 
@@ -79,7 +88,6 @@ export function TitleBar({ leftWidth }: { leftWidth: number }) {
   const showSyncTime = editorWidth >= 500;
   // As it narrows further the toggle cluster sheds buttons one by one, then
   // the title; the sidebar and AI toggles are the last ones standing.
-  const showHistoryBtn = editorWidth >= 440;
   const showSyncBtn = editorWidth >= 390;
   const showTerminalBtn = editorWidth >= 340;
 
@@ -146,35 +154,26 @@ export function TitleBar({ leftWidth }: { leftWidth: number }) {
           }`}
         >
           {activeFilePath && <PresentationMenu />}
-          {/* History needs only a local repo (no remote required). With a
-              file open, the dialog includes current-file and global tabs; with
-              no file open, it opens directly to global history. File-level
-              diff/rollback is text-only, so images are excluded. */}
-          {showHistoryBtn &&
-            workspacePath &&
-            gitInfo?.isRepo &&
-            (!activeFilePath || !isImageFile(activeFilePath)) && (
-              <PanelToggle
-                title={
-                  activeFilePath
-                    ? tr("历史记录")
-                    : tr("全局历史")
-                }
-                active={false}
-                onClick={openHistory}
-              >
-                <History size={15} />
-              </PanelToggle>
-            )}
-          {/* A local repo without a remote can still sync (local commits). */}
+          {/* A local repo without a remote can still sync (local commits), and
+              history needs only that local repo. With a file open, the history
+              dialog includes current-file and global tabs; with no file open,
+              it opens directly to global history. File-level diff/rollback is
+              text-only, so the entry is disabled for images. */}
           {showSyncBtn && workspacePath && gitInfo?.isRepo && (
-            <SyncButton
+            <SyncMenu
               syncState={syncState}
               lastSyncMessage={lastSyncMessage}
               lastSyncAt={lastSyncAt}
               showTime={showSyncTime}
               hasRemote={!!gitInfo.remoteUrl}
-              onClick={() => void syncNow()}
+              historyLabel={activeFilePath ? tr("历史记录") : tr("全局历史")}
+              historyDisabled={!!activeFilePath && isImageFile(activeFilePath)}
+              onSync={() => void syncNow()}
+              onManualSync={() => setManualSyncOpen(true)}
+              onHistory={openHistory}
+              onBranches={() => setBranchManagerOpen(true)}
+              onSettings={() => void openSettings("sync")}
+              branchBusy={branchTaskBusy}
             />
           )}
           {showTerminalBtn && (
@@ -336,24 +335,71 @@ function CaptionButton({
   );
 }
 
-/** Git sync trigger: last-sync time + icon whose arrows flow while syncing,
- *  tinted red/amber on error/conflict. */
-function SyncButton({
+/** Git sync menu: last-sync time + an icon whose arrow rises while syncing,
+ *  tinted red/amber on error/conflict. Clicking opens 立即同步, 手动同步 (pick
+ *  files and message) and history. */
+function SyncMenu({
   syncState,
   lastSyncMessage,
   lastSyncAt,
   showTime,
   hasRemote,
-  onClick,
+  historyLabel,
+  historyDisabled,
+  onSync,
+  onManualSync,
+  onHistory,
+  onBranches,
+  onSettings,
+  branchBusy,
 }: {
   syncState: "idle" | "syncing" | "success" | "conflict" | "error";
   lastSyncMessage: string | null;
   lastSyncAt: number | null;
   showTime: boolean;
   hasRemote: boolean;
-  onClick: () => void;
+  historyLabel: string;
+  historyDisabled: boolean;
+  onSync: () => void;
+  onManualSync: () => void;
+  onHistory: () => void;
+  onBranches: () => void;
+  onSettings: () => void;
+  branchBusy: boolean;
 }) {
   useLanguage();
+  const shortcuts = useAppStore((s) => s.editorKeybindings);
+  const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!position) return;
+    menuRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+    const closeOutside = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node) && !buttonRef.current?.contains(e.target as Node))
+        setPosition(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setPosition(null);
+        buttonRef.current?.focus();
+      }
+    };
+    const close = () => setPosition(null);
+    // Window capture: Tauri's drag-region handler stops mousedown at the document.
+    window.addEventListener("mousedown", closeOutside, true);
+    document.addEventListener("keydown", onKey, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("mousedown", closeOutside, true);
+      document.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [position]);
+
   const syncing = syncState === "syncing";
   const color = syncing
     ? "var(--accent)"
@@ -380,6 +426,23 @@ function SyncButton({
         })
       : null;
 
+  const MENU_WIDTH = 280;
+  const toggle = () => {
+    if (position) return setPosition(null);
+    const rect = buttonRef.current?.getBoundingClientRect();
+    if (rect)
+      setPosition({
+        top: rect.bottom + 5,
+        left: Math.max(8, Math.min(rect.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8)),
+      });
+  };
+  const choose = (action: () => void) => {
+    setPosition(null);
+    action();
+  };
+  const itemClass =
+    "flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-left text-sm hover:bg-[var(--hover)] focus:bg-[var(--hover)] focus:outline-none disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent";
+
   return (
     <>
       {showTime && timeLabel && (
@@ -393,28 +456,69 @@ function SyncButton({
         </span>
       )}
       <button
+        ref={buttonRef}
         title={title}
-        onClick={onClick}
-        disabled={syncing}
-        className="flex h-7 w-7 items-center justify-center rounded-md transition-colors"
-        style={{ color }}
-        onMouseEnter={(e) => {
-          if (!syncing) e.currentTarget.style.background = "var(--hover)";
+        aria-haspopup="menu"
+        aria-expanded={!!position}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={toggle}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown") { e.preventDefault(); toggle(); }
         }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = "transparent";
-        }}
+        className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-[var(--hover)]"
+        style={{ color, background: position ? "var(--active)" : undefined }}
       >
         <SyncIcon size={15} active={syncing} />
       </button>
+      {position && createPortal(
+        <div
+          ref={menuRef}
+          role="menu"
+          aria-label={tr("同步")}
+          className="fixed z-[80] rounded-lg p-1 shadow-xl"
+          style={{ ...position, width: MENU_WIDTH, background: "var(--bg-elev)", border: "1px solid var(--border)", color: "var(--text)" }}
+          onKeyDown={(e) => {
+            if (!["ArrowDown", "ArrowUp"].includes(e.key)) return;
+            e.preventDefault();
+            const buttons = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? []);
+            const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+            buttons[(index + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length]?.focus();
+          }}
+        >
+          <button role="menuitem" className={itemClass} disabled={syncing || branchBusy} onClick={() => choose(onSync)}>
+            <SyncIcon size={15} active={syncing} />
+            {syncing ? tr("同步中…") : tr("立即同步")}
+            <span className="ml-auto whitespace-nowrap text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>{commandKeyLabel("syncNow", shortcuts)}</span>
+          </button>
+          <button role="menuitem" className={itemClass} disabled={syncing || branchBusy} onClick={() => choose(onManualSync)}>
+            <ListChecks size={15} />
+            {tr("手动同步")}
+            <span className="ml-auto whitespace-nowrap text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>{commandKeyLabel("manualSync", shortcuts)}</span>
+          </button>
+          <button role="menuitem" className={itemClass} disabled={historyDisabled} onClick={() => choose(onHistory)}>
+            <History size={15} />
+            {historyLabel}
+            <span className="ml-auto whitespace-nowrap text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>{commandKeyLabel("openHistory", shortcuts)}</span>
+          </button>
+          <button role="menuitem" className={itemClass} disabled={syncing || branchBusy} onClick={() => choose(onBranches)}>
+            <GitBranch size={15} />
+            {tr("分支管理")}
+            <span className="ml-auto whitespace-nowrap text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>{commandKeyLabel("branchManager", shortcuts)}</span>
+          </button>
+          <button role="menuitem" className={itemClass} onClick={() => choose(onSettings)}>
+            <Settings size={15} />
+            {tr("同步设置")}
+          </button>
+        </div>,
+        document.body,
+      )}
     </>
   );
 }
 
 /**
- * Lucide's ArrowDownUp geometry, split into the two arrows so they can move
- * independently while syncing: the down arrow flows downward and the up arrow
- * upward, each fading at the edges (transfer feel, not a refresh spin).
+ * Lucide's CloudUpload geometry, with the arrow split out so it can rise on
+ * its own while syncing (the cloud stays put).
  */
 function SyncIcon({ size, active }: { size: number; active: boolean }) {
   useLanguage();
@@ -429,13 +533,10 @@ function SyncIcon({ size, active }: { size: number; active: boolean }) {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <g className={active ? "sync-arrow-down" : undefined}>
-        <path d="m3 16 4 4 4-4" />
-        <path d="M7 20V4" />
-      </g>
+      <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
       <g className={active ? "sync-arrow-up" : undefined}>
-        <path d="m21 8-4-4-4 4" />
-        <path d="M17 4v16" />
+        <path d="M12 13v8" />
+        <path d="m8 17 4-4 4 4" />
       </g>
     </svg>
   );

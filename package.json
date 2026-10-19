@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "test:i18n": "node --test tests/i18n.test.mjs",
+    "test:commit-message": "node --test tests/commitMessage.test.mjs",
+    "test:manual-sync": "node --test tests/manualSync.test.mjs tests/manualSyncDialog.test.mjs",
+    "test:branches": "node --test tests/gitBranches.test.mjs tests/branchTask.test.mjs",
+    "test:sync-shortcuts": "node --test tests/syncShortcuts.test.mjs",
     "dev": "vite",
     "dev:preview-tests": "vite --config tests/vite.preview.config.ts --port 1427 --cors",
     "build": "tsc && vite build",

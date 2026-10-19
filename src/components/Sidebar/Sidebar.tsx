@@ -14,6 +14,10 @@ import {
   Search,
   FilePlus2,
   FolderPlus,
+  ChevronsDownUp,
+  Ellipsis,
+  ChevronsUpDown,
+  Crosshair,
   X,
   Settings,
   Printer,
@@ -28,6 +32,7 @@ import { useAppStore, type SidebarMode } from "../../store/useAppStore";
 import {
   basename,
   dirname,
+  fileStat,
   findNode,
   isImageFile,
   isMarkdownFile,
@@ -51,6 +56,8 @@ import { OutlinePanel } from "./OutlinePanel";
 import { SearchPanel } from "./SearchPanel";
 import { ZoomScrollbar, scrollbarReservesGutter } from "./ZoomScrollbar";
 import { isMac } from "../../lib/platform";
+import { relativePathWithinWorkspace } from "../../lib/workspacePath";
+import { getRepoRoot, ignoreUntracked } from "../../lib/git";
 
 type BrowseSidebarMode = Exclude<SidebarMode, "search">;
 
@@ -71,7 +78,9 @@ interface MenuState {
 }
 
 const MENU_EDGE_PADDING = 8;
-const SIDEBAR_MENU_WIDTH = 144;
+// The context menu sizes to its longest label (English runs wider); clamp
+// against its widest allowed size (max-w-56) so it always stays on screen.
+const SIDEBAR_MENU_WIDTH = 224;
 const MENU_ROW_HEIGHT = 32;
 const MENU_VERTICAL_PADDING = 8;
 
@@ -81,7 +90,8 @@ function estimateContextMenuHeight(
   gitRepo: boolean,
 ): number {
   const rows = node
-    ? (node.is_dir ? 3 : 2) +
+    ? 4 + // 新建笔记 / 文件 / 文件夹 / .gitignore (alongside, for a file)
+      (gitRepo && workspacePath ? 1 : 0) + // 添加到 .gitignore
       1 + // 复制 submenu
       1 + // 粘贴
       1 + // 打开所在目录
@@ -89,7 +99,7 @@ function estimateContextMenuHeight(
       (gitRepo && (node.is_dir || !isImageFile(node.path)) ? 1 : 0) +
       1 + // 重命名
       1 // 删除
-    : 3 +
+    : 4 +
       1 + // 粘贴
       1 + // 打开所在目录
       1 + // 显示简介
@@ -136,7 +146,14 @@ export function Sidebar() {
   const clearSelection = useAppStore((s) => s.clearSelection);
   const requestNewFile = useAppStore((s) => s.requestNewFile);
   const requestNewRawFile = useAppStore((s) => s.requestNewRawFile);
+  const newRawFile = useAppStore((s) => s.newRawFile);
+  const openFile = useAppStore((s) => s.openFile);
+  const showToast = useAppStore((s) => s.showToast);
   const requestNewFolder = useAppStore((s) => s.requestNewFolder);
+  const expandAllFolders = useAppStore((s) => s.expandAllFolders);
+  const collapseAllFolders = useAppStore((s) => s.collapseAllFolders);
+  const revealInTree = useAppStore((s) => s.revealInTree);
+  const activeFilePath = useAppStore((s) => s.activeFilePath);
   const requestRename = useAppStore((s) => s.requestRename);
   const removeMany = useAppStore((s) => s.removeMany);
   const openConfirm = useAppStore((s) => s.openConfirm);
@@ -149,6 +166,8 @@ export function Sidebar() {
 
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [wsMenuOpen, setWsMenuOpen] = useState(false);
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const lastBrowseMode = useRef<BrowseSidebarMode>("files");
@@ -244,16 +263,26 @@ export function Sidebar() {
       }
       setMenu(null);
       setWsMenuOpen(false);
+      setNewMenuOpen(false);
+      setMoreMenuOpen(false);
     };
-    if (menu || wsMenuOpen) {
+    // A press on a window drag region (blank title bar) never becomes a click:
+    // Tauri starts a native drag instead, so close on that press directly.
+    const closeOnDrag = (event: MouseEvent) => {
+      const attr = (event.target as Element | null)?.getAttribute?.("data-tauri-drag-region");
+      if (attr != null && attr !== "false") close(event);
+    };
+    if (menu || wsMenuOpen || newMenuOpen || moreMenuOpen) {
       window.addEventListener("click", close);
+      window.addEventListener("mousedown", closeOnDrag, true);
       window.addEventListener("scroll", close, true);
       return () => {
         window.removeEventListener("click", close);
+        window.removeEventListener("mousedown", closeOnDrag, true);
         window.removeEventListener("scroll", close, true);
       };
     }
-  }, [menu, wsMenuOpen]);
+  }, [menu, wsMenuOpen, newMenuOpen, moreMenuOpen]);
 
   const openContextMenu = (e: React.MouseEvent, node: FileNode) => {
     e.preventDefault();
@@ -280,6 +309,45 @@ export function Sidebar() {
     copyFilesToClipboard(paths).catch((err) => {
       window.alert(tr("复制失败：{{0}}", { 0: err }));
     });
+  };
+
+  const createGitignore = async (dir: string | null) => {
+    if (!dir) return;
+    try {
+      const path = `${dir}/.gitignore`;
+      if (await fileStat(path)) await openFile(path);
+      else await newRawFile(dir, ".gitignore");
+    } catch (error) {
+      showToast(tr("创建 .gitignore 失败：{{0}}", {
+        0: error instanceof Error ? error.message : String(error),
+      }), "error");
+    }
+  };
+
+  const addToGitignore = async (paths: string[]) => {
+    if (!workspacePath || !paths.length) return;
+    try {
+      const root = await getRepoRoot(workspacePath);
+      const relativePaths = paths.map((path) => {
+        const relative = relativePathWithinWorkspace(root, path);
+        if (!relative) throw new Error(tr("路径不在当前工作区内。"));
+        return relative;
+      });
+      // Save an open .gitignore before appending, then refresh its editor buffer.
+      await useAppStore.getState().flushActiveTab();
+      await ignoreUntracked(root, relativePaths);
+      if (useAppStore.getState().workspacePath !== workspacePath) return;
+      await refreshTree();
+      const active = useAppStore.getState().activeFilePath;
+      if (active && relativePathWithinWorkspace(root, active) === ".gitignore") {
+        await openFile(active);
+      }
+      showToast(tr("已添加到 .gitignore"), "success");
+    } catch (error) {
+      showToast(tr("添加到 .gitignore 失败：{{0}}", {
+        0: error instanceof Error ? error.message : String(error),
+      }), "error");
+    }
   };
 
   const pasteInto = async (dir: string) => {
@@ -310,6 +378,30 @@ export function Sidebar() {
     } catch (err) {
       window.alert(tr("粘贴失败：{{0}}", { 0: err }));
     }
+  };
+
+  // Drafts and files opened from outside the workspace have no row to find.
+  const canLocate =
+    !!workspacePath && !!activeFilePath &&
+    !!relativePathWithinWorkspace(workspacePath, activeFilePath);
+
+  /** Tree actions used from search results return to the tree search was
+   *  opened from (files unless that was notes). */
+  const showTree = () => {
+    if (sidebarMode !== "files" && sidebarMode !== "notes")
+      setSidebarMode(lastBrowseMode.current === "notes" ? "notes" : "files");
+  };
+
+  const locateActiveFile = async () => {
+    if (!activeFilePath) return;
+    showTree();
+    if (!(await revealInTree(activeFilePath))) return;
+    // The ancestors render on the next commit; scroll once their rows exist.
+    requestAnimationFrame(() => {
+      listRef.current
+        ?.querySelector<HTMLElement>(`[data-tree-path="${CSS.escape(activeFilePath)}"]`)
+        ?.scrollIntoView({ block: "center" });
+    });
   };
 
   /** Paste destination: the selected folder, a selected file's parent, or root. */
@@ -381,6 +473,8 @@ export function Sidebar() {
             <button
               onClick={(e) => {
                 e.stopPropagation();
+                setNewMenuOpen(false);
+                setMoreMenuOpen(false);
                 setWsMenuOpen((v) => !v);
               }}
               title={workspacePath ?? tr("打开文件夹")}
@@ -473,29 +567,117 @@ export function Sidebar() {
           </div>
           <div className="flex shrink-0 items-center gap-0.5">
             {workspacePath && (
-              <>
-                <IconButton
-                  title={tr("新建文件")}
-                  onClick={() => requestNewRawFile(pasteTarget() ?? undefined)}
+              <div className="relative">
+                <IconMenuButton
+                  title={tr("新建")}
+                  open={newMenuOpen}
+                  onClick={() => {
+                    setWsMenuOpen(false);
+                    setMoreMenuOpen(false);
+                    setNewMenuOpen((v) => !v);
+                  }}
                 >
                   <FilePlus2 size={15} />
-                </IconButton>
-                <IconButton
-                  title={tr("新建文件夹")}
-                  onClick={() => requestNewFolder(pasteTarget() ?? undefined)}
-                >
-                  <FolderPlus size={15} />
-                </IconButton>
-              </>
+                </IconMenuButton>
+                {newMenuOpen && (
+                  <div
+                    data-menu-panel="true"
+                    className="absolute right-0 top-full z-50 mt-1 w-36 rounded-lg py-1 text-sm shadow-lg"
+                    style={{
+                      background: "var(--bg-elev)",
+                      border: "1px solid var(--border)",
+                      boxShadow: "0 8px 24px var(--shadow)",
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <MenuItem
+                      onClick={() => {
+                        requestNewRawFile(pasteTarget() ?? undefined);
+                        setNewMenuOpen(false);
+                      }}
+                    >
+                      <span className="flex items-center gap-2">
+                        <FilePlus2 size={14} /> {" "}{tr("新建文件")}</span>
+                    </MenuItem>
+                    <MenuItem
+                      onClick={() => {
+                        requestNewFolder(pasteTarget() ?? undefined);
+                        setNewMenuOpen(false);
+                      }}
+                    >
+                      <span className="flex items-center gap-2">
+                        <FolderPlus size={14} /> {" "}{tr("新建文件夹")}</span>
+                    </MenuItem>
+                  </div>
+                )}
+              </div>
+            )}
+            {workspacePath && (sidebarMode === "files" || sidebarMode === "notes" || searchActive) && (
+              <IconButton
+                title={tr("定位当前文件")}
+                compact
+                disabled={!canLocate}
+                onClick={() => void locateActiveFile()}
+              >
+                <Crosshair size={15} />
+              </IconButton>
             )}
             <SearchModeButton active={searchActive} onClick={toggleSearchMode} />
             {workspacePath && (
-              <IconButton title={tr("刷新文件列表")} onClick={handleRefresh}>
+              <IconButton title={tr("刷新文件列表")} compact onClick={handleRefresh}>
                 <RefreshCw
                   size={15}
                   className={refreshing ? "animate-spin" : undefined}
                 />
               </IconButton>
+            )}
+            {workspacePath && (sidebarMode === "files" || sidebarMode === "notes" || searchActive) && (
+              <div className="relative">
+                <IconMenuButton
+                  title={tr("更多功能")}
+                  open={moreMenuOpen}
+                  onClick={() => {
+                    setWsMenuOpen(false);
+                    setNewMenuOpen(false);
+                    setMoreMenuOpen((v) => !v);
+                  }}
+                >
+                  <Ellipsis size={15} />
+                </IconMenuButton>
+                {moreMenuOpen && (
+                  <div
+                    data-menu-panel="true"
+                    className="absolute right-0 top-full z-50 mt-1 w-36 rounded-lg py-1 text-sm shadow-lg"
+                    style={{
+                      background: "var(--bg-elev)",
+                      border: "1px solid var(--border)",
+                      boxShadow: "0 8px 24px var(--shadow)",
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <MenuItem
+                      onClick={() => {
+                        showTree();
+                        void expandAllFolders();
+                        setMoreMenuOpen(false);
+                      }}
+                    >
+                      <span className="flex items-center gap-2">
+                        <ChevronsUpDown size={14} /> {" "}{tr("全部展开")}</span>
+                    </MenuItem>
+                    <MenuItem
+                      onClick={() => {
+                        showTree();
+                        collapseAllFolders();
+                        setMoreMenuOpen(false);
+                      }}
+                    >
+                      <span className="flex items-center gap-2">
+                        <ChevronsDownUp size={14} /> {" "}{tr("全部折叠")}</span>
+                    </MenuItem>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -630,7 +812,7 @@ export function Sidebar() {
       {menu && (
         <div
           data-menu-panel="true"
-          className="fixed z-[70] w-36 overflow-y-auto overscroll-contain rounded-lg py-1 text-sm shadow-lg"
+          className="fixed z-[70] w-max min-w-36 max-w-56 overflow-y-auto overscroll-contain rounded-lg py-1 text-sm shadow-lg"
           style={{
             left: menuPos?.left ?? menu.x,
             top: menuPos?.top ?? menu.y,
@@ -684,8 +866,22 @@ export function Sidebar() {
                     }}
                   >
                     {tr("同级新建文件")}</MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      requestNewFolder(dirname(menuNode.path));
+                      setMenu(null);
+                    }}
+                  >
+                    {tr("同级新建文件夹")}</MenuItem>
                 </>
               )}
+              <MenuItem
+                onClick={() => {
+                  void createGitignore(menuNode.is_dir ? menuNode.path : dirname(menuNode.path));
+                  setMenu(null);
+                }}
+              >
+                {tr("新建 .gitignore")}</MenuItem>
               <SubMenuItem label={tr("复制")}>
                 <MenuItem
                   hint="⌘C"
@@ -778,6 +974,16 @@ export function Sidebar() {
               >
                 {menuHasMultiple ? tr("删除 {{0}} 个项目", { 0: menuPaths.length }) : tr("删除")}
               </MenuItem>
+              {gitInfo?.isRepo && workspacePath && (
+                <MenuItem
+                  title={tr("写入仓库根目录的 .gitignore；已跟踪文件仍会继续同步")}
+                  onClick={() => {
+                    void addToGitignore(menuPaths);
+                    setMenu(null);
+                  }}
+                >
+                  {tr("添加到 .gitignore")}</MenuItem>
+              )}
             </>
           ) : (
             <>
@@ -802,6 +1008,13 @@ export function Sidebar() {
                 }}
               >
                 {tr("新建文件夹")}</MenuItem>
+              <MenuItem
+                onClick={() => {
+                  void createGitignore(workspacePath);
+                  setMenu(null);
+                }}
+              >
+                {tr("新建 .gitignore")}</MenuItem>
               <MenuItem
                 hint="⌘V"
                 onClick={() => {
@@ -856,8 +1069,48 @@ function IconButton({
   title,
   onClick,
   children,
+  disabled = false,
+  compact = false,
 }: {
   title: string;
+  onClick: () => void;
+  children: React.ReactNode;
+  disabled?: boolean;
+  /** Narrower hit area for the crowded sidebar header. */
+  compact?: boolean;
+}) {
+  useLanguage();
+  return (
+    <button
+      title={title}
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex h-7 ${compact ? "w-6" : "w-7"} items-center justify-center rounded-md transition-colors disabled:cursor-default`}
+      style={{ color: "var(--text-muted)", opacity: disabled ? 0.4 : 1 }}
+      onMouseEnter={(e) => {
+        if (disabled) return;
+        e.currentTarget.style.background = "var(--hover)";
+        e.currentTarget.style.color = "var(--text)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = "transparent";
+        e.currentTarget.style.color = "var(--text-muted)";
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** Header IconButton that toggles a dropdown; stays highlighted while open. */
+function IconMenuButton({
+  title,
+  open,
+  onClick,
+  children,
+}: {
+  title: string;
+  open: boolean;
   onClick: () => void;
   children: React.ReactNode;
 }) {
@@ -865,16 +1118,24 @@ function IconButton({
   return (
     <button
       title={title}
-      onClick={onClick}
-      className="flex h-7 w-7 items-center justify-center rounded-md transition-colors"
-      style={{ color: "var(--text-muted)" }}
+      aria-haspopup="menu"
+      aria-expanded={open}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className="flex h-7 w-6 items-center justify-center rounded-md transition-colors"
+      style={{
+        color: open ? "var(--text)" : "var(--text-muted)",
+        background: open ? "var(--hover)" : "transparent",
+      }}
       onMouseEnter={(e) => {
         e.currentTarget.style.background = "var(--hover)";
         e.currentTarget.style.color = "var(--text)";
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.background = "transparent";
-        e.currentTarget.style.color = "var(--text-muted)";
+        e.currentTarget.style.background = open ? "var(--hover)" : "transparent";
+        e.currentTarget.style.color = open ? "var(--text)" : "var(--text-muted)";
       }}
     >
       {children}
@@ -914,11 +1175,12 @@ function ExportMenu() {
         setOpen(false);
     };
     const close = () => setOpen(false);
-    document.addEventListener("mousedown", onDoc);
+    // Window capture: Tauri's drag-region handler stops mousedown at the document.
+    window.addEventListener("mousedown", onDoc, true);
     window.addEventListener("resize", close);
     window.addEventListener("scroll", close, true);
     return () => {
-      document.removeEventListener("mousedown", onDoc);
+      window.removeEventListener("mousedown", onDoc, true);
       window.removeEventListener("resize", close);
       window.removeEventListener("scroll", close, true);
     };
@@ -1041,7 +1303,7 @@ function SearchModeButton({
     <button
       title={active ? tr("关闭全局搜索") : tr("全局搜索 (⌘⇧F)")}
       onClick={onClick}
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors"
+      className="flex h-7 w-6 shrink-0 items-center justify-center rounded-md transition-colors"
       style={{
         color: active ? "var(--accent)" : "var(--text-muted)",
         background: active ? "var(--active)" : "transparent",

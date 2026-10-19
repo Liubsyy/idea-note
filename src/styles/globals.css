@@ -455,24 +455,9 @@ body {
   animation: toast-out 0.22s ease-in forwards;
 }
 
-/* Title-bar sync button while a sync is running: the two arrows of the icon
-   flow in opposite directions — down arrow downward, up arrow upward — fading
-   at the edges so each loop reads as a passing data stream, not a spin.
-   translateY is in SVG user units (24-unit viewBox). */
-@keyframes sync-flow-down {
-  0% {
-    transform: translateY(-4px);
-    opacity: 0;
-  }
-  30%,
-  70% {
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(4px);
-    opacity: 0;
-  }
-}
+/* Title-bar sync button while a sync is running: the cloud's upload arrow
+   rises and fades at the edges so each loop reads as data going up, not a
+   spin. translateY is in SVG user units (24-unit viewBox). */
 @keyframes sync-flow-up {
   0% {
     transform: translateY(4px);
@@ -486,9 +471,6 @@ body {
     transform: translateY(-4px);
     opacity: 0;
   }
-}
-.sync-arrow-down {
-  animation: sync-flow-down 1.1s ease-in-out infinite;
 }
 .sync-arrow-up {
   animation: sync-flow-up 1.1s ease-in-out infinite;

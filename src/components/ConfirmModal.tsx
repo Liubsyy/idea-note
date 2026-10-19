@@ -50,7 +50,7 @@ export function ConfirmModal() {
 
   const modal = (
     <div
-      className={`${editorHost ? "absolute items-center" : "fixed items-start"} inset-0 z-[60] flex justify-center backdrop-blur-sm`}
+      className={`${editorHost ? "absolute items-center" : "fixed items-start"} inset-0 z-[80] flex justify-center backdrop-blur-sm`}
       style={{ background: "rgba(0,0,0,0.32)" }}
       onMouseDown={closeConfirm}
     >

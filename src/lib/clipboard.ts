@@ -4,6 +4,7 @@ import { tr } from "../i18n/core.ts";
 import { invoke } from "@tauri-apps/api/core";
 import { fetch as nativeFetch } from "@tauri-apps/plugin-http";
 import { toDisplaySrc } from "./imagePath";
+import { reportCreated } from "./fs";
 
 /** Copy plain text, falling back to execCommand when the async API is blocked. */
 export async function copyText(text: string): Promise<void> {
@@ -75,7 +76,7 @@ export async function copyImageToClipboard(source: string): Promise<void> {
 /** Copy the clipboard's files into `targetDir`; resolves to the created paths.
  *  Same-name entries get a " 2" suffix, or are replaced when `overwrite` is set. */
 export const pasteFromClipboard = (targetDir: string, overwrite = false) =>
-  invoke<string[]>("paste_from_clipboard", { targetDir, overwrite });
+  reportCreated(invoke<string[]>("paste_from_clipboard", { targetDir, overwrite }));
 
 /** Names of the clipboard's files that already exist in `targetDir`, checked
  *  before pasting so the user can choose between overwriting and keeping both. */
@@ -95,7 +96,7 @@ export const hasClipboardImage = () => invoke<boolean>("has_clipboard_image");
  *  clipboard holds no image. The bytes are read natively, never via the webview,
  *  so even a large image doesn't freeze the editor. */
 export const saveClipboardImageToDir = (dir: string, stem: string) =>
-  invoke<string | null>("save_clipboard_image_to_dir", { dir, stem });
+  reportCreated(invoke<string | null>("save_clipboard_image_to_dir", { dir, stem }));
 
 /** Path of `path` relative to `base`; returns `path` unchanged if outside `base`. */
 export function relativePath(path: string, base: string | null): string {

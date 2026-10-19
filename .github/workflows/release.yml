@@ -44,6 +44,50 @@ jobs:
           echo "tag_name=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
           echo "prerelease=${{ github.event.release.prerelease }}" >> "$GITHUB_OUTPUT"
 
+  publish-skill:
+    name: Package and upload Idea Note Skill
+    needs: resolve-release
+    if: needs.resolve-release.outputs.tag_name != ''
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-release.outputs.tag_name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install guide export dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Sync Skill component references
+        run: node scripts/export-idea-note-skill.mjs
+
+      - name: Create standalone Skill archive
+        id: skill-archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f skills/idea-note/SKILL.md
+          archive_path="${RUNNER_TEMP}/idea-note-skill.zip"
+          cd skills
+          zip -r "$archive_path" idea-note -x '*/.DS_Store'
+          echo "archive_path=${archive_path}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Skill archive
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ needs.resolve-release.outputs.tag_name }}
+          files: ${{ steps.skill-archive.outputs.archive_path }}
+          fail_on_unmatched_files: true
+
   publish-tauri:
     needs: resolve-release
     if: needs.resolve-release.outputs.tag_name != ''

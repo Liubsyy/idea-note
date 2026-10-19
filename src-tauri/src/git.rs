@@ -148,6 +148,8 @@ fn lock_mode_for_args(args: &[String]) -> GitLockMode {
                         | "--copy"
                         | "--set-upstream-to"
                         | "--unset-upstream"
+                        | "--track"
+                        | "--no-track"
                 )
             }) {
                 GitLockMode::Write

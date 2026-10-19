@@ -37,6 +37,8 @@ import { PromptModal } from "./components/PromptModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { VaultModal } from "./components/VaultModal";
 import { HistoryModal } from "./components/HistoryModal";
+import { ManualSyncDialog } from "./components/ManualSyncDialog";
+import { BranchManagerModal } from "./components/BranchManagerModal";
 import { AppToast } from "./components/Toast";
 import {
   isDraftPath,
@@ -54,6 +56,7 @@ import {
 } from "./lib/fs";
 import { runScopeHandlers, type EditorView } from "@codemirror/view";
 import { matchesAppCommand } from "./lib/codemirror/keybindings";
+import { handleSyncShortcut } from "./lib/syncShortcuts";
 import { getActiveView, getSearchView } from "./lib/codemirror/activeView";
 import { handleEditorDrop } from "./lib/attachments";
 import { setFileDropCursor } from "./lib/codemirror/fileDropCursor";
@@ -321,7 +324,12 @@ function App() {
   useEffect(() => {
     if (!workspacePath || !gitSyncReady || !syncConfig.autoSync) return;
     const id = setInterval(
-      () => void useAppStore.getState().syncNow(),
+      () => {
+        // Hold off while 手动同步 is open, so the timer can't commit the files
+        // the user is still choosing between.
+        const state = useAppStore.getState();
+        if (!state.manualSyncOpen && !state.branchManagerOpen && !state.branchTaskBusy) void state.syncNow({ auto: true });
+      },
       syncConfig.intervalMin * 60_000,
     );
     return () => clearInterval(id);
@@ -345,6 +353,7 @@ function App() {
           !!state.prompt ||
           !!state.confirm ||
           !!state.gitCredentialPrompt ||
+          state.branchManagerOpen ||
           !!state.history;
         if (modalOpen) return;
         e.preventDefault();
@@ -426,6 +435,12 @@ function App() {
     return () => window.removeEventListener("keydown", onPresentationKey, true);
   }, []);
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { handleSyncShortcut(event, useAppStore.getState()); };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+
   // Global Ctrl/Cmd+N creates an untitled draft and Ctrl/Cmd+S saves;
   // Configurable find/replace shortcuts work even when focus is elsewhere
   // — except other text inputs (chat, terminal), which keep their own keys.
@@ -439,7 +454,7 @@ function App() {
       const inOtherInput =
         !!target && !view?.dom.contains(target) &&
         (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
-      const modalOpen = !!state.prompt || !!state.confirm || !!state.gitCredentialPrompt || !!state.history;
+      const modalOpen = !!state.prompt || !!state.confirm || !!state.gitCredentialPrompt || !!state.history || state.manualSyncOpen || state.branchManagerOpen;
       // Reuse CodeMirror's active bindings and key normalization instead of
       // keeping a second fixed shortcut list in the app-level handler.
       if (view && !inOtherInput && !modalOpen && runScopeHandlers(view, e, "search-open")) {
@@ -947,6 +962,8 @@ function App() {
       <ConfirmModal />
       <VaultModal />
       <HistoryModal />
+      <ManualSyncDialog />
+      <BranchManagerModal />
     </div>
   );
 }

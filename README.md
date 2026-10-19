@@ -50,6 +50,10 @@
 | **MacOS** | **Apple Silicon**：[安装包](https://github.com/Liubsyy/idea-note/releases/latest/download/Idea.Note_1.2.6_macos_aarch64.dmg) \| [应用包压缩](https://github.com/Liubsyy/idea-note/releases/latest/download/Idea.Note_1.2.6_macos_aarch64.app.tar.gz)<br>**Intel**：[安装包](https://github.com/Liubsyy/idea-note/releases/latest/download/Idea.Note_1.2.6_macos_x64.dmg) \| [应用包压缩](https://github.com/Liubsyy/idea-note/releases/latest/download/Idea.Note_1.2.6_macos_x64.app.tar.gz) | M芯片选 Apple Silicon<br>Intel 芯片选 Intel  |
 | **Linux** | **安装包**：[deb](https://github.com/Liubsyy/idea-note/releases/latest/download/Idea.Note_1.2.6_linux_amd64.deb) \| [rpm](https://github.com/Liubsyy/idea-note/releases/latest/download/Idea.Note_1.2.6_linux_x86_64.rpm)<br>**免安装**：[AppImage](https://github.com/Liubsyy/idea-note/releases/latest/download/Idea.Note_1.2.6_linux_amd64.AppImage) | Ubuntu/Debian/Linux Mint选deb<br>Fedora/RHEL/CentOS Stream/openSUSE选rpm |
 
+| Skill | 下载 | 说明 |
+| :--- | :--- | :--- |
+| **AI 助手 Skill** | [ZIP](https://github.com/Liubsyy/idea-note/releases/latest/download/idea-note-skill.zip) | 解压后将 `idea-note/` 放入 AI 助手的 Skill 目录并加载，即可编写高亮块、可交互组件等功能 |
+
 MacOS 首次安装时如果遇到"无法打开"或"应用已损坏"之类的权限提示，可按下面方式处理：
 
 1. "系统设置 -> 隐私与安全性"中找到被拦截的应用，点击"仍要打开"
@@ -122,6 +126,8 @@ xattr -rd com.apple.quarantine /Applications/Idea\ Note.app
 实现原理见 [doc/AI笔助手原理.md](./doc/AI笔记助手原理.md)。
 
 接入AI模型可参考： [doc/AI笔记助手接入DeepSeek步骤.md](./doc/AI笔记助手接入DeepSeek步骤.md)。
+
+外部 AI 助手也可通过 [Idea Note Skill](https://github.com/Liubsyy/idea-note/releases/latest/download/idea-note-skill.zip) 获得与内置 AI 助手同等的笔记编写能力，包括高亮块、可交互组件等功能。
 
 
 ### 笔记加密

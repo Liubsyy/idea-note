@@ -1,6 +1,6 @@
-# Git Commit Guide
+# Git 提交规范（中文）
 
-本项目提交信息优先使用简洁的 Conventional Commits 风格，便于查看历史、生成变更说明和定位问题。
+提交信息优先使用简洁的 Conventional Commits 风格，便于查看历史、生成变更说明和定位问题。本文也是中文界面下 AI 生成提交信息时的内置规范；英文版见 `GIT_COMMIT_GUIDE.en.md`。
 
 ## 提交格式
 
@@ -17,7 +17,7 @@
 要求：
 
 - 使用英文 type。
-- subject 使用一句话说明本次变更，优先中文或英文均可，但同一批提交尽量统一。
+- subject 使用中文，以一句话说明本次变更；必要的正文也使用中文，技术名称、路径和标识符保留原样。
 - subject 不以句号结尾。
 - 一次提交只做一件相对完整的事。
 - 避免使用笼统描述，例如 `update`、`fix bug`、`改东西`。
@@ -56,12 +56,12 @@
 ## 示例
 
 ```text
-feat(sync): support HTTPS credential login
-fix(editor): keep image preview from stealing focus
-docs: update release download links
-refactor(tauri): share git command timeout handling
-build(deps): add tempfile for git askpass helper
-chore(release): bump version to 1.0.2
+feat(sync): 支持 HTTPS 凭据登录
+fix(editor): 避免图片预览抢占焦点
+docs: 更新版本下载链接
+refactor(tauri): 复用 Git 命令超时处理
+build(deps): 为 Git askpass 辅助程序添加 tempfile
+chore(release): 升级版本至 1.0.2
 ```
 
 ## 正文和破坏性变更
@@ -69,16 +69,15 @@ chore(release): bump version to 1.0.2
 当 subject 无法解释清楚原因或影响时，添加正文：
 
 ```text
-fix(sync): retry HTTPS push after credential prompt
+fix(sync): 输入凭据后重试 HTTPS 推送
 
-Local changes are committed before network operations, so failed auth should
-not leave the workspace in a partial sync state.
+本地修改在网络操作前已提交，因此认证失败后应能重试，避免工作区停留在部分同步状态。
 ```
 
 如果包含破坏性变更，使用 `!` 或 `BREAKING CHANGE:`：
 
 ```text
-feat(settings)!: rename sync config keys
+feat(settings)!: 重命名同步配置键
 
-BREAKING CHANGE: old sync config files need migration.
+BREAKING CHANGE: 旧版同步配置文件需要迁移。
 ```

@@ -32,6 +32,8 @@ import {
   dirname,
   basename,
   isBinaryImageFile,
+  notifyPathsCreated,
+  onPathsCreated,
 } from "../lib/fs";
 import { DirectoryTree } from "../lib/directoryTree";
 import { relativePathWithinWorkspace } from "../lib/workspacePath";
@@ -74,6 +76,10 @@ import {
   getGitInfo,
   listWorkingChanges,
   restoreWorkspaceToCommit,
+  addToGit,
+  commitSelected,
+  countUntracked,
+  stageOnly,
   syncWorkspace,
   type CommitFile,
   type CommitMessageProvider,
@@ -81,6 +87,7 @@ import {
   type GitCredential,
   type GitCredentialProvider,
   type GitInfo,
+  type SyncResult,
 } from "../lib/git";
 
 import {
@@ -349,6 +356,11 @@ export interface ToastRequest {
 export interface SyncConfig {
   autoSync: boolean;
   intervalMin: number;
+  /** false = auto-sync only pulls and pushes; commits come from 手动同步. */
+  autoCommit: boolean;
+  /** Files created in the app are added to git at once. Syncs commit only
+   *  tracked files, so anything else waits for 手动同步 → 添加. */
+  autoAddNew: boolean;
 }
 
 /** Global sync commit-message settings (shared by all workspaces). */
@@ -534,6 +546,14 @@ interface AppState {
   openGlobalSearch: () => void;
   /** Set a folder's expand/collapse state (persisted in `expanded`). */
   setExpanded: (path: string, open: boolean) => void;
+  /** Collapse every folder of the workspace (files and notes modes share it). */
+  collapseAllFolders: () => void;
+  /** Expand every folder of the current sidebar tree; in files mode unread
+   *  folders are loaded on the way (see EXPAND_ALL_LIMIT for what is skipped). */
+  expandAllFolders: () => Promise<void>;
+  /** Expand the folders above `path` and select it in the current sidebar
+   *  tree, loading them first in files mode. False outside the workspace. */
+  revealInTree: (path: string) => Promise<boolean>;
   refreshTree: () => Promise<void>;
   loadDirectory: (path: string) => Promise<FileNode[]>;
   loadNotes: () => Promise<void>;
@@ -684,8 +704,27 @@ interface AppState {
   removeAiModel: (id: string) => Promise<void>;
   /** Re-probe the workspace's git status (after attaching a remote, etc.). */
   refreshGitInfo: () => Promise<void>;
-  /** Run a full git sync of the current workspace (main windows only). */
-  syncNow: () => Promise<void>;
+  /** Run a full git sync of the current workspace (main windows only).
+   *  `auto` marks the timer's run, which skips committing when the workspace
+   *  is in manual-commit mode (SyncConfig.autoCommit = false). */
+  syncNow: (opts?: { auto?: boolean }) => Promise<void>;
+  /** Internal: run one sync task with the shared status, file reload and
+   *  conflict handling; resolves to whether it succeeded. */
+  runSyncTask: (task: (workspacePath: string) => Promise<SyncResult>) => Promise<boolean>;
+  /** The 手动同步 dialog is open; the auto-sync timer waits meanwhile. */
+  manualSyncOpen: boolean;
+  setManualSyncOpen: (open: boolean) => void;
+  branchManagerOpen: boolean;
+  branchTaskBusy: boolean;
+  setBranchManagerOpen: (open: boolean) => void;
+  /** Serialize branch mutations with sync; true means the task changed files. */
+  runBranchTask: (task: (workspacePath: string) => Promise<boolean>) => Promise<void>;
+  /** Commit just `paths` (repo-root-relative) with `message`, then pull and
+   *  push when `push` and a remote exists. Resolves to whether it succeeded. */
+  manualSync: (paths: string[], message: string, push: boolean) => Promise<boolean>;
+  /** AI commit message for just `paths`, using 设置 → 提交文案's model and
+   *  convention (stages those paths to read their diff). */
+  generateManualCommitMessage: (paths: string[]) => Promise<string>;
   setSyncConfig: (patch: Partial<SyncConfig>) => void;
   showToast: (message: string, tone?: ToastRequest["tone"]) => void;
   dismissToast: () => void;
@@ -745,6 +784,12 @@ function dropRecent(path: string): string[] {
   return recents;
 }
 
+/** "Expand all" stops after this many folders, so a huge workspace cannot
+ * stall the window. Symlinked folders (possible cycles), hidden folders and
+ * node_modules are left closed; they can still be opened one by one. */
+const EXPAND_ALL_LIMIT = 2000;
+const EXPAND_ALL_SKIP = /^(\.|node_modules$)/;
+
 /** Read the folders left open in one workspace. Only open paths are stored;
  * missing paths therefore retain the default collapsed state. */
 function readExpandedFolders(workspacePath: string): Record<string, boolean> {
@@ -763,9 +808,14 @@ function readExpandedFolders(workspacePath: string): Record<string, boolean> {
   }
 }
 
-/** Persist one expansion change without overwriting other workspaces (or
- * changes made by another window since this window last loaded its tree). */
-function saveExpandedFolder(workspacePath: string, folderPath: string, open: boolean): void {
+/** Persist an expansion change without overwriting other workspaces (or
+ * changes made by another window since this window last loaded its tree).
+ * `"all"` with `open: false` collapses every folder of the workspace. */
+function saveExpandedFolders(
+  workspacePath: string,
+  folderPaths: string[] | "all",
+  open: boolean,
+): void {
   try {
     const raw = JSON.parse(localStorage.getItem(EXPANDED_FOLDERS_KEY) ?? "{}");
     const all: Record<string, unknown> =
@@ -776,8 +826,14 @@ function saveExpandedFolder(workspacePath: string, folderPath: string, open: boo
         ? saved.filter((path): path is string => typeof path === "string")
         : [],
     );
-    if (open) paths.add(folderPath);
-    else paths.delete(folderPath);
+    if (folderPaths === "all") {
+      if (!open) paths.clear();
+    } else {
+      for (const path of folderPaths) {
+        if (open) paths.add(path);
+        else paths.delete(path);
+      }
+    }
     all[workspacePath] = [...paths];
     localStorage.setItem(EXPANDED_FOLDERS_KEY, JSON.stringify(all));
   } catch {
@@ -880,7 +936,7 @@ export const SETTINGS_CONTEXT_EVENT = "settings:context";
 const LEGACY_SYNC_CONFIG_PREFIX = "idea-note:sync:";
 const SYNC_INTERVAL_MIN = 1;
 const SYNC_INTERVAL_MAX = 60;
-const DEFAULT_SYNC_CONFIG: SyncConfig = { autoSync: false, intervalMin: 10 };
+const DEFAULT_SYNC_CONFIG: SyncConfig = { autoSync: false, intervalMin: 10, autoCommit: true, autoAddNew: true };
 const DEFAULT_COMMIT_MESSAGE_CONFIG: CommitMessageConfig = {
   mode: "default",
   model: null,
@@ -990,6 +1046,8 @@ function normalizeSyncConfig(parsed: unknown): SyncConfig {
       typeof p.intervalMin === "number"
         ? Math.min(SYNC_INTERVAL_MAX, Math.max(SYNC_INTERVAL_MIN, p.intervalMin))
         : DEFAULT_SYNC_CONFIG.intervalMin,
+    autoCommit: typeof p.autoCommit === "boolean" ? p.autoCommit : true,
+    autoAddNew: typeof p.autoAddNew === "boolean" ? p.autoAddNew : true,
   };
 }
 
@@ -1638,6 +1696,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   lastSyncMessage: null,
   lastSyncAt: null,
   syncConfig: DEFAULT_SYNC_CONFIG,
+  manualSyncOpen: false,
+  branchManagerOpen: false,
+  branchTaskBusy: false,
   toast: null,
 
   openWorkspace: async () => {
@@ -1987,8 +2048,85 @@ export const useAppStore = create<AppState>((set, get) => ({
     const next = { ...expanded };
     if (open) next[path] = true;
     else delete next[path];
-    if (workspacePath) saveExpandedFolder(workspacePath, path, open);
+    if (workspacePath) saveExpandedFolders(workspacePath, [path], open);
     set({ expanded: next });
+  },
+
+  collapseAllFolders: () => {
+    const { workspacePath } = get();
+    if (workspacePath) saveExpandedFolders(workspacePath, "all", false);
+    set({ expanded: {} });
+  },
+
+  expandAllFolders: async () => {
+    const { workspacePath, sidebarMode } = get();
+    if (!workspacePath) return;
+    const open = (paths: string[], extra?: Partial<AppState>) => {
+      if (get().workspacePath !== workspacePath) return;
+      saveExpandedFolders(workspacePath, paths, true);
+      const expanded = { ...get().expanded };
+      for (const path of paths) expanded[path] = true;
+      set({ ...extra, expanded });
+    };
+    if (sidebarMode === "notes") {
+      const paths: string[] = [];
+      const walk = (nodes: FileNode[]) => {
+        for (const node of nodes) {
+          if (!node.is_dir) continue;
+          paths.push(node.path);
+          walk(node.children ?? []);
+        }
+      };
+      walk(get().notesTree);
+      open(paths);
+      return;
+    }
+    // Files mode reads folders lazily: open the tree level by level, loading
+    // each level before showing it so no folder flashes an empty state.
+    const current = directoryTree;
+    if (!current) return;
+    let budget = EXPAND_ALL_LIMIT;
+    let level = await current.load(current.root);
+    while (budget > 0) {
+      const dirs = level
+        .filter((node) => node.is_dir && !node.is_symlink && !EXPAND_ALL_SKIP.test(node.name))
+        .slice(0, budget);
+      if (!dirs.length) return;
+      budget -= dirs.length;
+      const children = await Promise.all(
+        dirs.map((dir) => current.load(dir.path).catch(() => [] as FileNode[])),
+      );
+      if (directoryTree !== current) return;
+      open(dirs.map((dir) => dir.path), { tree: current.snapshot() });
+      level = children.flat();
+    }
+  },
+
+  revealInTree: async (path) => {
+    const { workspacePath, sidebarMode } = get();
+    if (!workspacePath || !relativePathWithinWorkspace(workspacePath, path)) return false;
+    // Walk up with dirname so the keys keep the backend's own path style.
+    const parents: string[] = [];
+    for (let dir = dirname(path); relativePathWithinWorkspace(workspacePath, dir); dir = dirname(dir))
+      parents.unshift(dir);
+    let tree: FileNode[] | undefined;
+    if (sidebarMode !== "notes") {
+      const current = directoryTree;
+      if (!current) return false;
+      try {
+        await current.load(parents[parents.length - 1] ?? current.root);
+      } catch {
+        return false;
+      }
+      if (directoryTree !== current) return false;
+      tree = current.snapshot();
+    }
+    if (get().workspacePath !== workspacePath) return false;
+    saveExpandedFolders(workspacePath, parents, true);
+    const expanded = { ...get().expanded };
+    for (const dir of parents) expanded[dir] = true;
+    set({ ...(tree && { tree }), expanded, selectedPath: path, selectedPaths: [] });
+    return true;
   },
 
   refreshTree: async () => {
@@ -2443,6 +2581,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ saving: true });
       try {
         await writeFile(chosen, savedContent);
+        notifyPathsCreated([chosen]);
         set((s) => {
           const { [draftPath]: _drop, ...rest } = s.draftContents;
           return {
@@ -3273,24 +3412,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (get().workspacePath === workspacePath) set({ gitInfo });
   },
 
-  syncNow: async () => {
-    const { workspacePath, syncState, vaultRotationBusy } = get();
-    if (!workspacePath || syncState === "syncing") return;
-    if (vaultRotationBusy) {
-      get().showToast(tr("MK 正在迁移，完成后再同步。"), "error");
-      return;
-    }
-
-    const broadcast = () => {
-      const { syncState, lastSyncMessage, lastSyncAt } = get();
-      emit(SYNC_STATE_EVENT, { syncState, lastSyncMessage, lastSyncAt }).catch(() => {});
-    };
-
-    set({ syncState: "syncing", lastSyncMessage: null });
-    broadcast();
-    try {
-      await get().flushActiveTab();
-
+  syncNow: async (opts) => {
+    await get().runSyncTask(async (workspacePath) => {
       // AI commit messages (设置 → 远程同步 → 提交文案, global). Resolved here
       // per sync so config/model edits in the settings window take effect
       // immediately; in AI mode generation failure aborts sync with an error.
@@ -3307,13 +3430,116 @@ export const useAppStore = create<AppState>((set, get) => ({
               throw new Error(tr("AI 提交文案生成失败：没有可用的 AI 模型，请先在设置中配置"));
             };
       }
-
+      // In manual-commit mode the timer only pulls and pushes; an explicit
+      // 立即同步 still commits everything.
+      const commitLocal = !opts?.auto || get().syncConfig.autoCommit;
       const result = await syncWorkspace(
         workspacePath,
         readGlobalProxy(),
         get().requestGitCredential,
         commitMessage,
+        commitLocal,
       );
+      // Syncs commit only tracked files; say when new files are being left out
+      // so a note never silently stops syncing.
+      const untracked = result.ok ? await countUntracked(workspacePath).catch(() => 0) : 0;
+      return untracked
+        ? {
+            ...result,
+            message: tr("{{0}}（{{1}} 个新文件未添加到 Git，可在“手动同步”中添加）", { 0: result.message, 1: untracked }),
+          }
+        : result;
+    });
+  },
+
+  setManualSyncOpen: (manualSyncOpen) => set({ manualSyncOpen }),
+
+  setBranchManagerOpen: (branchManagerOpen) => set({ branchManagerOpen }),
+
+  runBranchTask: async (task) => {
+    const { workspacePath, syncState, branchTaskBusy, vaultRotationBusy } = get();
+    if (!workspacePath) throw new Error(tr("未打开工作区"));
+    if (syncState === "syncing" || branchTaskBusy || vaultRotationBusy) {
+      throw new Error(tr("正在同步或处理工作区，请稍后重试"));
+    }
+    set({ branchTaskBusy: true });
+    try {
+      await get().flushActiveTab();
+      if (get().workspacePath !== workspacePath) return;
+      const changedFiles = await task(workspacePath);
+      if (get().workspacePath !== workspacePath) return;
+      if (changedFiles) {
+        await get().refreshTree();
+        const { activeFilePath, openTabs } = get();
+        const surviving = new Set((await Promise.all(openTabs.map(async (path) =>
+          isDraftPath(path) || (path === activeFilePath && get().isDirty) || await fileStat(path) ? path : null,
+        ))).filter((path): path is string => path !== null));
+        if (get().workspacePath !== workspacePath) return;
+        set((s) => ({ openTabs: s.openTabs.filter((path) => surviving.has(path)) }));
+        if (activeFilePath && !isDraftPath(activeFilePath) && !get().isDirty) {
+          if (await fileStat(activeFilePath)) await get().openFile(activeFilePath);
+          else set((s) => ({
+            activeFilePath: null, selectedPath: null, folderViewPath: null,
+            content: "", savedContentHash: null, isDirty: false,
+            docKey: s.docKey + 1, activeFormats: emptyFormats,
+          }));
+        }
+      }
+    } finally {
+      set({ branchTaskBusy: false });
+      await get().refreshGitInfo();
+    }
+  },
+
+  manualSync: (paths, message, push) =>
+    get().runSyncTask(async (workspacePath) => {
+      const committed = await commitSelected(workspacePath, paths, message);
+      if (!push || !get().gitInfo?.remoteUrl) {
+        return committed
+          ? { ok: true, conflictFiles: [], changed: true, message: tr("已提交到本地仓库") }
+          : { ok: true, conflictFiles: [], changed: false, message: tr("没有可提交的更改") };
+      }
+      // Pull and push only: the unselected changes stay uncommitted.
+      const result = await syncWorkspace(
+        workspacePath,
+        readGlobalProxy(),
+        get().requestGitCredential,
+        undefined,
+        false,
+      );
+      return { ...result, changed: result.changed || committed };
+    }),
+
+  generateManualCommitMessage: async (paths) => {
+    const { workspacePath, aiModels } = get();
+    if (!workspacePath) throw new Error(tr("未打开工作区"));
+    const commitCfg = readCommitMessageConfig();
+    const model =
+      resolveModelSelection(aiModels, commitCfg.model) ??
+      resolveModelSelection(aiModels, firstModelSelection(aiModels));
+    if (!model) throw new Error(tr("AI 提交文案生成失败：没有可用的 AI 模型，请先在设置中配置"));
+    await stageOnly(workspacePath, paths);
+    return generateCommitMessage(model, workspacePath, commitCfg.convention);
+  },
+
+  runSyncTask: async (task) => {
+    const { workspacePath, syncState, vaultRotationBusy } = get();
+    if (!workspacePath || syncState === "syncing" || get().branchTaskBusy) return false;
+    if (vaultRotationBusy) {
+      get().showToast(tr("MK 正在迁移，完成后再同步。"), "error");
+      return false;
+    }
+
+    const broadcast = () => {
+      const { syncState, lastSyncMessage, lastSyncAt } = get();
+      emit(SYNC_STATE_EVENT, { syncState, lastSyncMessage, lastSyncAt }).catch(() => {});
+    };
+
+    set({ syncState: "syncing", lastSyncMessage: null });
+    broadcast();
+    try {
+      await get().flushActiveTab();
+      const result = await task(workspacePath);
 
       // The merge may have rewritten files on disk: refresh the tree, and
       // reload the open file unless the user kept typing during the sync.
@@ -3385,10 +3611,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           },
         });
       }
+      return result.ok;
     } catch (err) {
       const message = tr("同步失败：{{0}}", { 0: err instanceof Error ? err.message : String(err) });
       set({ syncState: "error", lastSyncMessage: message, lastSyncAt: Date.now() });
       get().showToast(message, "error");
+      return false;
     } finally {
       broadcast();
     }
@@ -3543,6 +3771,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 }));
+
+// Files the app creates (new, pasted, dropped, renamed or moved) are added to
+// git right away, since syncs commit only tracked files. An ignored path just
+// stays out; git still adds the rest of the batch.
+onPathsCreated((paths) => {
+  const { workspacePath, gitInfo, syncConfig } = useAppStore.getState();
+  if (!workspacePath || !gitInfo?.isRepo || !syncConfig.autoAddNew) return;
+  const inside = paths
+    .map((path) => relativePathWithinWorkspace(workspacePath, path))
+    .filter((path): path is string => !!path);
+  if (inside.length) void addToGit(workspacePath, inside).catch(() => {});
+});
 
 // Apply settings changed in the *other* window (the broadcaster also receives
 // its own event — harmless, since we only set state + DOM here, never re-emit).

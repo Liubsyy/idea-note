@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
@@ -95,7 +96,7 @@ test('every literal translation key used in application code has an English entr
       visit(sf);
     }
   }
-  scan(new URL('../src', import.meta.url).pathname.replace(/^\/(\w:)/, '$1'));
+  scan(fileURLToPath(new URL('../src', import.meta.url)));
 });
 
 test('localized component templates still execute and emit valid protocol JSON', () => {

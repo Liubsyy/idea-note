@@ -63,9 +63,19 @@ class HtmlWidget extends WidgetType {
     super();
   }
   eq(o: HtmlWidget) {
+    return o.image?.selected === this.image?.selected && this.sameRender(o);
+  }
+  sameRender(o: HtmlWidget) {
     return o.html === this.html && o.from === this.from && o.inline === this.inline &&
       o.image?.from === this.image?.from && o.image?.to === this.image?.to &&
-      o.image?.selected === this.image?.selected && o.image?.readOnly === this.image?.readOnly;
+      o.image?.readOnly === this.image?.readOnly;
+  }
+  // Selecting an image only restyles its outline; a rebuilt <img> would lay
+  // out at zero height until it decodes and flash (see ImageWidget).
+  updateDOM(dom: HTMLElement, _view: EditorView, prev: HtmlWidget) {
+    if (!this.image || !this.sameRender(prev)) return false;
+    dom.classList.toggle("cm-md-resource-selected", this.image.selected);
+    return true;
   }
   // Stand-in height until CodeMirror measures the real DOM; see blockHeight.ts.
   // Only the block form gets one — an inline widget is measured as part of its
