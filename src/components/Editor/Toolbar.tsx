@@ -842,10 +842,10 @@ export function Toolbar() {
         onPrimary={() => runCommand("markdownHighlightBlock")}
         onPick={applyHighlightColor}
       />
-      {/* Code block: the icon inserts a plain fence (unchanged), while the
-          chevron also exposes the parameterised and encrypted block forms. */}
+      {/* Content blocks: the icon inserts a plain code fence; the chevron
+          offers collapsible, interactive and encrypted blocks as well. */}
       <Dropdown
-        title={tr("代码块")}
+        title={tr("内容块")}
         primaryTitle={shortcut(tr("代码块"), "markdownCodeBlock")}
         active={active.codeBlock}
         menuWidth={168}
@@ -858,6 +858,14 @@ export function Toolbar() {
               title={shortcut(tr("代码块"), "markdownCodeBlock")}
               onClick={() => {
                 runCommand("markdownCodeBlock");
+                close();
+              }}
+            />
+            <MenuItem
+              label={tr("折叠块")}
+              title={shortcut(tr("折叠块"), "markdownDetailsBlock")}
+              onClick={() => {
+                runCommand("markdownDetailsBlock");
                 close();
               }}
             />

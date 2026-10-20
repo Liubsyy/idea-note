@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.8
+
+**简体中文**
+
+- 优化折叠块交互与渲染。
+
+**English**
+
+- Improved collapsible section interactions and rendering.
+
 ## 1.2.7
 
 **简体中文**

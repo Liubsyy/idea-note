@@ -931,6 +931,7 @@
   caret-color: transparent;
 }
 .cm-md-table-source,
+.cm-md-details-source,
 .cm-md-resource-source {
   position: absolute;
   /* In the gutter to the left of the table, level with its first row: the
@@ -963,27 +964,33 @@
     background 150ms ease;
   z-index: 2;
 }
-.cm-md-resource-source {
+.cm-md-resource-source,
+.cm-md-details-source {
   top: 0;
 }
 .cm-md-table-block:hover .cm-md-table-source,
 .cm-md-table-source:focus-visible,
+.cm-md-details:hover .cm-md-details-source,
+.cm-md-details-source:focus-visible,
 .cm-md-resource:hover .cm-md-resource-source,
 .cm-md-resource-source:focus-visible {
   opacity: 0.9;
 }
 .cm-md-table-source:hover,
+.cm-md-details-source:hover,
 .cm-md-resource-source:hover {
   background: var(--hover);
   color: var(--text);
   opacity: 1;
 }
 .cm-md-table-source:focus-visible,
+.cm-md-details-source:focus-visible,
 .cm-md-resource-source:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 .cm-md-table-source svg,
+.cm-md-details-source svg,
 .cm-md-resource-source svg {
   width: 13px;
   height: 13px;
@@ -1138,6 +1145,58 @@
 }
 .cm-md-html {
   display: flow-root;
+}
+.cm-md-details {
+  position: relative;
+  cursor: auto;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.cm-md-details summary {
+  cursor: pointer;
+}
+/* Widget body headings share the editor's level/scale/weight rules. Margins
+   supply the paragraph spacing normally provided by CodeMirror's blank lines. */
+.cm-md-details-heading {
+  margin: 1em 0 0.6em;
+}
+.editor-compact .cm-md-details-heading {
+  margin: 0.65em 0 0.4em;
+}
+.cm-md-details summary > h1,
+.cm-md-details summary > h2,
+.cm-md-details summary > h3,
+.cm-md-details summary > h4,
+.cm-md-details summary > h5,
+.cm-md-details summary > h6 {
+  display: inline;
+}
+.cm-md-details summary::marker {
+  font-size: 1.6em;
+}
+.cm-md-details summary::-webkit-details-marker {
+  font-size: 1.6em;
+}
+.cm-md-details ul,
+.cm-md-details ol {
+  margin: 0.6em 0;
+  padding-left: 1.5em;
+}
+.cm-md-details ul {
+  list-style: disc;
+}
+.cm-md-details ol {
+  list-style: decimal;
+}
+.cm-md-details li::marker {
+  color: var(--accent);
+}
+.cm-md-details p {
+  margin: 0.5em 0;
+}
+.cm-md-details pre {
+  white-space: pre;
+  overflow-x: auto;
 }
 .cm-md-html > :first-child {
   margin-top: 0;

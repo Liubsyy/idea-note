@@ -19,6 +19,7 @@ import {
   type ImgAttr,
 } from "../imageSyntax";
 import { imageAt } from "./imageAt";
+import { setDetailsSource } from "./detailsBlock";
 import {
   highlightColorFromLine,
   highlightMarker,
@@ -425,6 +426,30 @@ export const md = {
   highlightBlock: (v: EditorView) => editHighlightBlock(v, "blue", true),
   highlightBlockColor: (v: EditorView, color: HighlightColor) =>
     editHighlightBlock(v, color, false),
+  detailsBlock: (v: EditorView) => {
+    const { state } = v;
+    const range = state.selection.main;
+    const title = tr("折叠块标题");
+    const body = state.sliceDoc(range.from, range.to) || tr("在这里输入内容");
+    // Blank lines keep adjacent Markdown outside the HTML block, even when
+    // inserting in the middle of a paragraph or wrapping a partial selection.
+    const before = state.sliceDoc(0, range.from);
+    const after = state.sliceDoc(range.to);
+    const lead = before.length === 0 || before.endsWith("\n\n") ? ""
+      : before.endsWith("\n") ? "\n" : "\n\n";
+    const trail = after.startsWith("\n\n") ? ""
+      : after.startsWith("\n") ? "\n" : "\n\n";
+    const prefix = "<details>\n<summary>";
+    const block = `${prefix}${title}</summary>\n\n${body}\n\n</details>`;
+    const from = range.from + lead.length;
+    v.dispatch({
+      changes: { from: range.from, to: range.to, insert: lead + block + trail },
+      selection: EditorSelection.range(from + prefix.length, from + prefix.length + title.length),
+      effects: setDetailsSource.of({ from, to: from + block.length }),
+      userEvent: "input",
+    });
+    v.focus();
+  },
   bulletList: (v: EditorView) => setLinePrefix(v, "- ", BULLET_RE),
   orderedList: (v: EditorView) => setLinePrefix(v, "1. ", ORDERED_RE),
 

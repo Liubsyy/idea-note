@@ -417,7 +417,7 @@ Markdown 允许混入 HTML。本编辑器会渲染常见 HTML，并通过 DOMPur
 
 <details>
 <summary>点击展开 / 收起（details + summary）</summary>
-折叠区内部可以写多行内容（注意：折叠块内部不要留空行，否则会被截断为多个 HTML 块）。
+折叠区内部可以写多行内容，也支持用空行分隔 Markdown 段落、列表等内容。
 支持 <b>加粗</b>、<code>代码</code>、<font color="#1971c2">彩色</font> 等行内 HTML。
 </details>
 

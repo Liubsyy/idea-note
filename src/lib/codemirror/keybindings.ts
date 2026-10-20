@@ -120,6 +120,7 @@ export const EDITOR_COMMANDS: EditorCommandDef[] = [
   { id: "markdownTaskList", get label() { return tr("任务列表"); }, get desc() { return tr("插入任务列表项"); }, defaultKey: "Mod-Shift-9", run: MARKDOWN_ACTIONS.markdownTaskList, group: "markdown" },
   { id: "markdownQuote", get label() { return tr("引用"); }, get desc() { return tr("切换所选行为引用"); }, defaultKey: "Mod-Shift-q", run: MARKDOWN_ACTIONS.markdownQuote, group: "markdown" },
   { id: "markdownHighlightBlock", get label() { return tr("高亮块"); }, get desc() { return tr("插入高亮块或转换所选段落"); }, defaultKey: "Mod-Alt-Shift-h", run: MARKDOWN_ACTIONS.markdownHighlightBlock, group: "markdown" },
+  { id: "markdownDetailsBlock", get label() { return tr("折叠块"); }, get desc() { return tr("插入折叠块或包裹所选内容"); }, defaultKey: "Mod-Alt-Shift-d", run: MARKDOWN_ACTIONS.markdownDetailsBlock, group: "markdown" },
   { id: "markdownCodeBlock", get label() { return tr("代码块"); }, get desc() { return tr("插入代码块"); }, defaultKey: "Mod-Alt-c", run: MARKDOWN_ACTIONS.markdownCodeBlock, group: "markdown" },
   { id: "markdownHr", get label() { return tr("分割线"); }, get desc() { return tr("插入水平分割线"); }, defaultKey: "Mod-Alt-h", run: MARKDOWN_ACTIONS.markdownHr, group: "markdown" },
   { id: "markdownLink", get label() { return tr("链接"); }, get desc() { return tr("插入 Markdown 链接"); }, defaultKey: "Mod-k", run: MARKDOWN_ACTIONS.markdownLink, group: "markdown" },

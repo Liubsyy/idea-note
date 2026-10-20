@@ -29,6 +29,7 @@ import { tablePreview } from "../../lib/codemirror/tablePreview";
 import { markdownLinkClick } from "../../lib/codemirror/linkClick";
 import { resourceClipboard } from "../../lib/codemirror/resourceClipboard";
 import { htmlPreview } from "../../lib/codemirror/htmlPreview";
+import { detailsBlock } from "../../lib/codemirror/detailsBlock";
 import { inlineMath, mathBlock } from "../../lib/codemirror/math";
 import { mermaidBlock } from "../../lib/codemirror/diagram";
 import { inputBlock } from "../../lib/codemirror/inputBlock";
@@ -277,7 +278,7 @@ export function CodeMirrorEditor({ active = true }: { active?: boolean }) {
           markdown({
             base: markdownLanguage,
             codeLanguages: languages,
-            extensions: [GFM, inlineMath],
+            extensions: [GFM, inlineMath, detailsBlock],
           }),
           // Pasting an image/file writes the real file into the configured
           // directory and inserts a markdown reference (markdown notes only).

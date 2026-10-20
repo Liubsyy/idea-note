@@ -1,4 +1,5 @@
 import { tr } from "../../i18n/core.ts";
+import { localizeElement } from "../../i18n/dom.ts";
 // Raw-HTML live preview for CodeMirror 6.
 //
 // Markdown may embed HTML — block-level (`<div>…</div>`, `<details>`, a raw
@@ -14,9 +15,12 @@ import { tr } from "../../i18n/core.ts";
 // anywhere on that line reverts all of it to source. Only the region the
 // selection touches shows its source, so it stays editable while the rest of
 // the line keeps rendering. All HTML is sanitized before it reaches the DOM.
+// Details blocks keep their native expand/collapse interaction; only the
+// explicit left-side source button reveals their HTML, matching table preview.
 
 import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
-import { EditorState, StateField, Range } from "@codemirror/state";
+import MarkdownIt from "markdown-it";
+import { EditorState, StateField, Range, type Extension } from "@codemirror/state";
 import {
   Decoration,
   DecorationSet,
@@ -36,8 +40,95 @@ import { toDisplaySrc } from "../imagePath";
 import { cssLength, getImgAttr, parseImgTag } from "../imageSyntax";
 import { bindResourcePreview, resourceSelected, resourceSourceVisible, setResourceSource } from "./resourcePreview";
 import { openImagePrompt } from "./markdownActions";
+import { setDetailsSource, type DetailsRange } from "./detailsBlock";
+
+// The syntax tree keeps details opaque; render Markdown between its HTML
+// sections here, including lists separated from the summary by a blank line.
+const detailsMarkdown = new MarkdownIt({ html: true, linkify: true });
 
 type HtmlImage = { from: number; to: number; url: string; selected: boolean; readOnly: boolean };
+type HtmlDetails = DetailsRange & { readOnly: boolean };
+
+const detailsSourceField = StateField.define<DetailsRange | null>({
+  create: () => null,
+  update(value, transaction) {
+    if (transaction.state.readOnly) return null;
+    for (const effect of transaction.effects)
+      if (effect.is(setDetailsSource)) return effect.value;
+    if (!value) return null;
+    const mapped = transaction.docChanged ? {
+      from: transaction.changes.mapPos(value.from, -1),
+      to: transaction.changes.mapPos(value.to, 1),
+    } : value;
+    // Match tables: keep source visible during editing, then render on exit.
+    if (transaction.selection && !transaction.state.selection.ranges.some(
+      (range) => range.from <= mapped.to && range.to >= mapped.from,
+    )) return null;
+    return mapped;
+  },
+});
+
+// Reuse the native details DOM across selection/position changes so its open
+// state survives. Event handlers read the current range instead of old offsets.
+const detailsHosts = new WeakMap<HTMLElement, HtmlDetails>();
+const SOURCE_ICON =
+  '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m18 16 4-4-4-4" /><path d="m6 8-4 4 4 4" /><path d="m14.5 4-5 16" /></svg>';
+
+function bindDetails(el: HTMLElement, view: EditorView, details: HtmlDetails) {
+  detailsHosts.set(el, details);
+  el.classList.add("cm-md-details");
+  // HTML headings and Markdown headings rendered inside the widget do not
+  // pass through livePreview's line decorations. Reuse its heading typography
+  // here, including nested details, while summary headings inherit from their
+  // separately styled disclosure row below.
+  el.querySelectorAll("h1, h2, h3, h4, h5, h6").forEach((heading) => {
+    if (!heading.closest("summary"))
+      heading.classList.add("cm-md-details-heading", `cm-md-h${heading.tagName.slice(1)}`);
+  });
+  // Tailwind resets native heading typography. Style the summary itself with
+  // the editor's heading class so its text and disclosure marker share the
+  // same size, weight, line height, and user-configured heading scale.
+  el.querySelectorAll("summary").forEach((summary) => {
+    const heading = Array.from(summary.children).find((child) => /^H[1-6]$/.test(child.tagName));
+    if (heading) summary.classList.add(`cm-md-h${heading.tagName.slice(1)}`);
+    summary.addEventListener("click", (event) => {
+      if (event.defaultPrevented ||
+        (event.target instanceof Element && event.target.closest("a, button, input, select, textarea"))) return;
+      // Capture before the native click toggles `open`. Otherwise CodeMirror's
+      // height measurement can anchor to the document bottom and move the
+      // summary by the entire height of its body, especially beside a tall
+      // table. An explicit snapshot takes priority over that automatic anchor.
+      // Keep the native default so mouse and keyboard toggles work alike.
+      view.dispatch({ effects: view.scrollSnapshot() });
+    });
+  });
+  el.querySelectorAll("details").forEach((element) => {
+    element.addEventListener("toggle", () => view.requestMeasure());
+  });
+  if (details.readOnly) return;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "cm-md-details-source";
+  localizeElement(button, "title", () => tr("显示折叠块源码"));
+  localizeElement(button, "ariaLabel", () => tr("显示折叠块源码"));
+  button.innerHTML = SOURCE_ICON;
+  for (const type of ["pointerdown", "mousedown", "touchstart"] as const)
+    button.addEventListener(type, (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const range = detailsHosts.get(el)!;
+    view.dispatch({
+      selection: { anchor: range.from },
+      effects: setDetailsSource.of({ from: range.from, to: range.to }),
+    });
+    view.focus();
+  });
+  el.appendChild(button);
+}
 
 function singleImage(state: EditorState, from: number, to: number): HtmlImage | undefined {
   const source = state.sliceDoc(from, to);
@@ -59,6 +150,7 @@ class HtmlWidget extends WidgetType {
     // render as a <div>.
     readonly inline = false,
     readonly image?: HtmlImage,
+    readonly details?: HtmlDetails,
   ) {
     super();
   }
@@ -68,11 +160,18 @@ class HtmlWidget extends WidgetType {
   sameRender(o: HtmlWidget) {
     return o.html === this.html && o.from === this.from && o.inline === this.inline &&
       o.image?.from === this.image?.from && o.image?.to === this.image?.to &&
-      o.image?.readOnly === this.image?.readOnly;
+      o.image?.readOnly === this.image?.readOnly &&
+      o.details?.from === this.details?.from && o.details?.to === this.details?.to &&
+      o.details?.readOnly === this.details?.readOnly;
   }
   // Selecting an image only restyles its outline; a rebuilt <img> would lay
   // out at zero height until it decodes and flash (see ImageWidget).
   updateDOM(dom: HTMLElement, _view: EditorView, prev: HtmlWidget) {
+    if (this.details && prev.details && this.html === prev.html &&
+      this.details.readOnly === prev.details.readOnly) {
+      detailsHosts.set(dom, this.details);
+      return true;
+    }
     if (!this.image || !this.sameRender(prev)) return false;
     dom.classList.toggle("cm-md-resource-selected", this.image.selected);
     return true;
@@ -111,7 +210,8 @@ class HtmlWidget extends WidgetType {
       el.classList.add("cm-md-image-wrap");
       bindResourcePreview(el, view, this.image, this.image.url, tr("图片"), this.image.selected,
         () => openImagePrompt(view));
-    } else el.addEventListener("mousedown", (e) => {
+    } else if (this.details) bindDetails(el, view, this.details);
+    else el.addEventListener("mousedown", (e) => {
       // Let links/checkboxes inside the rendered HTML behave normally.
       if ((e.target as HTMLElement).closest("a")) return;
       e.preventDefault();
@@ -119,14 +219,14 @@ class HtmlWidget extends WidgetType {
       view.focus();
     });
     if (!this.inline)
-      trackBlockHeight(el, () => blockHeightKey("html", this.from));
+      trackBlockHeight(el, () => blockHeightKey("html", detailsHosts.get(el)?.from ?? this.from));
     return el;
   }
   destroy(dom: HTMLElement) {
     untrackBlockHeight(dom);
   }
   ignoreEvent() {
-    return !!this.image;
+    return !!this.image || !!this.details;
   }
 }
 
@@ -199,15 +299,21 @@ function buildHtml(state: EditorState): DecorationSet {
     const from = state.doc.lineAt(nodeFrom).from;
     const to = state.doc.lineAt(nodeTo).to;
     const image = singleImage(state, nodeFrom, nodeTo);
-    // Keep the source visible while the cursor is inside the region — except in
-    // read-only mode, where it always stays rendered.
+    const details = /^\s*<details\b/i.test(state.sliceDoc(nodeFrom, nodeTo))
+      ? { from, to, readOnly: state.readOnly } : undefined;
+    const source = state.field(detailsSourceField);
+    // Ordinary HTML reveals source when selected; details and images require
+    // their explicit source button. Read-only HTML always stays rendered.
     const inside =
       !state.readOnly &&
       state.selection.ranges.some((r) => r.from <= to && r.to >= from);
-    if (image ? resourceSourceVisible(state, image.from) : inside) return;
+    const sourceVisible = image ? resourceSourceVisible(state, image.from)
+      : details ? !state.readOnly && source?.from === from && source.to === to
+      : inside;
+    if (sourceVisible) return;
     ranges.push(
       Decoration.replace({
-        widget: new HtmlWidget(html, from, false, image),
+        widget: new HtmlWidget(html, from, false, image, details),
         block: true,
       }).range(from, to),
     );
@@ -256,9 +362,9 @@ function buildHtml(state: EditorState): DecorationSet {
   tree.iterate({
     enter: (node) => {
       if (node.name === "HTMLBlock") {
-        // Block HTML is raw — no markdown processing inside it.
         const src = state.doc.sliceString(node.from, node.to);
-        add(node.from, node.to, sanitizeHtml(src));
+        const html = /^\s*<details\b/i.test(src) ? detailsMarkdown.render(src) : src;
+        add(node.from, node.to, sanitizeHtml(html));
         return false;
       }
       if (
@@ -276,17 +382,19 @@ function buildHtml(state: EditorState): DecorationSet {
   return Decoration.set(ranges, true);
 }
 
-export const htmlPreview = StateField.define<DecorationSet>({
+const htmlDecorations = StateField.define<DecorationSet>({
   create: (state) => buildHtml(state),
   update(deco, tr) {
     if (
       tr.docChanged ||
       tr.selection ||
       tr.startState.readOnly !== tr.state.readOnly ||
-      tr.effects.some((e) => e.is(parseAdvanced) || e.is(setResourceSource))
+      tr.effects.some((e) => e.is(parseAdvanced) || e.is(setResourceSource) || e.is(setDetailsSource))
     )
       return buildHtml(tr.state);
     return deco.map(tr.changes);
   },
   provide: (f) => EditorView.decorations.from(f),
 });
+
+export const htmlPreview: Extension = [detailsSourceField, htmlDecorations];

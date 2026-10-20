@@ -25,6 +25,7 @@
     "test:directory-tree": "node --test --experimental-strip-types tests/directoryTree.test.mjs tests/workspaceLoading.test.mjs tests/directoryEntries.test.mjs",
     "test:sidebar-drop": "node --test --experimental-strip-types tests/sidebarDrop.test.mjs",
     "test:resource-preview": "node --test tests/resourcePreview.test.mjs tests/resourceClipboard.test.mjs",
+    "test:details-block": "node --test --experimental-strip-types tests/detailsBlock.test.mjs",
     "test:svg-preview": "node --test tests/svgPreview.test.mjs",
     "test:file-preview": "node --test --experimental-strip-types tests/structuredPreview.test.mjs tests/svgPreview.test.mjs",
     "test:input-schema": "node --test --experimental-strip-types tests/inputSchema.test.mjs",
