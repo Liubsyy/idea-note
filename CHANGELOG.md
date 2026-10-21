@@ -1,13 +1,15 @@
 # Changelog
 
-## 1.2.8
+## 1.3.0
 
 **简体中文**
 
+- 新增 Markdown 链接分享，支持更新、取消及独立管理后台，可部署于 Cloudflare 或 Node/Docker。
 - 优化折叠块交互与渲染。
 
 **English**
 
+- Added Markdown link sharing with updates, revocation, and an admin dashboard, deployable on Cloudflare or Node/Docker.
 - Improved collapsible section interactions and rendering.
 
 ## 1.2.7

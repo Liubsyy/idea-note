@@ -1,3 +1,4 @@
+import { remapShareAssociations } from "../lib/share/client";
 import { tr } from "../i18n/core.ts";
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
@@ -2706,6 +2707,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const current = basename(path);
     if (!trimmed || trimmed === current) return;
     const newPath = await renamePath(path, trimmed);
+    await remapShareAssociations(path, newPath).catch(error => get().showToast(String(error), "error"));
     const { activeFilePath, selectedPath, folderViewPath, refreshTree } = get();
     await refreshTree();
     // Remap any open tab whose path is (or is nested under) the renamed node.
@@ -2741,6 +2743,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         failed.push(basename(p));
       }
     }
+    for (const [from, to] of moved) await remapShareAssociations(from, to).catch(error => get().showToast(String(error), "error"));
     await get().refreshTree();
 
     // Each moved node keeps its name, so only its parent prefix changes.

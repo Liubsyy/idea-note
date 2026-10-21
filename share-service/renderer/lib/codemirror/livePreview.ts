@@ -1,0 +1,1128 @@
+import { localizeElement } from "../../i18n/dom.ts";
+import { tr } from "../../i18n/core.ts";
+// Typora/Obsidian-style live preview for CodeMirror 6.
+//
+// The document is always markdown source. We walk the Lezer syntax tree and,
+// for every line that the selection does NOT touch, hide the markdown markers
+// and render the result (big headings, bold text, real images, …). On the
+// line(s) the cursor is on, markers stay visible so you edit raw markdown —
+// exactly the Typora hybrid behavior. Images and local file links stay rendered
+// until their source button is explicitly pressed.
+
+import {
+  codeFolding,
+  foldEffect,
+  foldedRanges,
+  unfoldEffect,
+  ensureSyntaxTree,
+  syntaxTree,
+  syntaxTreeAvailable,
+} from "@codemirror/language";
+import { EditorState, Range, StateEffect, type Line } from "@codemirror/state";
+import {
+  Decoration,
+  DecorationSet,
+  EditorView,
+  ViewPlugin,
+  ViewUpdate,
+  WidgetType,
+} from "@codemirror/view";
+import type { SyntaxNode, Tree } from "@lezer/common";
+
+import { toDisplaySrc } from "../imagePath";
+import { openImagePrompt } from "./markdownActions";
+import {
+  bindResourcePreview,
+  isResourceLink,
+  ResourceWidget,
+  resourceSelected,
+  resourceSelectionHighlight,
+  resourceSourceField,
+  resourceSourceVisible,
+  setResourceSource,
+} from "./resourcePreview";
+import {
+  imageSizeStyle,
+  NO_IMAGE_SIZE,
+  parseImageDest,
+  type ImageSize,
+} from "../imageSyntax";
+import { createCodeActions, destroyCodeActions } from "./codeActions";
+import { useAppStore } from "../../store/useAppStore";
+import { canInteract, presentationInteraction } from "./interaction";
+import { resolveRunner } from "../codeRun/runners";
+import {
+  INPUT_FENCE,
+  fenceInfoOf,
+  isCloseFenceFor,
+  openingFenceOf,
+  parseFenceInfo,
+} from "../codeRun/fenceAttrs";
+import { isInlineSecret } from "../crypto/secretBlock.ts";
+import { MathWidget } from "./math";
+import { MERMAID_FENCE } from "./diagram";
+import {
+  highlightBackgroundCss,
+  highlightColorCss,
+  highlightColorFromLine,
+} from "../highlightBlock";
+
+/** Lines (1-based) the selection intersects — these reveal their source. */
+function activeLineSet(state: EditorState): Set<number> {
+  const set = new Set<number>();
+  for (const r of state.selection.ranges) {
+    const a = state.doc.lineAt(r.from).number;
+    const b = state.doc.lineAt(r.to).number;
+    for (let n = a; n <= b; n++) set.add(n);
+  }
+  return set;
+}
+
+const FENCE_RE = /^\s*(`{3,}|~{3,})/;
+/** An ATX heading line (`# ` … `###### `); group 1 is the `#`s (its level). */
+const HEADING_RE = /^(#{1,6})\s/;
+/** A line containing only an image (spaced paths included). Used to drop the
+ *  heading→body gap and give standalone images a definite-width container.
+ *  An image followed by text must remain inline. */
+const IMAGE_LINE_RE = /^\s*!\[[^\]\n]*\]\([^)\n]+\)\s*$/;
+
+/**
+ * Interior line numbers of multi-line `$$ … $$` math blocks, where a blank line
+ * is real math content rather than a block separator and so must keep its full
+ * height. Mirrors the block scan in math.ts: a lone `$$` opens a block that the
+ * next `$$` closes; code fences are tracked so a `$$` inside a code block isn't
+ * mistaken for math.
+ */
+function mathBlockInteriorLines(state: EditorState): Set<number> {
+  const set = new Set<number>();
+  const doc = state.doc;
+  let inFence = false;
+  for (let i = 1; i <= doc.lines; i++) {
+    const text = doc.line(i).text;
+    if (FENCE_RE.test(text)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    if (text.trim() === "$$") {
+      let j = i + 1;
+      while (j <= doc.lines && doc.line(j).text.trim() !== "$$") {
+        set.add(j);
+        j++;
+      }
+      i = j; // resume after the closing `$$`
+    }
+  }
+  return set;
+}
+
+/**
+ * Block node names whose blank lines are literal content (code, raw HTML,
+ * comments). A blank line anywhere inside one of these keeps its full height.
+ */
+const RAW_BLANK_BLOCKS = new Set([
+  "FencedCode",
+  "CodeBlock",
+  "HTMLBlock",
+  "CommentBlock",
+]);
+
+/** Whether the line sits inside a raw block (code / raw HTML / comment),
+ *  where every line is literal content — a `# …` there is a shell comment,
+ *  not a heading. Probes at the first non-space character: an indented
+ *  CodeBlock node starts after the 4-space indent, so the line start itself
+ *  resolves outside it. */
+function inRawBlock(tree: Tree, line: Line): boolean {
+  const indent = line.text.match(/^\s*/)![0].length;
+  const pos = Math.min(line.from + indent, line.to);
+  for (
+    let node: SyntaxNode | null = tree.resolveInner(pos, 1);
+    node;
+    node = node.parent
+  ) {
+    if (RAW_BLANK_BLOCKS.has(node.name)) return true;
+  }
+  return false;
+}
+
+class ImageWidget extends WidgetType {
+  constructor(
+    readonly url: string,
+    readonly alt: string,
+    readonly title: string,
+    readonly from: number,
+    readonly to: number,
+    readonly selected: boolean,
+    readonly readOnly: boolean,
+    readonly size: ImageSize = NO_IMAGE_SIZE,
+  ) {
+    super();
+  }
+  eq(o: ImageWidget) {
+    return o.selected === this.selected && this.sameImage(o);
+  }
+  sameImage(o: ImageWidget) {
+    return (
+      o.url === this.url &&
+      o.alt === this.alt &&
+      o.title === this.title &&
+      o.from === this.from &&
+      o.to === this.to &&
+      o.readOnly === this.readOnly &&
+      o.size.width === this.size.width &&
+      o.size.height === this.size.height
+    );
+  }
+  // Selecting only restyles the outline. Rebuilding would swap in a fresh
+  // <img>, which lays out at zero height until it decodes, so the image (and
+  // everything below it) flashed on every click.
+  updateDOM(dom: HTMLElement, _view: EditorView, prev: ImageWidget) {
+    if (!this.sameImage(prev)) return false;
+    dom.classList.toggle("cm-md-resource-selected", this.selected);
+    return true;
+  }
+  toDOM(view: EditorView) {
+    const wrap = document.createElement("span");
+    wrap.className = "cm-md-image-wrap";
+
+    const img = document.createElement("img");
+    img.src = toDisplaySrc(this.url);
+    img.alt = this.alt;
+    img.className = "cm-md-image";
+    img.loading = "lazy";
+    img.draggable = false;
+    img.referrerPolicy = "no-referrer";
+    // An explicit size wins over the stylesheet's intrinsic sizing; the
+    // `max-width: 100%` there still clamps it to the editor width.
+    img.style.cssText = imageSizeStyle(this.size);
+
+    const fallback = document.createElement("span");
+    fallback.className = "cm-md-image-error";
+    localizeElement(fallback, "textContent", () => tr("图片加载失败：{{0}}", { 0: this.url }));
+    fallback.hidden = true;
+
+    const requestMeasure = () => view.requestMeasure();
+    img.addEventListener("load", requestMeasure);
+    if (img.complete) queueMicrotask(requestMeasure);
+    img.addEventListener("error", () => {
+      img.hidden = true;
+      fallback.hidden = false;
+      requestMeasure();
+    });
+
+    wrap.append(img, fallback);
+
+    // Caption shown under the image (Typora style): only when an explicit
+    // `"title"` is given. No title means no caption.
+    if (this.title) {
+      const cap = document.createElement("span");
+      cap.className = "cm-md-image-caption";
+      cap.textContent = this.title;
+      wrap.append(cap);
+    }
+
+    bindResourcePreview(wrap, view, this, this.url, tr("图片"), this.selected,
+      () => openImagePrompt(view));
+    return wrap;
+  }
+  ignoreEvent() {
+    return true;
+  }
+}
+
+class BulletWidget extends WidgetType {
+  constructor(readonly char: string) {
+    super();
+  }
+  eq(o: BulletWidget) {
+    return o.char === this.char;
+  }
+  toDOM() {
+    const s = document.createElement("span");
+    s.className = "cm-md-bullet";
+    // Hollow (level ≥ 2) bullets are drawn with a thin CSS border-circle so the
+    // ring line stays fine; the `◦` glyph renders too thick at this size.
+    if (this.char === "◦") {
+      s.classList.add("cm-md-bullet-hollow");
+    } else {
+      s.textContent = this.char;
+    }
+    return s;
+  }
+}
+
+class CheckboxWidget extends WidgetType {
+  constructor(
+    readonly checked: boolean,
+    readonly pos: number, // offset of the char between the brackets
+  ) {
+    super();
+  }
+  eq(o: CheckboxWidget) {
+    return o.checked === this.checked && o.pos === this.pos;
+  }
+  toDOM(view: EditorView) {
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = this.checked;
+    box.className = "cm-md-task";
+    // Toggle the source `x`/space directly instead of letting the browser flip
+    // the box; the rebuild then re-renders it from the new doc state.
+    box.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      view.dispatch({
+        changes: {
+          from: this.pos,
+          to: this.pos + 1,
+          insert: this.checked ? " " : "x",
+        },
+      });
+    });
+    return box;
+  }
+  ignoreEvent() {
+    return false;
+  }
+}
+
+class HrWidget extends WidgetType {
+  eq() {
+    return true;
+  }
+  toDOM() {
+    const hr = document.createElement("span");
+    hr.className = "cm-md-hr";
+    return hr;
+  }
+}
+
+class BrWidget extends WidgetType {
+  eq() {
+    return true;
+  }
+  toDOM() {
+    return document.createElement("br");
+  }
+}
+
+/** A header anchored above the first code line, retained when its body folds. */
+class CodeActionsWidget extends WidgetType {
+  constructor(
+    readonly code: string,
+    /** Info string when the block is runnable, else null (no run button). */
+    readonly runInfo: string | null,
+    readonly foldFrom: number,
+    readonly foldTo: number,
+    readonly collapsed: boolean,
+    readonly language: string,
+    readonly lineCount: number,
+  ) {
+    super();
+  }
+  eq(o: CodeActionsWidget) {
+    return o.code === this.code && o.runInfo === this.runInfo &&
+      o.foldFrom === this.foldFrom && o.foldTo === this.foldTo && o.collapsed === this.collapsed &&
+      o.language === this.language && o.lineCount === this.lineCount;
+  }
+  toDOM(view: EditorView) {
+    return createCodeActions(view, {
+      code: this.code,
+      runInfo: this.runInfo,
+      language: this.language,
+      lineCount: this.lineCount,
+      fold: this.foldFrom < this.foldTo ? {
+        collapsed: () => this.collapsed,
+        toggle: () => view.dispatch({ effects: (this.collapsed ? unfoldEffect : foldEffect).of({
+          from: this.foldFrom, to: this.foldTo,
+        }) }),
+      } : undefined,
+    });
+  }
+  ignoreEvent() {
+    return true;
+  }
+  destroy(dom: HTMLElement) {
+    destroyCodeActions(dom);
+  }
+}
+
+const HEADING_CLASS: Record<string, string> = {
+  ATXHeading1: "cm-md-h1",
+  ATXHeading2: "cm-md-h2",
+  ATXHeading3: "cm-md-h3",
+  ATXHeading4: "cm-md-h4",
+  ATXHeading5: "cm-md-h5",
+  ATXHeading6: "cm-md-h6",
+};
+
+function buildDecorations(view: EditorView): DecorationSet {
+  const { state } = view;
+  // Only reveal source on the cursor line while the editor is focused; an
+  // unfocused editor (e.g. a freshly opened file) renders everything and shows
+  // no caret. In read-only mode nothing is editable, so never swap a line back
+  // to source — selecting rendered content keeps showing the rendered form.
+  const active =
+    view.hasFocus && !state.readOnly
+      ? activeLineSet(state)
+      : new Set<number>();
+  const resourceSource = state.field(resourceSourceField, false);
+  if (resourceSource && !state.readOnly)
+    for (let n = state.doc.lineAt(resourceSource.from).number;
+      n <= state.doc.lineAt(resourceSource.to).number; n++) active.add(n);
+  const ranges: Range<Decoration>[] = [];
+
+  // Markdown parsing is async/incremental: right after a file opens the tree
+  // may not yet cover the whole doc. Force it forward (bounded) so blocks below
+  // the parsed region render immediately instead of only after the first click.
+  const tree =
+    ensureSyntaxTree(state, state.doc.length, 50) ?? syntaxTree(state);
+
+  const lineActive = (from: number, to: number) => {
+    const a = state.doc.lineAt(from).number;
+    const b = state.doc.lineAt(to).number;
+    for (let n = a; n <= b; n++) if (active.has(n)) return true;
+    return false;
+  };
+
+  const addLineClass = (from: number, to: number, cls: string) => {
+    const a = state.doc.lineAt(from).number;
+    const b = state.doc.lineAt(to).number;
+    for (let n = a; n <= b; n++) {
+      const line = state.doc.line(n);
+      ranges.push(Decoration.line({ class: cls }).range(line.from));
+    }
+  };
+
+  // Hide a marker, swallowing one trailing space (e.g. "## ").
+  const hideMark = (from: number, to: number, eatSpace = false) => {
+    let end = to;
+    if (eatSpace && state.doc.sliceString(end, end + 1) === " ") end += 1;
+    ranges.push(Decoration.replace({}).range(from, end));
+  };
+
+  // End of the range swallowed by a recovered spaced-image widget (see the
+  // Image case). Such a widget covers text the tree parsed as separate inline
+  // nodes, so we skip those to avoid overlapping replace decorations.
+  let coveredTo = 0;
+  const renderedImageLines = new Set<number>();
+  // A folded body splits visibleRanges, so its enclosing node may be visited twice.
+  const renderedCodeBlocks = new Set<number>();
+
+  for (const { from, to } of view.visibleRanges) {
+    tree.iterate({
+      from,
+      to,
+      enter: (node) => {
+        const name = node.name;
+        const nFrom = node.from;
+        const nTo = node.to;
+        if (nFrom < coveredTo) return false;
+        const revealed = lineActive(nFrom, nTo);
+
+        // Block-level line styling
+        if (HEADING_CLASS[name]) {
+          addLineClass(nFrom, nTo, HEADING_CLASS[name]);
+          return;
+        }
+        switch (name) {
+          case "Blockquote": {
+            // Only the outermost quote styles the lines; each line's nesting
+            // depth (count of leading `>` markers) drives a progressive indent
+            // so nested quotes step inward instead of collapsing to one level.
+            if (node.node.parent?.name === "Blockquote") return;
+            const a = state.doc.lineAt(nFrom).number;
+            const b = state.doc.lineAt(nTo).number;
+            const highlightColor = highlightColorFromLine(
+              state.doc.line(a).text,
+            );
+            if (highlightColor) {
+              const marker = state.doc.line(a);
+              if (!active.has(a))
+                ranges.push(
+                  Decoration.line({ class: "cm-md-hidden" }).range(marker.from),
+                );
+              let contentStart = a + 1;
+              if (contentStart <= b) {
+                const separator = state.doc.line(contentStart);
+                if (/^\s*(?:>\s*)+$/.test(separator.text)) {
+                  // New blocks put a quoted blank line after the extension
+                  // marker for standards-friendly fallback rendering. It is
+                  // structural, like the marker, so hide it unless edited and
+                  // start the visual card at the actual body line.
+                  if (!active.has(contentStart))
+                    ranges.push(
+                      Decoration.line({ class: "cm-md-hidden" }).range(
+                        separator.from,
+                      ),
+                    );
+                  contentStart++;
+                }
+              }
+              for (let n = contentStart; n <= b; n++) {
+                const line = state.doc.line(n);
+                const edgeClasses = [
+                  n === contentStart ? "cm-md-highlight-first" : "",
+                  n === b ? "cm-md-highlight-last" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ");
+                ranges.push(
+                  Decoration.line({
+                    class: `cm-md-highlight-block ${edgeClasses}`,
+                    attributes: {
+                      style: [
+                        `--md-highlight-color:${highlightColorCss(highlightColor)}`,
+                        `--md-highlight-background:${highlightBackgroundCss(highlightColor)}`,
+                        `--md-highlight-code-background:${highlightBackgroundCss(highlightColor, 0.2)}`,
+                      ].join(";"),
+                    },
+                  }).range(line.from),
+                );
+              }
+              return;
+            }
+            for (let n = a; n <= b; n++) {
+              const line = state.doc.line(n);
+              const m = line.text.match(/^(?:\s*>)+/);
+              const depth = m ? (m[0].match(/>/g) || []).length : 1;
+              ranges.push(
+                Decoration.line({
+                  class: "cm-md-quote",
+                  attributes: {
+                    // The extra 1em is the gap between the bar and the text.
+                    // It lives in the margin (not padding) so a native multi-
+                    // line selection — which fills each line's box — doesn't
+                    // highlight the gap to the left of the text. The bar is
+                    // drawn by the .cm-md-quote::before in that margin.
+                    style: `margin-left:calc(var(--md-block-indent) + 1em + ${(depth - 1) * 1.2}em)`,
+                  },
+                }).range(line.from),
+              );
+            }
+            return;
+          }
+          case "LinkReference":
+            // A `[ref]: url` definition produces no rendered output; hide the
+            // whole line unless the cursor is on it.
+            if (!revealed) addLineClass(nFrom, nTo, "cm-md-hidden");
+            return;
+          case "FencedCode":
+          case "CodeBlock": {
+            if (renderedCodeBlocks.has(nFrom)) return false;
+            renderedCodeBlocks.add(nFrom);
+            const a = state.doc.lineAt(nFrom).number;
+            const b = state.doc.lineAt(nTo).number;
+            const fenced = name === "FencedCode";
+            let collapsed = false;
+            foldedRanges(state).between(nFrom, nTo, () => { collapsed = true; });
+            // Reveal the ``` fences whenever the cursor is anywhere inside the
+            // block (not only on the fence line itself — which is collapsed and
+            // unreachable), so you can see and edit the full source.
+            let blockActive = false;
+            for (let n = a; n <= b; n++)
+              if (!collapsed && active.has(n)) {
+                blockActive = true;
+                break;
+              }
+            // A ```mermaid block renders as a diagram (mermaidBlock StateField)
+            // when the cursor is outside it; skip the code styling so the two
+            // don't overlap. Inside the block we fall through to show source.
+            if (
+              fenced &&
+              !blockActive &&
+              (MERMAID_FENCE.test(state.doc.line(a).text) ||
+                INPUT_FENCE.test(state.doc.line(a).text))
+            )
+              return;
+            // A block with no info-string (or an indented CodeBlock) has no
+            // language: its whole body is tagged `monospace` and would render
+            // in the orange accent. Mark those lines so CSS can fall back to
+            // the neutral --code-text, matching language-highlighted blocks.
+            const rawInfo = fenced ? (fenceInfoOf(state.doc.line(a).text) ?? "") : "";
+            // `python {in=loan, out=table}`: the language still comes first, so
+            // highlighting and runner matching are unchanged by the attributes.
+            const fenceInfo = parseFenceInfo(rawInfo);
+            const plain = !fenced || fenceInfo.lang.length === 0;
+            const codeLines: number[] = [];
+            const opening = fenced
+              ? openingFenceOf(state.doc.line(a).text)
+              : null;
+            for (let n = a; n <= b; n++) {
+              const ln = state.doc.line(n);
+              // Collapse only this block's opening and closing fences. A
+              // shorter fence inside a four-backtick documentation block is
+              // literal example content and must remain visible.
+              const boundary =
+                fenced &&
+                (n === a ||
+                  (n === b && opening !== null && isCloseFenceFor(ln.text, opening)));
+              if (boundary) {
+                ranges.push(
+                  Decoration.line({
+                    class: blockActive
+                      ? "cm-md-codeblock"
+                      : "cm-md-codeblock cm-code-fence",
+                  }).range(ln.from),
+                );
+              } else {
+                codeLines.push(n);
+              }
+            }
+            // Presentation permits execution while keeping the source locked.
+            // Ordinary read-only preview still never offers to run.
+            const runnable =
+              canInteract(state) &&
+              fenceInfo.lang.length > 0 &&
+              resolveRunner(
+                fenceInfo.lang,
+                useAppStore.getState().codeRunConfig,
+              ) !== null;
+            const foldFrom = codeLines.length ? state.doc.line(codeLines[0]).from : 0;
+            // Diagram and input blocks already have their own preview controls.
+            const specialized = fenced && (MERMAID_FENCE.test(state.doc.line(a).text) || INPUT_FENCE.test(state.doc.line(a).text));
+            const foldTo = codeLines.length && !specialized ? state.doc.line(codeLines[codeLines.length - 1]).to : foldFrom;
+            // Reserve a separate header above the first line, keeping the gutter intact.
+            const lineDigits = Math.max(2, String(codeLines.length).length);
+            codeLines.forEach((n, i) => {
+              const ln = state.doc.line(n);
+              const cls =
+                "cm-md-codeblock cm-code-line" +
+                (plain ? " cm-code-plain" : "") +
+                (i === 0 ? " cm-code-first" : "") +
+                (i === 0 && collapsed ? " cm-code-collapsed" : "") +
+                (i === codeLines.length - 1 || collapsed ? " cm-code-last" : "");
+              ranges.push(
+                Decoration.line({
+                  class: cls,
+                  attributes: {
+                    "data-ln": String(i + 1),
+                    style: `--cm-code-line-digits:${lineDigits}`,
+                  },
+                }).range(ln.from),
+              );
+            });
+            // Output/copy (and, for a runnable language, run) in the block's
+            // top-right, anchored to the first code line. Indented CodeBlocks
+            // carry a 4-space/tab indent — strip it so copied text is bare code.
+            if (codeLines.length > 0) {
+              const code = codeLines
+                .map((n) => {
+                  const t = state.doc.line(n).text;
+                  return fenced ? t : t.replace(/^( {1,4}|\t)/, "");
+                })
+                .join("\n");
+              ranges.push(
+                Decoration.widget({
+                  widget: new CodeActionsWidget(code, runnable ? rawInfo : null, foldFrom, foldTo, collapsed, fenceInfo.lang, codeLines.length),
+                  side: -1,
+                }).range(state.doc.line(codeLines[0]).from),
+              );
+            }
+            return;
+          }
+        }
+
+        // Images and local file links only reveal source through their button.
+        if (revealed && name !== "Image" && name !== "Link") return;
+
+        switch (name) {
+          case "Link": {
+            const n = node.node;
+            const urlNode = n.getChildren("URL").find((url) =>
+              url.prevSibling?.name === "LinkMark" &&
+              state.sliceDoc(url.prevSibling.from, url.prevSibling.to) === "(",
+            );
+            if (!urlNode || state.doc.lineAt(nFrom).number !== state.doc.lineAt(nTo).number) break;
+            const url = state.sliceDoc(urlNode.from, urlNode.to);
+            if (!isResourceLink(url)) break;
+            if (resourceSourceVisible(state, nFrom)) return false;
+            const labelEnd = urlNode.prevSibling?.prevSibling;
+            if (!labelEnd || state.sliceDoc(labelEnd.from, labelEnd.to) !== "]") break;
+            const label = state.sliceDoc(nFrom + 1, labelEnd.from);
+            // Linked images retain the image preview instead of becoming a file chip.
+            if (n.getChild("Image")) break;
+            ranges.push(Decoration.replace({ widget: new ResourceWidget(
+              url, label, nFrom, nTo, resourceSelected(state, nFrom, nTo), state.readOnly,
+            ) }).range(nFrom, nTo));
+            const line = state.doc.lineAt(nFrom);
+            if (!state.sliceDoc(line.from, nFrom).trim() && !state.sliceDoc(nTo, line.to).trim())
+              ranges.push(Decoration.line({ class: "cm-md-resource-line" }).range(line.from));
+            return false;
+          }
+          case "HeaderMark":
+            hideMark(nFrom, nTo, true);
+            break;
+          case "EmphasisMark":
+          case "StrikethroughMark":
+          case "QuoteMark":
+            hideMark(nFrom, nTo, name === "QuoteMark");
+            break;
+          case "CodeMark": {
+            // An inline secret is replaced whole — backticks included — by the
+            // secret renderer. Hiding its markers here would put a second
+            // replace decoration over the same characters, and what that
+            // draws is anyone's guess.
+            const code = node.node.parent;
+            if (
+              code?.name === "InlineCode" &&
+              isInlineSecret(state.doc.sliceString(code.from, code.to))
+            )
+              break;
+            hideMark(nFrom, nTo);
+            break;
+          }
+          case "LinkMark":
+            hideMark(nFrom, nTo);
+            break;
+          case "LinkTitle": // the "title" in [t](url "title")
+          case "LinkLabel": // the [ref] in a reference-style link
+            hideMark(nFrom, nTo);
+            break;
+          case "Escape":
+            // `\*` -> `*`: drop the backslash, keep the escaped char.
+            hideMark(nFrom, nFrom + 1);
+            break;
+          case "InlineMath": {
+            // `$...$` -> rendered KaTeX (strip the surrounding `$`). Inline
+            // replace decorations may not cross a line break, and real inline
+            // math never does, so skip a `$…$` that the parser paired across
+            // lines (e.g. prose like "$path1 … $path2") — leave it as source.
+            if (state.doc.lineAt(nFrom).number !== state.doc.lineAt(nTo).number)
+              break;
+            const tex = state.doc.sliceString(nFrom + 1, nTo - 1);
+            ranges.push(
+              Decoration.replace({
+                widget: new MathWidget(tex, false),
+              }).range(nFrom, nTo),
+            );
+            break;
+          }
+          case "URL": {
+            // Hide the (url) destination of links, but not bare autolinks and
+            // not a URL that is itself the link label — GFM autolink also
+            // matches inside the label ([https://a](https://a)), giving the
+            // Link two URL children. The destination is the one right after
+            // the "(" mark.
+            const prev = node.node.prevSibling;
+            if (
+              node.node.parent?.name === "Link" &&
+              prev?.name === "LinkMark" &&
+              state.doc.sliceString(prev.from, prev.to) === "("
+            )
+              hideMark(nFrom, nTo);
+            break;
+          }
+          case "ListMark": {
+            const list = node.node.parent?.parent; // ListItem -> Bullet/OrderedList
+            if (
+              list &&
+              (list.name === "BulletList" || list.name === "OrderedList")
+            ) {
+              // Nesting depth = number of ancestor lists. Indent is derived from
+              // this (not the source's leading spaces), so items at the same
+              // level always line up regardless of how the source is indented.
+              let depth = 0;
+              for (let p: typeof list | null = list; p; p = p.parent)
+                if (p.name === "BulletList" || p.name === "OrderedList") depth++;
+              const line = state.doc.lineAt(nFrom);
+              // Hide the source indent whitespace before the marker.
+              if (nFrom > line.from)
+                ranges.push(Decoration.replace({}).range(line.from, nFrom));
+              // Task-list items (`- [x]`) show a checkbox instead of a bullet.
+              const isTask = node.node.nextSibling?.name === "Task";
+              // Hanging indent: pad the line by the marker's rendered width and
+              // pull the first line back by the same amount with a negative
+              // text-indent. The marker still sits at the list indent, but a
+              // soft-wrapped continuation line aligns under the item text
+              // instead of falling back to the bullet/number column.
+              const ordered = list.name === "OrderedList";
+              const markerLen = nTo - nFrom; // "-"→1, "1."→2, "10."→3, …
+              const hangEm = ordered
+                ? markerLen * 0.55 + 0.35
+                : isTask
+                  ? 1.5
+                  : 1.3;
+              ranges.push(
+                Decoration.line({
+                  class: "cm-md-list",
+                  attributes: {
+                    style: `padding-left:calc(var(--md-block-indent) + ${(depth - 1) * 1.4}em + ${hangEm}em);text-indent:-${hangEm}em`,
+                  },
+                }).range(line.from),
+              );
+              if (list.name === "BulletList" && !isTask)
+                ranges.push(
+                  // Level 1 solid •, deeper levels hollow ◦.
+                  Decoration.replace({
+                    widget: new BulletWidget(depth >= 2 ? "◦" : "•"),
+                  }).range(nFrom, nTo),
+                );
+              else if (list.name === "BulletList" && isTask)
+                // Task items show a checkbox in place of the bullet, so hide
+                // the raw `-` marker entirely.
+                hideMark(nFrom, nTo);
+              else if (list.name === "OrderedList")
+                // Ordered marker keeps its `1.` text; add a gap after it so the
+                // spacing matches the bullet list.
+                ranges.push(
+                  Decoration.mark({ class: "cm-md-ol-mark" }).range(nFrom, nTo),
+                );
+            }
+            break;
+          }
+          case "TaskMarker": {
+            // `[x]` / `[ ]` -> checkbox; nFrom+1 is the char between brackets.
+            const checked = /x/i.test(state.doc.sliceString(nFrom, nTo));
+            ranges.push(
+              Decoration.replace({
+                widget: new CheckboxWidget(checked, nFrom + 1),
+              }).range(nFrom, nTo),
+            );
+            break;
+          }
+          case "HorizontalRule":
+            ranges.push(
+              Decoration.replace({ widget: new HrWidget() }).range(nFrom, nTo),
+            );
+            break;
+          case "HTMLTag": {
+            const tag = state.doc.sliceString(nFrom, nTo);
+            if (!/^<br\s*\/?>$/i.test(tag)) break;
+            const line = state.doc.lineAt(nFrom);
+            const lineRemainder = state.doc.sliceString(nTo, line.to);
+            if (lineRemainder.trim() === "") {
+              ranges.push(Decoration.replace({}).range(nFrom, line.to));
+            } else {
+              ranges.push(
+                Decoration.replace({ widget: new BrWidget() }).range(nFrom, nTo),
+              );
+            }
+            break;
+          }
+          case "Image": {
+            if (resourceSourceVisible(state, nFrom)) return false;
+            const n = node.node;
+            const titleNode = n.getChild("LinkTitle");
+            // LinkTitle includes the surrounding quotes/parens; strip them.
+            const title = titleNode
+              ? state.doc.sliceString(titleNode.from + 1, titleNode.to - 1)
+              : "";
+            const urlNode = n.getChild("URL");
+            if (urlNode) {
+              const url = state.doc.sliceString(urlNode.from, urlNode.to);
+              const alt = state.doc.sliceString(n.from + 2, n.to).split("]")[0];
+              if (url) {
+                ranges.push(
+                  Decoration.replace({
+                    widget: new ImageWidget(
+                      url, alt, title, nFrom, nTo,
+                      resourceSelected(state, nFrom, nTo), state.readOnly,
+                    ),
+                  }).range(nFrom, nTo),
+                );
+                renderedImageLines.add(state.doc.lineAt(nFrom).number);
+                return false;
+              }
+              break;
+            }
+            // No URL child: a raw space in the destination is invalid CommonMark
+            // — which a spaced path and an explicit ` =300x200` size both
+            // produce — so Lezer bails and leaves an Image node spanning only
+            // "![]". Recover the full ![alt](dest) by hand so those still render
+            // (toDisplaySrc also handles <…> and %20 forms).
+            const lineTo = state.doc.lineAt(nFrom).to;
+            const m = /^!\[([^\]\n]*)\]\(([^)\n]+)\)/.exec(
+              state.doc.sliceString(nFrom, lineTo),
+            );
+            if (m) {
+              const imgTo = nFrom + m[0].length;
+              const parsed = parseImageDest(m[2]);
+              ranges.push(
+                Decoration.replace({
+                  widget: new ImageWidget(
+                    parsed.dest,
+                    m[1],
+                    parsed.title || title,
+                    nFrom,
+                    imgTo,
+                    resourceSelected(state, nFrom, imgTo),
+                    state.readOnly,
+                    parsed.size,
+                  ),
+                }).range(nFrom, imgTo),
+              );
+              // The widget covers the "![]" marks plus text the tree parsed as
+              // separate inline nodes; skip them all to avoid overlap.
+              coveredTo = imgTo;
+              renderedImageLines.add(state.doc.lineAt(nFrom).number);
+              return false;
+            }
+            break;
+          }
+        }
+      },
+    });
+  }
+
+  // Per-line vertical-rhythm tweaks, one scan over the visible lines:
+  //   * Typora-style blank-line collapse — a blank line that merely separates
+  //     two blocks renders as a compact gap instead of a full empty row, so the
+  //     pair reads as one clean break. Skipped (full height) when the blank is
+  //     real content (inside a code / HTML / math block) or the cursor sits on
+  //     it, so it stays editable.
+  //   * The first content line after a heading gets extra top padding, so the
+  //     heading sits apart from its body text. This lives on the content line
+  //     (not the heading or a blank) so it works even when the source has no
+  //     blank line after the heading, and `padding` keeps CodeMirror's caret
+  //     geometry correct (a line `margin` would desync coordsAtPos/posAtCoords).
+  const mathInterior = mathBlockInteriorLines(state);
+  for (const { from, to } of view.visibleRanges) {
+    const first = state.doc.lineAt(from).number;
+    const last = state.doc.lineAt(to).number;
+    for (let n = first; n <= last; n++) {
+      const line = state.doc.line(n);
+      // A quote-only line (`>`, `> >`, etc.) is the Markdown source marker for
+      // a paragraph break. Its marker is hidden in preview mode, so give it the
+      // same compact rhythm as a genuinely empty source line instead of
+      // leaving behind a full-height visual row.
+      const isBlankSeparator =
+        line.text.trim() === "" || /^\s*(?:>\s*)+$/.test(line.text);
+      if (isBlankSeparator) {
+        // A blank line inside a math block keeps its full height (it's real
+        // content). Otherwise it always collapses to a compact gap — including
+        // when the cursor sits on it, so clicking into a paragraph separator
+        // doesn't pop it back open to a full empty row (a visible "double"
+        // break). The caret just renders at the collapsed line's height.
+        if (mathInterior.has(n)) continue;
+        if (inRawBlock(tree, line)) continue;
+        ranges.push(Decoration.line({ class: "cm-md-blank" }).range(line.from));
+        // A blank line directly under a heading carries the heading gap itself
+        // instead of leaving it to the content line further down. The caret
+        // keeps its natural text height on a collapsed blank and centres on the
+        // 0.55em box, so it overflows ~5px above the line — with no padding
+        // here that overhang lands on an H1/H2 underline, which the caret then
+        // appears glued to. The gap below is unchanged: the padding just moves
+        // from the content line up to this blank (see the `after-h` skip below).
+        const prev = n > 1 ? state.doc.line(n - 1) : null;
+        const head =
+          prev && !inRawBlock(tree, prev) ? prev.text.match(HEADING_RE) : null;
+        if (!head) continue;
+        // Mirror the content line's own skips, so relocating the gap can't
+        // reintroduce one the layout deliberately drops: a following image
+        // renders as its own block, and a following raw (code/HTML) line draws
+        // its gutter number from an absolutely positioned ::before that the
+        // padding would not move.
+        let q = n + 1;
+        while (q <= state.doc.lines && state.doc.line(q).text.trim() === "") q++;
+        const below = q <= state.doc.lines ? state.doc.line(q) : null;
+        if (
+          below &&
+          (IMAGE_LINE_RE.test(below.text) || inRawBlock(tree, below))
+        )
+          continue;
+        ranges.push(
+          Decoration.line({
+            class: `cm-md-after-h${head[1].length}`,
+          }).range(line.from),
+        );
+      } else {
+        const isImage = IMAGE_LINE_RE.test(line.text);
+        // Image line: hide CodeMirror's widget-buffer <img>s (see editor.css).
+        // They occupy an inline line box at the line's line-height, floating the
+        // (block) image down by ~one line below the preceding text. Skipped while
+        // the image's source is explicitly opened, with no widget.
+        if (isImage && renderedImageLines.has(n))
+          ranges.push(
+            Decoration.line({ class: "cm-md-image-line" }).range(line.from),
+          );
+        // Heading gaps never involve lines inside raw blocks: a `# comment` in
+        // a shell/PowerShell code block matches HEADING_RE but is not a heading
+        // (as an anchor it would gift heading padding to code lines, shifting
+        // the code text away from its gutter line number), and code lines must
+        // not receive the gap either — their number is drawn by an absolutely
+        // positioned ::before that padding-top would not move.
+        const selfRaw = inRawBlock(tree, line);
+        // Any non-blank line — body text OR a following heading: if the nearest
+        // non-blank line above is a heading, tag it with that heading's level so
+        // CSS sizes the gap per level. Keying off the heading *above* means the
+        // gap is owned by the upper heading, so e.g. an H1 directly followed by
+        // an H2 gets the H1-sized gap between them.
+        let p = n - 1;
+        while (p >= 1 && state.doc.line(p).text.trim() === "") p--;
+        const aboveLine = p >= 1 ? state.doc.line(p) : null;
+        const above =
+          aboveLine && !inRawBlock(tree, aboveLine)
+            ? aboveLine.text.match(HEADING_RE)
+            : null;
+        // Skip the gap when the body is an image — it renders as its own block,
+        // so the heading→text breathing room just leaves it floating far below.
+        // Also skip it when a blank line separates this line from the heading:
+        // that blank already carries the gap (above), so keeping it here too
+        // would double it.
+        const blankAbove = p < n - 1;
+        if (above && !isImage && !selfRaw && !blankAbove)
+          ranges.push(
+            Decoration.line({
+              class: `cm-md-after-h${above[1].length}`,
+            }).range(line.from),
+          );
+        // Top gap above a heading that follows non-heading content (body, list,
+        // …). Sized by the heading's own level. Skipped when the line above is
+        // itself a heading (that pair already gets the `after-h` gap, so we'd
+        // otherwise double it) and at the document's very top (no content above).
+        const self = selfRaw ? null : line.text.match(HEADING_RE);
+        if (self && aboveLine && !above)
+          ranges.push(
+            Decoration.line({
+              class: `cm-md-before-h${self[1].length}`,
+            }).range(line.from),
+          );
+      }
+    }
+  }
+
+  // Inline emphasis styling is applied regardless of reveal so text stays
+  // bold/italic even while you edit its markers.
+  for (const { from, to } of view.visibleRanges) {
+    tree.iterate({
+      from,
+      to,
+      enter: (node) => {
+        const cls = INLINE_CLASS[node.name];
+        if (!cls) return;
+        // Same reason as CodeMark above: a secret span is not inline code as
+        // far as the rendering is concerned, it is a chip of its own.
+        if (
+          node.name === "InlineCode" &&
+          isInlineSecret(state.doc.sliceString(node.from, node.to))
+        )
+          return;
+        ranges.push(Decoration.mark({ class: cls }).range(node.from, node.to));
+      },
+    });
+  }
+
+  return Decoration.set(ranges, true);
+}
+
+const INLINE_CLASS: Record<string, string> = {
+  StrongEmphasis: "cm-md-strong",
+  Emphasis: "cm-md-em",
+  Strikethrough: "cm-md-strike",
+  InlineCode: "cm-md-code",
+  Link: "cm-md-link",
+  Autolink: "cm-md-link",
+};
+
+const livePreviewPlugin = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = buildDecorations(view);
+    }
+    update(u: ViewUpdate) {
+      if (
+        u.docChanged ||
+        u.selectionSet ||
+        u.viewportChanged ||
+        u.focusChanged ||
+        foldedRanges(u.startState) !== foldedRanges(u.state) ||
+        // Switching in/out of read-only mode changes whether the cursor line is
+        // revealed as source, so rebuild when the readOnly facet toggles.
+        u.startState.readOnly !== u.state.readOnly ||
+        u.startState.facet(presentationInteraction) !== u.state.facet(presentationInteraction) ||
+        u.transactions.some((t) =>
+          t.effects.some((e) => e.is(parseAdvanced) || e.is(codeRunnersChanged) || e.is(setResourceSource)),
+        )
+      ) {
+        this.decorations = buildDecorations(u.view);
+      }
+    }
+  },
+  {
+    decorations: (v) => v.decorations,
+  },
+);
+
+const codeBlockFolding = codeFolding({
+  placeholderDOM() {
+    // All visible controls and metadata live in the persistent header.
+    const placeholder = document.createElement("span");
+    placeholder.setAttribute("aria-hidden", "true");
+    return placeholder;
+  },
+});
+
+/** Component source is secondary to its controls/output. Apply this only when
+ * opening a preview without a valid session snapshot, never on every render. */
+export function defaultComponentFoldEffects(state: EditorState) {
+  const effects: StateEffect<{ from: number; to: number }>[] = [];
+  const tree = ensureSyntaxTree(state, state.doc.length, 100) ?? syntaxTree(state);
+  tree.iterate({ enter(node) {
+    if (node.name !== "FencedCode") return;
+    const first = state.doc.lineAt(node.from);
+    const last = state.doc.lineAt(node.to);
+    const opening = openingFenceOf(first.text);
+    if (!opening || !isCloseFenceFor(last.text, opening)) return false;
+    const { lang, attrs } = parseFenceInfo(opening.info);
+    // Input controls, diagrams and encrypted cards have their own renderers.
+    if (!lang || lang === "input" || lang === "mermaid" || lang === "secret") return false;
+    if (!attrs.input && !attrs.outExplicit && !attrs.outAuto && attrs.triggers.length === 0) return false;
+    if (last.number <= first.number + 1) return false;
+    const from = state.doc.line(first.number + 1).from;
+    const to = state.doc.line(last.number - 1).to;
+    if (from < to) effects.push(foldEffect.of({ from, to }));
+    return false;
+  } });
+  return effects;
+}
+
+export const livePreview = [resourceSourceField, resourceSelectionHighlight, codeBlockFolding, livePreviewPlugin];
+
+/**
+ * Dispatched by {@link syntaxParseDriver} once async parsing has advanced, so
+ * decoration providers rebuild even though the doc/selection didn't change.
+ */
+export const parseAdvanced = StateEffect.define<null>();
+
+/**
+ * Dispatched when the code-runner table changes (possibly from the settings
+ * window), so run buttons appear/disappear without reopening the file.
+ */
+export const codeRunnersChanged = StateEffect.define<null>();
+
+/**
+ * Drives the incremental markdown parser to completion after a file opens.
+ *
+ * CodeMirror parses lazily in the background and doesn't emit a doc/selection
+ * transaction when it advances, so StateField-backed decorations (tables) would
+ * otherwise not appear until the user interacts. This nudges parsing forward and
+ * fires {@link parseAdvanced} so providers rebuild, until the whole doc is
+ * parsed.
+ */
+export const syntaxParseDriver = ViewPlugin.fromClass(
+  class {
+    timer: ReturnType<typeof setTimeout> | undefined;
+    constructor(view: EditorView) {
+      this.tick(view);
+    }
+    update(u: ViewUpdate) {
+      // A newly loaded document needs parsing again.
+      if (u.docChanged) this.tick(u.view);
+    }
+    tick(view: EditorView) {
+      clearTimeout(this.timer);
+      const end = view.state.doc.length;
+      if (syntaxTreeAvailable(view.state, end)) return;
+      this.timer = setTimeout(() => {
+        if (!view.dom.isConnected) return;
+        ensureSyntaxTree(view.state, end, 100);
+        view.dispatch({ effects: parseAdvanced.of(null) });
+        this.tick(view);
+      }, 0);
+    }
+    destroy() {
+      clearTimeout(this.timer);
+    }
+  },
+);

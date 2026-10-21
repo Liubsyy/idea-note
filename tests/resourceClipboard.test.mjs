@@ -20,7 +20,7 @@ function load(path, dependencies) {
   } });
   return exports;
 }
-const imageSyntax = load('../src/lib/imageSyntax.ts', {});
+const imageSyntax = load('../share-service/renderer/lib/imageSyntax.ts', {});
 const imageAt = load('../src/lib/codemirror/imageAt.ts', {
   '@codemirror/language': language, '../imageSyntax': imageSyntax,
 });

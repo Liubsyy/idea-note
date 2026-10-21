@@ -1,3 +1,4 @@
+import { SharingSettings } from "./ShareDialog";
 import { tr, currentLanguage } from "../i18n/core.ts";
 import { changeLanguage, isAppLanguage, LANGUAGE_OPTIONS } from "../i18n/core";
 import { useLanguage } from "../i18n/react";
@@ -26,6 +27,7 @@ import {
   Play,
   Plus,
   RotateCcw,
+  Share2,
   Sun,
   Trash2,
   Upload,
@@ -147,7 +149,8 @@ type TabId =
   | "coderun"
   | "models"
   | "sync"
-  | "security";
+  | "security"
+  | "sharing";
 
 interface Tab {
   id: TabId;
@@ -166,6 +169,7 @@ const tabs: Tab[] = [
   { id: "models", get label() { return tr("AI笔记助手"); }, get caption() { return tr("模型、字号与 API Key"); }, icon: <Bot size={16} /> },
   { id: "sync", get label() { return tr("远程同步"); }, get caption() { return tr("Git 仓库同步"); }, icon: <ArrowDownUp size={16} /> },
   { id: "security", get label() { return tr("加密"); }, get caption() { return tr("笔记内容加密口令"); }, icon: <Lock size={16} /> },
+  { id: "sharing", get label() { return tr("分享服务"); }, get caption() { return tr("链接分享与服务配置"); }, icon: <Share2 size={16} /> },
 ];
 
 /** Initial tab from the `tab` URL param (set by openSettings), else 外观. */
@@ -571,6 +575,7 @@ export function SettingsWindow() {
           )}
           {activeTab === "sync" && <SyncTab />}
           {activeTab === "security" && <SecurityTab />}
+          {activeTab === "sharing" && <SharingSettings />}
         </div>
       </section>
     </div>

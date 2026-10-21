@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { parser, GFM } from '@lezer/markdown';
-import { detailsBlock } from '../src/lib/codemirror/detailsBlock.ts';
+import { detailsBlock } from '../share-service/renderer/lib/codemirror/detailsBlock.ts';
 
 const markdown = parser.configure([GFM, detailsBlock]);
 function blocks(source) {
@@ -16,14 +16,15 @@ function blocks(source) {
   return result;
 }
 
-test('README feature list wrapped in details stays in one complete HTML block across blank lines', () => {
+test('README features and a table wrapped in details stay in one complete HTML block across blank lines', () => {
   const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
-  const body = readme.slice(readme.indexOf('## 功能特性') + '## 功能特性'.length, readme.indexOf('更新日志详见')).trim();
-  const source = `<details>\n<summary><h2>功能特性</h2></summary>\n\n${body}\n\n</details>`;
+  const featuresSource = readme.match(/## 功能特性\n([\s\S]*?)(?=\n## )/)?.[1];
+  assert.ok(featuresSource, 'README contains a feature section');
+  const source = `<details>\n<summary><h2>功能特性</h2></summary>\n\n${featuresSource}\n\n| Feature | Support |\n| --- | --- |\n| **中英文界面** | Yes |\n\n</details>`;
   const features = blocks(source).filter(block => block.source.startsWith('<details>\n<summary><h2>功能特性</h2>'));
   assert.equal(features.length, 1);
   assert.equal(features[0].source, source);
-  assert.ok(features[0].source.includes('- **中英文界面**'));
+  assert.ok(features[0].source.includes('| **中英文界面** |'));
 });
 
 test('nested details and Markdown tables stay inside the outer block', () => {
@@ -36,6 +37,7 @@ test('nested details and Markdown tables stay inside the outer block', () => {
 test('code examples, comments, and raw-text HTML do not close details early', () => {
   for (const body of [
     '```html\n</details>\n```',
+    '    </details>\n    <details>',
     '~~~~html\n</details>\n~~~\n~~~~',
     '<!--\n</details>\n-->',
     'An example: `</details>`.',

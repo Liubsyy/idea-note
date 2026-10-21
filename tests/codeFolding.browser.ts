@@ -9,6 +9,8 @@ import { cmTheme, cmHighlighting } from '../src/lib/codemirror/theme';
 
 const runRequests: Record<string, unknown>[] = [];
 mockIPC((command, args) => {
+  if (command === 'git_proxy_load') return '';
+  if (command === 'sync_config_load') return '{}';
   if (command === 'code_run_start') {
     runRequests.push(args as Record<string, unknown>);
     // Verify the real execution pipeline without starting a native process.
@@ -17,6 +19,7 @@ mockIPC((command, args) => {
   return null;
 }, { shouldMockEvents: true });
 mockWindows('main');
+await import('../src/lib/share/renderRuntime');
 const { livePreview, defaultComponentFoldEffects } = await import('../src/lib/codemirror/livePreview');
 const { applyLanguage } = await import('../src/i18n/core');
 const { useAppStore } = await import('../src/store/useAppStore');

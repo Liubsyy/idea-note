@@ -8,12 +8,27 @@ import { cmTheme } from '../src/lib/codemirror/theme';
 import { detailsBlock } from '../src/lib/codemirror/detailsBlock';
 import readme from '../README.md?raw';
 
-mockIPC((command) => {
+const openedUrls: string[] = [];
+const runRequests: Record<string, unknown>[] = [];
+let copiedCode = '';
+Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+  writeText: async (text: string) => { copiedCode = text; },
+} });
+mockIPC((command, args) => {
+  if (command === 'code_run_start') {
+    runRequests.push(args as Record<string, unknown>);
+    throw new Error('Test backend: execution intercepted');
+  }
+  if (command === 'plugin:opener|open_url') {
+    openedUrls.push(String(args.url));
+    return null;
+  }
   if (command === 'git_proxy_load') return '';
   if (command === 'sync_config_load') return '{}';
   return null;
 }, { shouldMockEvents: true });
 mockWindows('main');
+await import('../src/lib/share/renderRuntime');
 const { htmlPreview } = await import('../src/lib/codemirror/htmlPreview');
 const { applyLanguage } = await import('../src/i18n/core');
 applyLanguage('zh-CN');
@@ -94,8 +109,11 @@ try {
   const { CodeMirrorEditor } = await import('../src/components/Editor/CodeMirrorEditor');
   const { useAppStore } = await import('../src/store/useAppStore');
   const { getActiveView } = await import('../src/lib/codemirror/activeView');
-  const featureList = readme.slice(readme.indexOf('## 功能特性') + '## 功能特性'.length, readme.indexOf('更新日志详见')).trim();
-  const featuresSource = `<details>\n<summary><h2>功能特性</h2></summary>\n\n${featureList}\n\n</details>\n\n更新日志详见 CHANGELOG.md\n\n## 安装\n\n`;
+  const featureList = readme.match(/## 功能特性\n([\s\S]*?)(?=\n## )/)?.[1] ?? '';
+  const featureRows = [...featureList.matchAll(/^- \*\*(.+?)\*\*：(.+)$/gm)].map(row => `| **${row[1]}** | ${row[2]} |`).join('\n');
+  check(!!featureRows, 'actual README feature list is available');
+  const featureBlock = `<details>\n<summary><h2>功能特性</h2></summary>\n\n| 功能 | 说明 |\n| --- | --- |\n${featureRows}\n\n</details>`;
+  const featuresSource = `${featureBlock}\n\n更新日志详见 CHANGELOG.md\n\n## 安装\n\n`;
   useAppStore.setState({ activeFilePath: '/fixtures/README.md', content: featuresSource, mdViewMode: 'live', presentationActive: false });
   const root = createRoot(host);
   root.render(createElement(CodeMirrorEditor));
@@ -118,14 +136,14 @@ try {
   check(Math.abs(parseFloat(getComputedStyle(featureHeading).fontSize) - headingSize * 1.2) < 0.1,
     'summary headings follow the editor heading scale setting');
   host.style.removeProperty('--editor-heading-scale'); await tick();
-  check(featureDetails.querySelectorAll('li').length === 8, 'all eight README features are inside the same details element');
+  check(featureDetails.querySelectorAll('tbody tr').length === 8, 'all eight README feature rows are inside the same details element');
   check(!featureDetails.open, 'README features default to collapsed');
   const collapsedHeight = featureDetails.getBoundingClientRect().height;
   featureDetails.querySelector('summary')!.click(); await tick();
   check(featureDetails.open && featureDetails.getBoundingClientRect().height > collapsedHeight + 100,
     'expanding the README reveals the feature list and increases its height');
   check(parseFloat(getComputedStyle(featureHeading).fontSize) === headingSize, 'expanding details preserves summary heading typography');
-  check(getComputedStyle(featureDetails.querySelector('ul')!).listStyleType === 'disc', 'expanded Markdown lists keep their bullets');
+  check(getComputedStyle(featureDetails.querySelector('table')!).borderCollapse === 'collapse', 'expanded Markdown table keeps its layout');
   featureDetails.querySelector('summary')!.click(); await tick();
   check(!featureDetails.open && featureDetails.getBoundingClientRect().height === collapsedHeight,
     'collapsing the README hides the whole list again');
@@ -136,7 +154,7 @@ try {
   editor.dispatch({ selection: { anchor: lastFeature } }); await tick();
   check(!host.querySelector('details'), 'moving into the final README feature keeps full source mode');
   editor.dispatch({ selection: { anchor: featuresSource.indexOf('安装') } }); await tick();
-  check(firstDetails().querySelectorAll('li').length === 8, 'leaving complete README source restores all features in preview');
+  check(firstDetails().querySelectorAll('tbody tr').length === 8, 'leaving complete README source restores all features in preview');
 
   const nested = '<details>\n<summary>Outer</summary>\n\n- **One**\n\n<details open>\n<summary>Inner</summary>\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n</details>\n\n```html\n</details>\n```\n\nTail\n\n</details>\n\n# Outside';
   editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: nested }, selection: { anchor: 0 } }); await tick();
@@ -146,6 +164,110 @@ try {
   check(firstDetails().textContent?.includes('Tail') && host.textContent?.includes('Outside'), 'code example closing tags do not truncate the block');
   firstDetails().querySelector('summary')!.click(); await tick();
   check(firstDetails().open, 'nested content can be expanded');
+  // Exercise Markdown inside the actual production widget, including forms
+  // that previously lost their styling or bypassed the editor's renderers.
+  const richSource = [
+    '<details open>', '<summary><h3>Markdown coverage</h3></summary>',
+    '```javascript', 'const count = 42;', 'console.log("<details>");', '```', '',
+    '```unknown-language', 'plain <code> & text', '```', '',
+    '    indented <code> & text', '',
+    'Inline `code`, **bold**, *italic*, ~~deleted~~, [local](./README.md), and [external](https://example.test/details).', '',
+    '> Quoted text', '',
+    '> [!HIGHLIGHT color=green]', '> Highlighted `value`', '',
+    '- [ ] Pending', '- [x] Done', '',
+    '- First', '  - Nested', '', '1. Ordered', '',
+    '| Left | Right |', '| :--- | ---: |', '| A | B |', '',
+    String.raw`$x^2$ and escaped \$dollars, currency $5 and $6.`, '',
+    '$$', String.raw`x = \frac{1}{2}`, '$$', '',
+    '```mermaid', 'graph TD', 'A[Start] --> B[End]', '```', '',
+    '![](<data:image/png;base64,iVBORw0KGgo=> =120x80)', '',
+    '---', '', '<details open>', '<summary>Nested block</summary>',
+    '**Nested Markdown**', '</details>', '</details>', '', '# Outside',
+  ].join('\n');
+  editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: richSource }, selection: { anchor: richSource.length } });
+  await tick();
+  const rich = firstDetails();
+  const javascript = rich.querySelector<HTMLElement>('code.language-javascript')!;
+  for (let i = 0; i < 200 && (!javascript.querySelector('span') || !rich.querySelector('.cm-md-details-mermaid svg')); i++) await tick();
+  check(javascript.textContent === 'const count = 42;\nconsole.log("<details>");\n', 'code fences preserve every character and do not create nested HTML');
+  check(!!javascript.querySelector('span') && getComputedStyle(javascript.querySelector('span')!).color !== getComputedStyle(javascript).color,
+    'fenced code receives the same syntax highlighting as the editor');
+  const pre = javascript.parentElement!;
+  check(parseFloat(getComputedStyle(pre).paddingLeft) > 0 && getComputedStyle(pre.parentElement!).backgroundColor !== 'rgba(0, 0, 0, 0)' && getComputedStyle(pre).whiteSpace === 'pre',
+    'code blocks have a visible background, padding, and preserved whitespace');
+  check(rich.querySelector('code.language-unknown-language')?.textContent === 'plain <code> & text\n', 'unknown languages retain readable escaped code');
+  check([...rich.querySelectorAll('pre > code')].some(code => code.textContent === 'indented <code> & text\n'), 'indented code blocks render as code');
+  check(!!rich.querySelector('p code.cm-md-code') && parseFloat(getComputedStyle(rich.querySelector('p code.cm-md-code')!).paddingLeft) > 0, 'inline code receives its normal code pill');
+  check(getComputedStyle(rich.querySelector('em')!).fontStyle === 'italic' && getComputedStyle(rich.querySelector('s, del')!).textDecorationLine.includes('line-through'), 'italic and strikethrough remain visible');
+  check(parseFloat(getComputedStyle(rich.querySelector('blockquote')!).borderLeftWidth) > 0, 'blockquotes retain their quote border');
+  check(!!rich.querySelector('blockquote.cm-md-details-highlight') && !rich.textContent?.includes('[!HIGHLIGHT'), 'highlight blocks hide their marker and retain color');
+  const checkboxes = [...rich.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
+  check(checkboxes.length === 2 && !checkboxes[0].checked && checkboxes[1].checked && checkboxes.every(input => input.disabled), 'task lists display their checked state without changing the note');
+  check(!!rich.querySelector('ul ul') && !!rich.querySelector('ol') && !!rich.querySelector('td[style*="right"]'), 'nested lists, ordered lists, and table alignment render');
+  check(rich.querySelectorAll('.katex').length === 2 && !!rich.querySelector('.katex-display') && !rich.querySelector('.katex-error') && !!rich.querySelector('math'), 'inline and display math render through KaTeX');
+  check(rich.textContent?.includes('currency $5 and $6'), 'currency remains prose rather than accidental math');
+  check(!!rich.querySelector('.cm-md-details-mermaid svg') && rich.querySelector('.cm-md-details-mermaid')?.textContent?.includes('Start'), 'Mermaid fences render as a diagram with readable labels');
+  check(rich.querySelector<HTMLElement>('img')?.style.width === '120px' && rich.querySelector<HTMLElement>('img')?.style.height === '80px', 'sized Markdown images retain dimensions');
+  check(!!rich.querySelector('hr') && rich.querySelectorAll('details').length === 1 && !!rich.querySelector('details strong'), 'horizontal rules and nested Markdown work without extra blank lines');
+  const localLink = rich.querySelector<HTMLAnchorElement>('a[href="./README.md"]')!;
+  const plainClick = new MouseEvent('click', { bubbles: true, cancelable: true });
+  localLink.dispatchEvent(plainClick);
+  check(plainClick.defaultPrevented && localLink.classList.contains('cm-md-link'), 'widget links use editor styling and cannot navigate the webview directly');
+  const externalLink = rich.querySelector<HTMLAnchorElement>('a[href="https://example.test/details"]')!;
+  externalLink.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true }));
+  await tick();
+  check(openedUrls.includes('https://example.test/details'), 'Ctrl-click on a widget link uses the system opener');
+  rich.querySelector('summary')!.click(); await tick();
+  rich.querySelector('summary')!.click(); await tick();
+  check(editor.state.doc.toString() === richSource && !!firstDetails().querySelector('.cm-md-details-mermaid svg'), 'collapse and reopen preserve source, code, and rendered diagrams');
+  const shell = pre.parentElement!;
+  check(shell.classList.contains('cm-md-details-code') && !!shell.querySelector('.cm-md-code-header'), 'code inside details uses the shared code toolbar');
+  check(shell.querySelector('.cm-md-code-language')?.textContent === 'JavaScript' && shell.querySelector('.cm-md-code-count')?.textContent?.includes('2'), 'embedded toolbar shows language and line count');
+  const copyCode = () => shell.querySelector<HTMLButtonElement>('.cm-md-code-actions button:last-child')!.click();
+  copyCode(); await tick();
+  check(copiedCode === 'const count = 42;\nconsole.log("<details>");', 'embedded copy copies the full code body without fences or toolbar text');
+  check(!!shell.querySelector('.cm-md-code-action-done'), 'embedded copy shows success feedback');
+  const foldCode = () => shell.querySelector<HTMLButtonElement>('.cm-md-code-fold-btn')!.click();
+  foldCode(); await tick();
+  check(pre.hidden && rich.open && shell.querySelector('.cm-md-code-fold-btn')?.getAttribute('aria-expanded') === 'false', 'code folds independently without collapsing its parent details');
+  copyCode(); await tick();
+  check(copiedCode.includes('console.log') && pre.hidden, 'folded code can still be copied in full');
+  const panelWasOpen = useAppStore.getState().runPanelOpen;
+  shell.querySelectorAll<HTMLButtonElement>('.cm-md-code-actions button')[1].click(); await tick();
+  check(useAppStore.getState().runPanelOpen !== panelWasOpen, 'embedded output button toggles the existing run panel');
+  const originalConfig = useAppStore.getState().codeRunConfig;
+  useAppStore.setState({ codeRunConfig: { ...originalConfig, confirmEveryRun: true }, confirm: null });
+  await tick(); await tick();
+  shell.querySelector<HTMLButtonElement>('.cm-md-run-btn')!.click(); await tick();
+  const confirmation = useAppStore.getState().confirm;
+  check(!!confirmation && runRequests.length === 0, 'embedded run honors confirmation before native execution');
+  confirmation!.onConfirm();
+  useAppStore.getState().closeConfirm();
+  for (let i = 0; i < 100 && !runRequests.length; i++) await tick();
+  check(runRequests.length === 1 && runRequests[0].code === 'const count = 42;\nconsole.log("<details>");', 'embedded run sends only the snippet through the existing execution pipeline');
+  useAppStore.setState({ codeRunConfig: { ...originalConfig, enabled: false } });
+  await tick(); await tick();
+  check(!shell.querySelector('.cm-md-run-btn') && pre.hidden && firstDetails() === rich, 'runner settings refresh controls while preserving details and code folds');
+  useAppStore.setState({ codeRunConfig: originalConfig });
+  await tick(); await tick();
+  check(!!shell.querySelector('.cm-md-run-btn'), 'reenabling runners restores the embedded run action');
+  foldCode(); await tick();
+  check(!pre.hidden && shell.querySelector('.cm-md-code-fold-btn')?.getAttribute('aria-expanded') === 'true', 'embedded code expands again');
+  const unknownShell = rich.querySelector('code.language-unknown-language')!.closest('.cm-md-details-code')!;
+  check(!unknownShell.querySelector('.cm-md-run-btn') && unknownShell.querySelectorAll('.cm-md-code-actions button').length === 1, 'unknown languages provide copy without offering execution');
+  host.style.width = '400px'; await tick();
+  const embeddedHeader = shell.querySelector('.cm-md-code-header')!;
+  check(embeddedHeader.querySelector('.cm-md-code-meta')!.getBoundingClientRect().right <= embeddedHeader.querySelector('.cm-md-code-actions')!.getBoundingClientRect().left, 'embedded toolbar actions fit in a narrow editor');
+  host.style.width = '';
+  check(editor.state.doc.toString() === richSource, 'copy, run, and folding leave the note unchanged');
+  useAppStore.setState({ mdViewMode: 'readonly' }); await tick(); await tick();
+  const readonlyShell = firstDetails().querySelector('.cm-md-details-code')!;
+  check(!readonlyShell.querySelector('.cm-md-run-btn') && !!readonlyShell.querySelector('.cm-md-code-actions button'), 'read-only embedded code retains copy and hides execution');
+  readonlyShell.querySelector<HTMLButtonElement>('.cm-md-code-actions button:last-child')!.click(); await tick();
+  check(copiedCode === 'const count = 42;\nconsole.log("<details>");', 'read-only embedded copy remains functional');
+  readonlyShell.querySelector<HTMLButtonElement>('.cm-md-code-fold-btn')!.click(); await tick();
+  check(readonlyShell.querySelector<HTMLPreElement>('pre')!.hidden, 'read-only embedded code can still fold');
+  useAppStore.setState({ mdViewMode: 'live' }); await tick(); await tick();
   editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: '<details>\n<summary>Safe</summary>\n\n<img src="x" onerror="alert(1)">\n\n<script>alert(1)</script>\n\n</details>' }, selection: { anchor: 0 } }); await tick();
   check(!firstDetails().querySelector('script') && !firstDetails().querySelector('[onerror]'), 'Markdown rendered inside details is sanitized');
   const levels = [1, 2, 3, 4, 5, 6];
@@ -212,7 +334,7 @@ try {
     : readme + '\n\n<details>\n<summary><h2>折叠块标题</h2></summary>\n\n' +
       Array.from({ length: 14 }, () => '在这里输入内容111').join('\n\n') + '\n\n</details>\n';
   const readmeDetailsFrom = readmeWithDetails.lastIndexOf('<details>');
-  check(readmeWithDetails.indexOf('### 常用命令') < readmeDetailsFrom, 'README fixture ends with details after the command table');
+  check(readmeWithDetails.indexOf('<summary><h3>常用命令</h3></summary>') < readmeDetailsFrom, 'README fixture ends with details after the command table');
   editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: readmeWithDetails },
     selection: { anchor: readmeWithDetails.length } });
   editor.focus();
@@ -274,6 +396,13 @@ try {
   editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: featuresSource }, selection: { anchor: 0 } }); await tick();
   applyLanguage('zh-CN');
   report.textContent = `PASS: ${passed.length} checks\n${passed.join('\n')}`;
+  if (new URLSearchParams(location.search).has('markdown')) {
+    report.textContent = `PASS: ${passed.length} checks — collapsible Markdown preview`;
+    host.style.height = '800px';
+    editor.scrollDOM.style.height = '800px';
+    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: richSource }, selection: { anchor: richSource.length } });
+    editor.dispatch({ effects: EditorView.scrollIntoView(0, { y: 'start' }) });
+  }
   if (new URLSearchParams(location.search).has('scroll') || new URLSearchParams(location.search).has('readme')) {
     const useReadme = new URLSearchParams(location.search).has('readme');
     report.style.height = '120px';

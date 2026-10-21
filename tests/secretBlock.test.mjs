@@ -12,7 +12,7 @@ import {
   scanSecretBlocks,
   scanSecrets,
   wrapBody,
-} from "../src/lib/crypto/secretBlock.ts";
+} from "../share-service/renderer/lib/crypto/secretBlock.ts";
 
 /* ------------------------------ attributes ------------------------------ */
 

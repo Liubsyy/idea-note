@@ -1,3 +1,4 @@
+import "../../lib/share/renderRuntime";
 import { tr } from "../../i18n/core.ts";
 import { useLanguage } from "../../i18n/react";
 import { useEffect, useRef, useState } from "react";

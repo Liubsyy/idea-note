@@ -1,0 +1,16 @@
+services:
+  share:
+    build: .
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:8787}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      # The port is bound to loopback, so only a proxy on this host reaches it.
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+    volumes:
+      - share-data:/data
+    restart: unless-stopped
+volumes:
+  share-data:

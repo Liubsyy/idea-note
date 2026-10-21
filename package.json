@@ -25,7 +25,7 @@
     "test:directory-tree": "node --test --experimental-strip-types tests/directoryTree.test.mjs tests/workspaceLoading.test.mjs tests/directoryEntries.test.mjs",
     "test:sidebar-drop": "node --test --experimental-strip-types tests/sidebarDrop.test.mjs",
     "test:resource-preview": "node --test tests/resourcePreview.test.mjs tests/resourceClipboard.test.mjs",
-    "test:details-block": "node --test --experimental-strip-types tests/detailsBlock.test.mjs",
+    "test:details-block": "node --test --experimental-strip-types tests/detailsBlock.test.mjs tests/markdownMath.test.mjs",
     "test:svg-preview": "node --test tests/svgPreview.test.mjs",
     "test:file-preview": "node --test --experimental-strip-types tests/structuredPreview.test.mjs tests/svgPreview.test.mjs",
     "test:input-schema": "node --test --experimental-strip-types tests/inputSchema.test.mjs",
@@ -33,7 +33,9 @@
     "test:vault-setup-stage": "node --test --experimental-strip-types tests/vaultSetupStage.test.mjs",
     "test:vault-rotation": "node --test --experimental-strip-types tests/vaultRotation.test.mjs",
     "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test:sharing": "node --test --experimental-strip-types tests/sharing.test.mjs tests/sharingClient.test.mjs tests/sharingDialog.test.mjs && npm test --workspace share-service",
+    "build:sharing": "npm run build --workspace share-service"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.3",
@@ -56,12 +58,12 @@
     "codemirror": "^6.0.2",
     "construct-style-sheets-polyfill": "^3.1.0",
     "diff": "^9.0.0",
-    "dompurify": "^3.4.8",
+    "dompurify": "^3.4.17",
     "jsonc-parser": "^3.3.1",
-    "katex": "^0.17.0",
+    "katex": "^0.19.0",
     "lucide-react": "^0.469.0",
-    "markdown-it": "^14.2.0",
-    "mermaid": "10.9.3",
+    "markdown-it": "^14.3.3",
+    "mermaid": "10.9.8",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "yaml": "^2.9.1",
@@ -79,5 +81,13 @@
     "terser": "^5.48.0",
     "typescript": "~5.8.3",
     "vite": "^8.0.16"
+  },
+  "workspaces": [
+    "share-service"
+  ],
+  "overrides": {
+    "mermaid": {
+      "katex": "$katex"
+    }
   }
 }

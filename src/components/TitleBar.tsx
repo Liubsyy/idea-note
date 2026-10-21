@@ -13,11 +13,12 @@ import {
   PanelLeftClose,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useAppStore } from "../store/useAppStore";
-import { isImageFile } from "../lib/fs";
+import { isDraftPath, useAppStore } from "../store/useAppStore";
+import { isImageFile, isMarkdownFile } from "../lib/fs";
 import { isWindows } from "../lib/platform";
 import { ChatHeaderActions } from "./Panels/RightPanel";
 import { PresentationMenu } from "./Editor/PresentationMenu";
+import { ShareButton } from "./ShareDialog";
 import { commandKeyLabel } from "../lib/codemirror/keybindings";
 
 /** Count words: CJK characters count individually, latin runs as words. */
@@ -175,6 +176,9 @@ export function TitleBar({ leftWidth }: { leftWidth: number }) {
               onSettings={() => void openSettings("sync")}
               branchBusy={branchTaskBusy}
             />
+          )}
+          {showSyncBtn && activeFilePath && (isMarkdownFile(activeFilePath) || isDraftPath(activeFilePath)) && (
+            <ShareButton />
           )}
           {showTerminalBtn && (
             <PanelToggle

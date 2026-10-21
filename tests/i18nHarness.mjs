@@ -12,7 +12,7 @@ export function i18nDependency(name) {
   if (cache.has(module)) return cache.get(module);
   const exports = {};
   cache.set(module, exports);
-  const source = readFileSync(new URL(`../src/i18n/${module}.ts`, import.meta.url), 'utf8');
+  const source = readFileSync(new URL(module === 'react' ? '../src/i18n/react.ts' : `../share-service/renderer/i18n/${module}.ts`, import.meta.url), 'utf8');
   vm.runInNewContext(ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText, {

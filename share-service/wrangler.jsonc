@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "idea-note-share",
+  "main": "server/worker.mjs",
+  "compatibility_date": "2026-10-21",
+  "assets": { "directory": "./dist", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*", "/share/*", "/admin", "/admin/*"] },
+  "d1_databases": [{ "binding": "DB", "database_name": "idea-note-share", "database_id": "REPLACE_WITH_D1_DATABASE_ID", "migrations_dir": "migrations" }],
+  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "idea-note-share" }],
+  "triggers": { "crons": ["0 * * * *"] },
+  "observability": { "enabled": true }
+}

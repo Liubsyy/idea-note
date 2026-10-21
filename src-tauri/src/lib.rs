@@ -19,6 +19,7 @@ mod open_with;
 mod print;
 mod proc;
 mod search;
+mod sharing;
 mod terminal;
 mod tree;
 
@@ -146,6 +147,13 @@ pub fn run() {
             search::global_search,
             search::global_search_stream,
             search::stop_global_search,
+            sharing::share_config_load,
+            sharing::share_config_save,
+            sharing::share_association_set,
+            sharing::share_associations_remap,
+            sharing::share_resource_stat,
+            sharing::share_resource_read,
+            sharing::share_folder_scan,
             files::read_file,
             files::file_stat,
             files::is_dir,

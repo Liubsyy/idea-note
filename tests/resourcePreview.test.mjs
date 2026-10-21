@@ -20,7 +20,9 @@ class Element {
 }
 
 const opened = [];
+const runtime={untrustedContent:false};
 const dependencies = {
+  '../../runtime':{renderRuntime:runtime},
   '@codemirror/state': stateApi,
   '@codemirror/view': viewApi,
   './inlineHtml': {},
@@ -29,7 +31,7 @@ const dependencies = {
 };
 const exports = {};
 vm.runInNewContext(ts.transpileModule(
-  readFileSync(new URL('../src/lib/codemirror/resourcePreview.ts', import.meta.url), 'utf8'),
+  readFileSync(new URL('../share-service/renderer/lib/codemirror/resourcePreview.ts', import.meta.url), 'utf8'),
   { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
 ).outputText, {
   exports,
@@ -135,4 +137,15 @@ test('local files use resource previews while web links and anchors remain ordin
     assert.equal(isResourceLink(path), true, path);
   for (const path of ['https://example.com', 'mailto:a@example.com', '#heading', '//example.com/page', 'www.example.com', ''])
     assert.equal(isResourceLink(path), false, path);
+});
+
+test('untrusted read-only resources support keyboard navigation without edit controls',()=>{
+  runtime.untrustedContent=true;
+  try{
+    const view={state:EditorState.create({doc:'[next](next.md)',extensions:[EditorState.readOnly.of(true)]})};
+    const wrap=new Element();
+    bindResourcePreview(wrap,view,{from:0,to:14},'/share/id?file=next.md','resource',false);
+    assert.equal(wrap.tabIndex,0);assert.equal(wrap.children.length,0);
+    wrap.fire('keydown',{key:'Enter'});assert.equal(opened.at(-1),'/share/id?file=next.md');
+  }finally{runtime.untrustedContent=false;}
 });

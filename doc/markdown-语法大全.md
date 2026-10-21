@@ -417,9 +417,23 @@ Markdown 允许混入 HTML。本编辑器会渲染常见 HTML，并通过 DOMPur
 
 <details>
 <summary>点击展开 / 收起（details + summary）</summary>
+
 折叠区内部可以写多行内容，也支持用空行分隔 Markdown 段落、列表等内容。
 支持 <b>加粗</b>、<code>代码</code>、<font color="#1971c2">彩色</font> 等行内 HTML。
+
+```javascript
+const message = "代码块支持语法高亮";
+console.log(message);
+```
+
+- [ ] 未完成的任务
+- [x] 已完成的任务
+
+数学公式：$E = mc^2$。还支持块级公式、Mermaid 图表、表格、引用、高亮块、图片和嵌套折叠块。
+
 </details>
+
+折叠块内的普通代码块提供语言、行数、展开/收起和复制操作；启用对应运行器后还可运行代码、打开输出面板，运行前确认与普通代码块一致。只读模式保留复制和展开/收起，隐藏运行操作。任务清单显示勾选状态，修改需进入折叠块源码。可交互组件、动态运行结果和加密内容卡片请放在折叠块外使用。编辑模式下，链接使用 `Cmd/Ctrl + 点击` 打开。
 
 原生 HTML 表格（不使用 Markdown 表格语法）：
 

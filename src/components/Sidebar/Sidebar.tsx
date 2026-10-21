@@ -12,6 +12,7 @@ import {
   TableOfContents,
   RefreshCw,
   Search,
+  Share2,
   FilePlus2,
   FolderPlus,
   ChevronsDownUp,
@@ -50,6 +51,7 @@ import {
   exportCurrentNoteAsPdf,
   printCurrentNote,
 } from "../../lib/print/printNote";
+import { ShareDialog } from "../ShareDialog";
 import { FileTree } from "./FileTree";
 import { NotesTree } from "./NotesTree";
 import { OutlinePanel } from "./OutlinePanel";
@@ -98,13 +100,14 @@ function estimateContextMenuHeight(
       1 + // 显示简介
       (gitRepo && (node.is_dir || !isImageFile(node.path)) ? 1 : 0) +
       1 + // 重命名
-      1 // 删除
+      1 + // 删除
+      (node.is_dir ? 1 : 0) // 分享文件夹
     : 4 +
       1 + // 粘贴
       1 + // 打开所在目录
       1 + // 显示简介
       (gitRepo && workspacePath ? 1 : 0) +
-      1; // 刷新
+      2; // 刷新 / 分享文件夹
   return rows * MENU_ROW_HEIGHT + MENU_VERTICAL_PADDING;
 }
 
@@ -165,6 +168,7 @@ export function Sidebar() {
   const openHistoryAt = useAppStore((s) => s.openHistoryAt);
 
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const [sharingFolder,setSharingFolder]=useState<string|null>(null);
   const [wsMenuOpen, setWsMenuOpen] = useState(false);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
@@ -808,6 +812,7 @@ export function Sidebar() {
         </div>
       </div>
 
+      {sharingFolder&&createPortal(<ShareDialog folderPath={sharingFolder} onClose={()=>setSharingFolder(null)}/>,document.body)}
       {/* Context menu */}
       {menu && (
         <div
@@ -984,6 +989,20 @@ export function Sidebar() {
                 >
                   {tr("添加到 .gitignore")}</MenuItem>
               )}
+              {menuNode.is_dir && (
+                <MenuItem
+                  disabled={menuHasMultiple}
+                  onClick={() => {
+                    setSharingFolder(menuNode.path);
+                    setMenu(null);
+                  }}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Share2 size={15} className="shrink-0" style={{ color: "var(--text-muted)" }} aria-hidden="true" />
+                    <span className="truncate">{tr("分享文件夹")}</span>
+                  </span>
+                </MenuItem>
+              )}
             </>
           ) : (
             <>
@@ -1057,6 +1076,17 @@ export function Sidebar() {
                 }}
               >
                 {tr("刷新")}</MenuItem>
+              <MenuItem
+                onClick={() => {
+                  if (workspacePath) setSharingFolder(workspacePath);
+                  setMenu(null);
+                }}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <Share2 size={15} className="shrink-0" style={{ color: "var(--text-muted)" }} aria-hidden="true" />
+                  <span className="truncate">{tr("分享文件夹")}</span>
+                </span>
+              </MenuItem>
             </>
           )}
         </div>

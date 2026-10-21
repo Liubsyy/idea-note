@@ -49,7 +49,7 @@ test('language persists, restores, synchronizes storage events, and does not pub
   };
   const load = () => {
     const exports = {};
-    vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/i18n/core.ts', import.meta.url), 'utf8'), {
+    vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../share-service/renderer/i18n/core.ts', import.meta.url), 'utf8'), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
     }).outputText, {
       exports, document, window, localStorage, navigator: { language: 'zh-CN' },

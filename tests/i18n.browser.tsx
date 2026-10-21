@@ -74,7 +74,7 @@ try {
   check(host.textContent?.includes('外观') && search.placeholder === '查找', 'Switch back to Chinese');
   check(editor.state.doc.toString() === doc, 'Note preserved after round trip');
   await switchLanguage('en');
-  result.textContent = 'PASS: all 9 settings sections; English ↔ Chinese; saved preference; editor identity, unsaved text, selection, undo history, and search query preserved.';
+  result.textContent = 'PASS: all 10 settings sections; English ↔ Chinese; saved preference; editor identity, unsaved text, selection, undo history, and search query preserved.';
   result.style.background = '#166534';
 } catch (error) {
   result.textContent = 'FAIL: ' + String(error);

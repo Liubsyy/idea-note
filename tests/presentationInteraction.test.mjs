@@ -4,8 +4,8 @@ import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { Compartment, EditorState } from '@codemirror/state';
-import { canInteract, presentationInteraction } from '../src/lib/codemirror/interaction.ts';
-import * as fenceAttrs from '../src/lib/codeRun/fenceAttrs.ts';
+import { canInteract, presentationInteraction } from '../share-service/renderer/lib/codemirror/interaction.ts';
+import * as fenceAttrs from '../share-service/renderer/lib/codeRun/fenceAttrs.ts';
 
 const compiled = ts.transpileModule(
   readFileSync(new URL('../src/lib/codemirror/autoRuns.ts', import.meta.url), 'utf8'),

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { coerce, literalOf, parseInputBlock } from "../src/lib/inputs/schema.ts";
+import { coerce, literalOf, parseInputBlock } from "../share-service/renderer/lib/inputs/schema.ts";
 
 /** Parse one field line, asserting the block had no errors. */
 const field = (line) => {

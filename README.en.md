@@ -217,3 +217,11 @@ Run `npm run mock:ai` for a deterministic test service requiring no API key. Con
 
 - Application name: `Idea Note`.
 - Application identifier: `com.liubs.idea-note`.
+
+### Link sharing
+
+Configure a service origin and administrator-issued publishing key in **Settings → Share service**. Use the Markdown toolbar to publish, manually update, or cancel shares. Readers see the same read-only rendering, including attachments, formulas, diagrams, and result snapshots. Encrypted content is replaced before upload.
+
+Right-click a folder or the workspace background to **Share folder** recursively. Readers use the directory sidebar to switch files, preview Markdown, images and text, or download other files. Hidden entries and symbolic links are excluded by default and can be enabled and reviewed before publishing.
+
+The portable service runs on Cloudflare Workers/D1/R2 or Node/Docker and includes an administrator dashboard for keys, quotas, moderation, service switches, and backup migration. See the [deployment guide](./share-service/README.en.md).
