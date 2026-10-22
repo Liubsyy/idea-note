@@ -1,5 +1,10 @@
 // Chinese source keys keep the original interface available as a complete fallback.
 export default {
+  "当前项目": "Current project",
+  "其他项目": "Other projects",
+  "二维码": "QR code",
+  "分享链接二维码": "Share link QR code",
+  "使用手机扫码打开分享": "Scan with your phone to open the share",
   "分享服务地址必须是 HTTPS 根地址（本地开发可使用 HTTP）": "The share service URL must be an HTTPS origin (HTTP is allowed for local development).",
   "请先在设置中配置分享服务地址与发布密钥": "Configure the share service URL and publishing key in Settings first.",
   "发布密钥格式不正确，请重新复制完整密钥": "Invalid publishing key format. Copy the complete key again.",

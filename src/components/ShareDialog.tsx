@@ -1,11 +1,13 @@
 import { createPortal } from "react-dom";
 import { useEffect, useState } from 'react';
-import { Share2, X, RefreshCw, Copy, ExternalLink } from 'lucide-react';
+import { Share2, X, RefreshCw, Copy, ExternalLink, QrCode } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { tr } from '../i18n/core';
 import { useLanguage } from '../i18n/react';
 import { useAppStore } from '../store/useAppStore';
 import { copyText } from '../lib/clipboard';
+import { relativePathWithinWorkspace } from '../lib/workspacePath';
 import { loadShareConfig, saveShareConfig, shareRequest, listShares, revokeShare, prepareShare, prepareFolderShare, publishShare, setAssociation, watchShareConfig, serviceUrl, defaultShareTitle, type RemoteShare, type PreparedShare, type ShareConfig, type AttachmentWarning } from '../lib/share/client';
 import type { NoteContent } from '../../share-service/renderer/folder';
 import './sharing.css';
@@ -31,9 +33,11 @@ export function ShareButton() {
 export function ShareDialog({onClose,folderPath}:{onClose():void;folderPath?:string}) {
   useLanguage();
   const activePath=useAppStore(s=>s.activeFilePath)||'',path=folderPath||activePath,kind=folderPath?'folder':'note',content=useAppStore(s=>s.content),openSettings=useAppStore(s=>s.openSettings);
+  const workspacePath=useAppStore(s=>s.workspacePath);
   const [config,setConfig]=useState<ShareConfig>(),[shares,setShares]=useState<RemoteShare[]>([]),[current,setCurrent]=useState<RemoteShare>(),[title,setTitle]=useState(folderPath?path.split(/[/\\]/).filter(Boolean).pop()||path:defaultShareTitle(path)),[days,setDays]=useState(0);
   const [prepared,setPrepared]=useState<PreparedShare>(),[error,setError]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[tab,setTab]=useState<'publish'|'manage'>('publish');
   const [ready,setReady]=useState(false);
+  const [qrShareId,setQrShareId]=useState<string>();
   const [includeHidden,setIncludeHidden]=useState(false),[includeSymlinks,setIncludeSymlinks]=useState(false);
   const notes:({path:string;content:NoteContent})[]=prepared?(prepared.document.format===1?[{path,content:prepared.document}]:prepared.document.entries.flatMap(entry=>entry.kind==='markdown'?[{path:entry.path,content:entry.content}]:[])):[];
   // Approvals belong to one preview; preparing again starts with none.
@@ -43,13 +47,19 @@ export function ShareDialog({onClose,folderPath}:{onClose():void;folderPath?:str
   const approve=(path:string,yes:boolean)=>{if(!prepared)return;const paths=new Set(approved);if(yes)paths.add(path);else paths.delete(path);setApproval({prepared,paths});};
   const refresh=async()=>{
     setReady(false);
-    const cfg=await loadShareConfig(true,path);setConfig(cfg);
+    let cfg=await loadShareConfig(true,path);
+    if(workspacePath&&relativePathWithinWorkspace(workspacePath,path)===null){
+      const projectConfig=await loadShareConfig(true,workspacePath);
+      cfg={...cfg,associations:{...projectConfig.associations,...cfg.associations}};
+    }
+    setConfig(cfg);
     if(cfg.url&&cfg.key){const rows=await listShares(cfg);setShares(rows);const binding=cfg.associations[path];setCurrent(binding?.service===cfg.url&&(binding.kind||'note')===kind?rows.find(s=>s.id===binding.id&&(!s.kind||s.kind===kind)):undefined);}
     else{setShares([]);setCurrent(undefined);}
     setReady(true);setError('');
   };
-  useEffect(()=>{void refresh().catch(e=>setError(String(e)));let off:(()=>void)|undefined;void watchShareConfig(()=>void refresh().catch(e=>setError(String(e)))).then(value=>off=value);return()=>off?.();},[path]);
+  useEffect(()=>{void refresh().catch(e=>setError(String(e)));let off:(()=>void)|undefined;void watchShareConfig(()=>void refresh().catch(e=>setError(String(e)))).then(value=>off=value);return()=>off?.();},[path,workspacePath]);
   useEffect(()=>{setPrepared(undefined);},[path,content,title,days,includeHidden,includeSymlinks]);
+  useEffect(()=>{setQrShareId(undefined);},[path,config?.url]);
   useEffect(()=>{setTitle(folderPath?path.split(/[/\\]/).filter(Boolean).pop()||path:defaultShareTitle(path));setDays(0);},[path]);
   useEffect(()=>{if(current){setTitle(current.title);setDays(-1);}},[current?.id]);
   useEffect(()=>{const close=(e:KeyboardEvent)=>{if(e.key==='Escape'&&!busy)onClose();};window.addEventListener('keydown',close);return()=>window.removeEventListener('keydown',close);},[busy,onClose]);
@@ -57,11 +67,16 @@ export function ShareDialog({onClose,folderPath}:{onClose():void;folderPath?:str
   const shareLink=(s:RemoteShare)=>config?serviceUrl(config.url)+'/share/'+s.id:'';
   const cancel=(s:RemoteShare)=>void act(async()=>{await revokeShare(s.id);setPrepared(undefined);await refresh();setMessage(tr('分享已取消，链接与附件已停止访问'));});
   const active=current?.status==='active';
+  const projectShareIds=new Set(Object.entries(config?.associations||{}).filter(([bindingPath,binding])=>binding.service===config?.url&&workspacePath&&relativePathWithinWorkspace(workspacePath,bindingPath)!==null).map(([,binding])=>binding.id));
+  const shareGroups=[
+    {id:'current',title:tr('当前项目'),shares:shares.filter(share=>projectShareIds.has(share.id))},
+    {id:'other',title:tr('其他项目'),shares:shares.filter(share=>!projectShareIds.has(share.id))},
+  ];
   return <div className="sharing-overlay" onMouseDown={e=>{if(e.target===e.currentTarget&&!busy)onClose();}}><section role="dialog" aria-modal="true" aria-labelledby="sharing-title" className="sharing-dialog"><header><h2 id="sharing-title"><Share2 size={18}/>{tr('链接分享')}</h2><button aria-label={tr('关闭')} disabled={busy} onClick={onClose}><X size={18}/></button></header>
     <nav className="sharing-actions"><button aria-pressed={tab==='publish'} onClick={()=>setTab('publish')}>{folderPath?tr('当前文件夹'):tr('当前笔记')}</button><button aria-pressed={tab==='manage'} onClick={()=>setTab('manage')}>{tr('我的分享')}</button><button disabled={busy} onClick={()=>void act(refresh)} title={tr('刷新')}><RefreshCw size={14}/></button></nav>
     {error&&<p className="sharing-error" role="alert">{error}</p>}{message&&<p className="sharing-message" role="status">{message}</p>}
     {!config?.url||!config.key?<div className="sharing-empty"><p>{tr('请先配置分享服务地址与发布密钥')}</p><button onClick={()=>{onClose();void openSettings('sharing');}}>{tr('打开分享设置')}</button></div>:tab==='publish'?<>
-      {current&&<div className="sharing-link"><strong>{current.title}</strong><small>{tr('状态')}：{current.status} · {tr('版本')} {current.version}</small><a href="#" onClick={e=>{e.preventDefault();void openUrl(shareLink(current));}}>{shareLink(current)}</a><div className="sharing-actions"><button onClick={()=>void copyText(shareLink(current))}><Copy size={13}/>{tr('复制链接')}</button><button onClick={()=>void openUrl(shareLink(current))}><ExternalLink size={13}/>{tr('打开链接')}</button>{active&&<button className="sharing-danger" disabled={busy} onClick={()=>cancel(current)}>{tr('取消分享')}</button>}</div></div>}
+      {current&&<div className="sharing-link"><strong>{current.title}</strong><small>{tr('状态')}：{current.status} · {tr('版本')} {current.version}</small><a href="#" onClick={e=>{e.preventDefault();void openUrl(shareLink(current));}}>{shareLink(current)}</a><div className="sharing-actions"><button onClick={()=>void copyText(shareLink(current))}><Copy size={13}/>{tr('复制链接')}</button><button onClick={()=>void openUrl(shareLink(current))}><ExternalLink size={13}/>{tr('打开链接')}</button>{active&&<button aria-expanded={qrShareId===current.id} onClick={()=>setQrShareId(qrShareId===current.id?undefined:current.id)}><QrCode size={13}/>{tr('二维码')}</button>}{active&&<button className="sharing-danger" disabled={busy} onClick={()=>cancel(current)}>{tr('取消分享')}</button>}</div>{active&&qrShareId===current.id&&<ShareQrCode url={shareLink(current)}/>}</div>}
       <label>{tr('分享标题')}<input maxLength={300} value={title} onChange={e=>setTitle(e.target.value)} disabled={busy}/></label><label>{tr('有效期')}<select value={days} disabled={busy} onChange={e=>setDays(Number(e.target.value))}>{current&&<option value={-1}>{tr('保持原有效期')}</option>}{[0,1,7,30].map(d=><option key={d} value={d}>{d?tr('{{0}} 天',{0:d}):tr('永久')}</option>)}</select></label>
       {folderPath&&<div><label className="sharing-option"><input type="checkbox" disabled={busy} checked={includeHidden} onChange={e=>setIncludeHidden(e.target.checked)}/>{tr('包含隐藏文件和目录')}</label><label className="sharing-option"><input type="checkbox" disabled={busy} checked={includeSymlinks} onChange={e=>setIncludeSymlinks(e.target.checked)}/>{tr('包含符号链接指向的内容')}</label><p>{tr('文件夹修改后需手动更新分享，新增、修改和删除会一起更新。')}</p></div>}
       <p>{tr('修改笔记后需手动更新分享。加密内容会替换为占位，网页不会执行代码。')}</p>
@@ -70,7 +85,7 @@ export function ShareDialog({onClose,folderPath}:{onClose():void;folderPath?:str
         const result=await publishShare(prepared,active?current:undefined,approved);await setAssociation(path,result.id,serviceUrl(config.url),kind);await refresh();setPrepared(undefined);setMessage(tr('分享已发布，可复制链接发送给他人'));
       })}>{busy?tr('正在上传…'):tr(active?'更新分享':'发布分享')}</button><button disabled={busy} onClick={()=>setPrepared(undefined)}>{tr('重新准备')}</button></div></div>}
       {current?.status==='hidden'&&<p className="sharing-error">{tr('当前分享已被管理员下架，请联系管理员。')}</p>}
-    </>:<div className="sharing-list">{!shares.length&&<p>{tr('暂无分享')}</p>}{shares.map(s=><article key={s.id}><div><strong>{s.title}</strong><small>{s.status} · {new Date(s.updatedAt).toLocaleString()} · {size(s.bytes)}</small></div><div className="sharing-actions"><button onClick={()=>void copyText(shareLink(s))}>{tr('复制链接')}</button><button onClick={()=>void openUrl(shareLink(s))}>{tr('打开')}</button>{s.status==='active'&&<>{(!s.kind||s.kind===kind)&&<button disabled={busy} onClick={()=>void act(async()=>{await setAssociation(path,s.id,serviceUrl(config.url),kind);await refresh();setPrepared(undefined);setTab('publish');})}>{folderPath?tr('关联当前文件夹'):tr('关联当前笔记')}</button>}<button className="sharing-danger" disabled={busy} onClick={()=>cancel(s)}>{tr('取消分享')}</button></>}</div></article>)}</div>}
+    </>:<div className="sharing-list">{shareGroups.map(group=><section key={group.id} className="sharing-group" aria-labelledby={`sharing-group-${group.id}`}><h3 id={`sharing-group-${group.id}`}>{group.title}<span>{group.shares.length}</span></h3>{!group.shares.length&&<p>{tr('暂无分享')}</p>}{group.shares.map(s=><article key={s.id}><div><strong>{s.title}</strong><small>{s.status} · {new Date(s.updatedAt).toLocaleString()} · {size(s.bytes)}</small></div><div className="sharing-actions"><button onClick={()=>void copyText(shareLink(s))}>{tr('复制链接')}</button><button onClick={()=>void openUrl(shareLink(s))}>{tr('打开')}</button>{s.status==='active'&&<><button aria-expanded={qrShareId===s.id} onClick={()=>setQrShareId(qrShareId===s.id?undefined:s.id)}><QrCode size={13}/>{tr('二维码')}</button>{(!s.kind||s.kind===kind)&&<button disabled={busy} onClick={()=>void act(async()=>{await setAssociation(path,s.id,serviceUrl(config.url),kind);await refresh();setPrepared(undefined);setTab('publish');})}>{folderPath?tr('关联当前文件夹'):tr('关联当前笔记')}</button>}<button className="sharing-danger" disabled={busy} onClick={()=>cancel(s)}>{tr('取消分享')}</button></>}</div>{s.status==='active'&&qrShareId===s.id&&<ShareQrCode url={shareLink(s)}/>}</article>)}</section>)}</div>}
   </section></div>;
 }
 
@@ -82,4 +97,8 @@ function NoteReview({path,content}:{path:string;content:NoteContent}){
     {Object.keys(content.inputs).length>0&&<details><summary>{tr('参数快照')}</summary><pre>{JSON.stringify(content.inputs,null,2)}</pre></details>}
     {content.results.map((result,index)=><details key={index}><summary>{tr('结果快照')} {index+1} · {result.info}</summary><pre>{JSON.stringify(result.componentResult,null,2)}</pre></details>)}
   </details>;
+}
+
+function ShareQrCode({url}:{url:string}) {
+  return <div className="sharing-qr"><QRCodeSVG value={url} size={224} level="M" marginSize={4} bgColor="#ffffff" fgColor="#000000" role="img" title={tr('分享链接二维码')}/><p>{tr('使用手机扫码打开分享')}</p></div>;
 }
