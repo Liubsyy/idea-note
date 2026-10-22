@@ -17,6 +17,7 @@ window.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
 window.HTMLDialogElement.prototype.close=function(){this.open=false;};
 let rows,qrValues,initial,requests;
 const dependencies={
+  './assets/favicon.png?inline':{default:'data:image/png;base64,'+readFileSync(new URL('../web/assets/favicon.png',import.meta.url)).toString('base64')},
   'lucide-react':icons,
   react:React,'react/jsx-runtime':jsx,
   'react-dom/client':{createRoot:()=>({render:element=>{initial=element;}})},

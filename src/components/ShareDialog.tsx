@@ -2,6 +2,7 @@ import { createPortal } from "react-dom";
 import { useEffect, useState } from 'react';
 import { Share2, X, RefreshCw, Copy, ExternalLink, QrCode } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import logo from '../assets/logo.png?inline';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { tr } from '../i18n/core';
 import { useLanguage } from '../i18n/react';
@@ -13,6 +14,7 @@ import type { NoteContent } from '../../share-service/renderer/folder';
 import './sharing.css';
 
 const size=(n:number)=>`${(n/1048576).toFixed(2)} MB`;
+const qrLogo='data:image/svg+xml,'+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44"><rect width="44" height="44" rx="6" fill="white"/><image href="${logo}" x="6" y="6" width="32" height="32"/></svg>`);
 const warningLabel=(w:AttachmentWarning)=>w==='outside'?tr('位于工作区之外'):tr('隐藏文件或目录');
 export function SharingSettings() {
   useLanguage();
@@ -100,5 +102,5 @@ function NoteReview({path,content}:{path:string;content:NoteContent}){
 }
 
 function ShareQrCode({url}:{url:string}) {
-  return <div className="sharing-qr"><QRCodeSVG value={url} size={224} level="M" marginSize={4} bgColor="#ffffff" fgColor="#000000" role="img" title={tr('分享链接二维码')}/><p>{tr('使用手机扫码打开分享')}</p></div>;
+  return <div className="sharing-qr"><QRCodeSVG value={url} size={224} level="H" marginSize={4} bgColor="#ffffff" fgColor="#000000" imageSettings={{src:qrLogo,width:44,height:44,excavate:true}} role="img" title={tr('分享链接二维码')}/><p>{tr('使用手机扫码打开分享')}</p></div>;
 }

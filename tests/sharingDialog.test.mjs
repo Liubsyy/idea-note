@@ -19,6 +19,7 @@ const store=selector=>selector(app);store.getState=()=>app;
 let config,rows,preparations,published,associations,failList=false,configChanged,loadedPaths,qrValues;
 const prepared=()=>({document:{format:2,title:'Folder',appearance:{},assets:[],expiresAt:null,entries:[{kind:'directory',path:'empty'},{kind:'markdown',path:'.private.md',content:{markdown:'# Sanitized preview',inputs:{x:{value:'test'}},results:[]}}]},files:[{source:'.private.md',path:'/notes/folder/.private.md',name:'.private.md',size:42,mime:'application/octet-stream',warnings:['hidden'],reviewOnly:true}],folder:{scan:{excluded:[{path:'loop',reason:'cycle'}]}},removedComments:1,contentKey:''});
 const dependencies={
+  '../assets/logo.png?inline':{default:'data:image/png;base64,'+readFileSync(new URL('../src/assets/logo.png',import.meta.url)).toString('base64')},
   '../lib/workspacePath':{relativePathWithinWorkspace},
   'qrcode.react':{QRCodeSVG:props=>{qrValues.push(props.value);return jsx.jsx(QRCodeSVG,props);}},
   react:React,'react-dom':ReactDOM,'react/jsx-runtime':jsx,'lucide-react':icons,'@tauri-apps/plugin-opener':{openUrl:async()=>{}},
@@ -125,6 +126,7 @@ for (const kind of ['note','folder']) test(`${kind} shares show a local QR code 
     assert.equal(button('二维码').getAttribute('aria-expanded'),'true');
     assert.equal(qrValues.at(-1),'https://share.test/share/existing-share');
     const svg=document.querySelector('.sharing-qr svg[role="img"]');
+    assert.match(decodeURIComponent(svg.querySelector('image').getAttribute('href')),/data:image\/png;base64,/);
     assert.equal(svg.querySelector('title').textContent,'分享链接二维码');
     assert.ok(svg.querySelectorAll('path').length>=2);
     assert.equal(svg.querySelector('path').getAttribute('fill'),'#ffffff');
