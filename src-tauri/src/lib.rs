@@ -19,6 +19,7 @@ mod open_with;
 mod print;
 mod proc;
 mod search;
+mod share_associations;
 mod sharing;
 mod terminal;
 mod tree;

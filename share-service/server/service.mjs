@@ -1,5 +1,5 @@
 import { digest, equal, id } from './crypto.mjs';
-import { exportBackup, importBackup, restoreQueries } from './backup.mjs';
+import { backupSnapshot, exportBackup, importBackup, restoreQueries } from './backup.mjs';
 import { rateLimitKey } from './address.mjs';
 
 const MiB = 1024 * 1024;
@@ -38,7 +38,7 @@ async function body(request, limit = 5 * MiB) {
   try { return JSON.parse(new TextDecoder().decode(await bodyBytes(request, limit))); }
   catch (error) { if (error instanceof Fault) throw error; throw new Fault(400, 'Invalid JSON'); }
 }
-const publicShare = s => ({ id: s.id, title: s.title, status: s.status, version: s.version, bytes: s.bytes, expiresAt: s.expires_at, createdAt: s.created_at, updatedAt: s.updated_at, owner: s.owner });
+const publicShare = s => ({ id: s.id, title: s.title, status: s.status, version: s.version, bytes: s.bytes, expiresAt: s.expires_at, createdAt: s.created_at, updatedAt: s.updated_at, owner: s.owner, kind: s.kind });
 const publicPublisher = p => ({ id: p.id, name: p.name, enabled: !!p.enabled, expiresAt: p.expires_at, maxShares: p.max_shares, maxBytes: p.max_bytes, createdAt: p.created_at });
 function validateDocument(doc) {
   demand(doc && [1,2].includes(doc.format), 400, 'Unsupported share document');
@@ -77,9 +77,21 @@ function validateNote(doc) {
   demand(!/(?:^|\n)\s*(?:`{3,}|~{3,})secret\b|`secret\s*\{/i.test(doc.markdown), 400, 'Encrypted content must be redacted');
 }
 
-export function createService({ db, objects, adminPassword, allowedOrigins = [], staticFetch = () => new Response('Not found', { status: 404 }) }) {
+export function createService({ db, objects, adminPassword, allowedOrigins = [], staticFetch = () => new Response('Not found', { status: 404 }), cleanupObjectLimit = Infinity }) {
   const settings = async () => ({ ...DEFAULTS, ...JSON.parse((await db.get('SELECT json FROM settings WHERE id=1'))?.json || '{}') });
   const log = (actor, action, target = null) => db.run('INSERT INTO audit(id,actor,action,target,at) VALUES(?,?,?,?,?)', [id(), actor, action, target, Date.now()]);
+  // Shares published before the kind column (or restored from a backup) learn
+  // their kind from the stored document once.
+  async function withKinds(rows) {
+    for (const share of rows) {
+      if (share.kind) continue;
+      const bytes = await objects.get(share.doc_key);
+      if (!bytes) continue;
+      share.kind = JSON.parse(new TextDecoder().decode(bytes)).format === 2 ? 'folder' : 'note';
+      await db.run('UPDATE shares SET kind=? WHERE id=? AND doc_key=?', [share.kind, share.id, share.doc_key]);
+    }
+    return rows;
+  }
   async function publisher(request) {
     const token = /^Bearer (.+)$/.exec(request.headers.get('authorization') || '')?.[1];
     demand(token && token.length < 300, 401, 'A publishing key is required');
@@ -180,7 +192,7 @@ export function createService({ db, objects, adminPassword, allowedOrigins = [],
       }
       if (sub === 'shares' && method === 'GET') {
         const query = (url.searchParams.get('q') || '').slice(0, 300), offset = Math.max(0, Number(url.searchParams.get('offset')) || 0);
-        return json((await db.all('SELECT * FROM shares WHERE title LIKE ? OR id=? ORDER BY updated_at DESC LIMIT 100 OFFSET ?', ['%' + query + '%', query, offset])).map(publicShare));
+        return json((await withKinds(await db.all('SELECT * FROM shares WHERE title LIKE ? OR id=? ORDER BY updated_at DESC LIMIT 100 OFFSET ?', ['%' + query + '%', query, offset]))).map(publicShare));
       }
       const adminAsset = /^shares\/([a-f0-9]{32})\/assets\/([a-f0-9]{32})$/.exec(sub);
       if (adminAsset && method === 'GET') {
@@ -234,10 +246,22 @@ export function createService({ db, objects, adminPassword, allowedOrigins = [],
           await log('admin', 'backup.restore'); return json({ ok: true });
         }
         if (!restoreJob[2] && method === 'DELETE') {
-          for (const row of await db.all('SELECT object_key FROM restore_objects WHERE job=?', [job.token])) await objects.delete(`restore/${job.token}/${row.object_key}`);
+          const rows = await db.all('SELECT object_key FROM restore_objects WHERE job=?', [job.token]);
+          // Abort must release the restore gate even for large B2 imports.
+          // Remaining objects are private orphans, reclaimed by hourly cleanup.
+          await removeObjects(rows.slice(0, cleanupObjectLimit).map(row => `restore/${job.token}/${row.object_key}`));
           await db.batch([['DELETE FROM restore_objects WHERE job=?', [job.token]], ['DELETE FROM restore_jobs WHERE token=?', [job.token]]]);
           return json({ ok: true });
         }
+      }
+      if (sub === 'backup/manifest' && method === 'GET') {
+        await log('admin', 'backup.export');
+        return json(await backupSnapshot(db));
+      }
+      const backupObject = /^backup\/objects\/((?:restore\/[a-f0-9]{32}\/)?(?:assets|documents)\/[a-f0-9]{32})$/.exec(sub);
+      if (backupObject && method === 'GET') {
+        const bytes = await objects.get(backupObject[1]); demand(bytes, 404, 'Backup resource missing; restart the export');
+        return new Response(bytes, { headers: { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment', 'Content-Security-Policy': "default-src 'none'; sandbox" } });
       }
       if (sub === 'backup' && method === 'GET') return backup();
       if (sub === 'restore' && method === 'POST') return restore(request);
@@ -272,7 +296,7 @@ export function createService({ db, objects, adminPassword, allowedOrigins = [],
         const bytes = await objects.get(share.doc_key); demand(bytes,404,'Document unavailable');
         return json({document:JSON.parse(new TextDecoder().decode(bytes))});
       }
-      if (path === '/api/v1/shares' && method === 'GET') return json((await db.all('SELECT * FROM shares WHERE owner=? ORDER BY updated_at DESC',[owner.id])).map(publicShare));
+      if (path === '/api/v1/shares' && method === 'GET') return json((await withKinds(await db.all('SELECT * FROM shares WHERE owner=? ORDER BY updated_at DESC',[owner.id]))).map(publicShare));
       const cancel = /^\/api\/v1\/shares\/([a-f0-9]{32})$/.exec(path);
       if (cancel && method === 'DELETE') {
         const result = await db.run("UPDATE shares SET status=CASE WHEN status='hidden' THEN status ELSE 'revoked' END,version=version+1,updated_at=? WHERE id=? AND owner=?", [Date.now(), cancel[1], owner.id]);
@@ -322,19 +346,19 @@ export function createService({ db, objects, adminPassword, allowedOrigins = [],
         await objects.put(docKey, documentBytes);
         // One conditional statement enforces ownership, optimistic locking and
         // owner quotas atomically, including simultaneous Worker requests.
-        const result = await db.run(`INSERT INTO shares(id,owner,title,status,version,stage_id,doc_key,bytes,expires_at,created_at,updated_at)
-          SELECT ?,?,?,'active',1,?,?,?,?,?,? WHERE
+        const result = await db.run(`INSERT INTO shares(id,owner,title,status,version,stage_id,doc_key,bytes,expires_at,created_at,updated_at,kind)
+          SELECT ?,?,?,'active',1,?,?,?,?,?,?,? WHERE
           EXISTS(SELECT 1 FROM stages WHERE id=? AND state='open') AND
           EXISTS(SELECT 1 FROM publishers WHERE id=? AND enabled=1 AND (expires_at IS NULL OR expires_at>?) AND
             (SELECT COUNT(*) FROM shares WHERE owner=? AND id<>?) < max_shares AND
             (SELECT COALESCE(SUM(bytes),0) FROM shares WHERE owner=? AND id<>?) + ? <= max_bytes) AND
           ((?=0 AND NOT EXISTS(SELECT 1 FROM shares WHERE id=?)) OR EXISTS(SELECT 1 FROM shares WHERE id=? AND owner=? AND version=? AND status='active'))
-          ON CONFLICT(id) DO UPDATE SET title=excluded.title,version=shares.version+1,stage_id=excluded.stage_id,doc_key=excluded.doc_key,bytes=excluded.bytes,expires_at=excluded.expires_at,updated_at=excluded.updated_at`,
-        [stage.share_id, owner.id, doc.title, stage.id, docKey, total, doc.expiresAt ?? null, now, now, stage.id, owner.id, now, owner.id, stage.share_id, owner.id, stage.share_id, total, stage.base_version, stage.share_id, stage.share_id, owner.id, stage.base_version]);
+          ON CONFLICT(id) DO UPDATE SET title=excluded.title,version=shares.version+1,stage_id=excluded.stage_id,doc_key=excluded.doc_key,bytes=excluded.bytes,expires_at=excluded.expires_at,updated_at=excluded.updated_at,kind=excluded.kind`,
+        [stage.share_id, owner.id, doc.title, stage.id, docKey, total, doc.expiresAt ?? null, now, now, doc.format === 2 ? 'folder' : 'note', stage.id, owner.id, now, owner.id, stage.share_id, owner.id, stage.share_id, total, stage.base_version, stage.share_id, stage.share_id, owner.id, stage.base_version]);
         if (!result.changes) throw new Fault(409, 'Share changed or publisher quota exceeded; refresh and retry');
         await db.run("UPDATE stages SET state='committed' WHERE id=?", [stage.id]);
         await log(owner.id, stage.base_version ? 'share.update' : 'share.create', stage.share_id);
-        return json({...publicShare(await db.get('SELECT * FROM shares WHERE id=?', [stage.share_id])),kind:doc.format===2?'folder':'note'}, 200);
+        return json(publicShare(await db.get('SELECT * FROM shares WHERE id=?', [stage.share_id])), 200);
       }
       throw new Fault(404, 'Unknown API endpoint');
     }
@@ -343,11 +367,18 @@ export function createService({ db, objects, adminPassword, allowedOrigins = [],
 
   const removeObjects = keys => objects.deleteMany ? objects.deleteMany(keys) : Promise.all(keys.map(key => objects.delete(key)));
   async function cleanup() {
+    // Remote object APIs use multiple network requests per deletion. Bound each
+    // cleanup run; deferred objects remain discoverable by the orphan sweep.
+    let remaining = cleanupObjectLimit;
+    const remove = async keys => {
+      const selected = [...new Set(keys)].slice(0, remaining);
+      remaining -= selected.length;
+      if (selected.length) await removeObjects(selected);
+    };
     const cutoff = Date.now() - 86400000;
     // Revoked and expired shares stay restorable for a day, then their record,
     // document and attachments are deleted; hidden (taken down) shares wait
-    // for an administrator. A fixed number of D1/R2 calls per run keeps the
-    // Worker cron within the free plan's subrequest limit.
+    // for an administrator. Remote object deletions can continue on later runs.
     const ended = "(status='revoked' AND updated_at<?) OR expires_at<?";
     const due = await db.all(`SELECT id,stage_id,doc_key FROM shares WHERE ${ended} LIMIT 50`, [cutoff, cutoff]);
     if (due.length) {
@@ -362,18 +393,18 @@ export function createService({ db, objects, adminPassword, allowedOrigins = [],
       const purged = due.filter((_, i) => results[i * 3].changes);
       if (purged.length) await db.batch(purged.map(s => ['INSERT INTO audit(id,actor,action,target,at) VALUES(?,?,?,?,?)', [id(), 'system', 'share.purge', s.id, Date.now()]]));
       // If this fails, the orphan sweep below reclaims the objects later.
-      await removeObjects(purged.flatMap(s => [s.doc_key, ...assets.filter(a => a.stage_id === s.stage_id).map(a => a.object_key)]));
+      await remove(purged.flatMap(s => [s.doc_key, ...assets.filter(a => a.stage_id === s.stage_id).map(a => a.object_key)]));
     }
     const stale = await db.all('SELECT t.id FROM stages t WHERE t.created_at<? AND NOT EXISTS(SELECT 1 FROM shares s WHERE s.stage_id=t.id) LIMIT 8', [cutoff]);
     for (const stage of stale) {
-      await removeObjects([...(await db.all('SELECT object_key FROM assets WHERE stage_id=?', [stage.id])).map(a=>a.object_key), `documents/${stage.id}`]);
+      await remove([...(await db.all('SELECT object_key FROM assets WHERE stage_id=?', [stage.id])).map(a=>a.object_key), `documents/${stage.id}`]);
       await db.batch([['DELETE FROM assets WHERE stage_id=?', [stage.id]], ['DELETE FROM stages WHERE id=?', [stage.id]]]);
     }
     // Also collect objects left by interrupted writes before their SQL insert.
     const known = new Set((await db.all('SELECT object_key AS key FROM assets UNION SELECT doc_key AS key FROM shares')).map(r => r.key));
-    await removeObjects((await objects.list()).filter(object=>object.uploaded<cutoff&&!known.has(object.key)).map(object=>object.key));
+    if (remaining > 0) await remove((await objects.list()).filter(object=>object.uploaded<cutoff&&!known.has(object.key)).map(object=>object.key));
     for (const job of await db.all('SELECT token FROM restore_jobs WHERE created_at<?', [cutoff])) {
-      for (const row of await db.all('SELECT object_key FROM restore_objects WHERE job=?', [job.token])) await objects.delete(`restore/${job.token}/${row.object_key}`);
+      await remove((await db.all('SELECT object_key FROM restore_objects WHERE job=?', [job.token])).map(row => `restore/${job.token}/${row.object_key}`));
       await db.batch([['DELETE FROM restore_objects WHERE job=?', [job.token]], ['DELETE FROM restore_jobs WHERE token=?', [job.token]]]);
     }
     await db.batch([['DELETE FROM sessions WHERE expires_at<?', [Date.now()]], ['DELETE FROM attempts WHERE reset_at<?', [Date.now()]], ['DELETE FROM audit WHERE at<?', [Date.now() - 90 * 86400000]]]);

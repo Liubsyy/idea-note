@@ -101,7 +101,7 @@ function estimateContextMenuHeight(
       (gitRepo && (node.is_dir || !isImageFile(node.path)) ? 1 : 0) +
       1 + // 重命名
       1 + // 删除
-      (node.is_dir ? 1 : 0) // 分享文件夹
+      (node.is_dir || isMarkdownFile(node.path) ? 1 : 0) // 分享文件夹 / 分享笔记
     : 4 +
       1 + // 粘贴
       1 + // 打开所在目录
@@ -169,6 +169,7 @@ export function Sidebar() {
 
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [sharingFolder,setSharingFolder]=useState<string|null>(null);
+  const [sharingNote,setSharingNote]=useState(false);
   const [wsMenuOpen, setWsMenuOpen] = useState(false);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
@@ -813,6 +814,7 @@ export function Sidebar() {
       </div>
 
       {sharingFolder&&createPortal(<ShareDialog folderPath={sharingFolder} onClose={()=>setSharingFolder(null)}/>,document.body)}
+      {sharingNote&&createPortal(<ShareDialog onClose={()=>setSharingNote(false)}/>,document.body)}
       {/* Context menu */}
       {menu && (
         <div
@@ -1000,6 +1002,24 @@ export function Sidebar() {
                   <span className="flex min-w-0 items-center gap-2">
                     <Share2 size={15} className="shrink-0" style={{ color: "var(--text-muted)" }} aria-hidden="true" />
                     <span className="truncate">{tr("分享文件夹")}</span>
+                  </span>
+                </MenuItem>
+              )}
+              {!menuNode.is_dir && isMarkdownFile(menuNode.path) && (
+                <MenuItem
+                  disabled={menuHasMultiple}
+                  onClick={() => {
+                    const path = menuNode.path;
+                    setMenu(null);
+                    // The note dialog shares the active note, so open it first.
+                    void openFile(path).then(() => {
+                      if (useAppStore.getState().activeFilePath === path) setSharingNote(true);
+                    });
+                  }}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Share2 size={15} className="shrink-0" style={{ color: "var(--text-muted)" }} aria-hidden="true" />
+                    <span className="truncate">{tr("分享笔记")}</span>
                   </span>
                 </MenuItem>
               )}

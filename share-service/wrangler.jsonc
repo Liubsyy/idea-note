@@ -5,7 +5,13 @@
   "compatibility_date": "2026-10-21",
   "assets": { "directory": "./dist", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*", "/share/*", "/admin", "/admin/*"] },
   "d1_databases": [{ "binding": "DB", "database_name": "idea-note-share", "database_id": "REPLACE_WITH_D1_DATABASE_ID", "migrations_dir": "migrations" }],
-  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "idea-note-share" }],
+  // Deployment resource identifiers; passwords and application keys belong in
+  // Wrangler secrets: ADMIN_PASSWORD, B2_APPLICATION_KEY_ID, B2_APPLICATION_KEY.
+  "vars": {
+    "B2_BUCKET_ID": "REPLACE_WITH_B2_BUCKET_ID",
+    "B2_BUCKET_NAME": "REPLACE_WITH_B2_BUCKET_NAME",
+    "B2_PREFIX": "idea-note-share/"
+  },
   "triggers": { "crons": ["0 * * * *"] },
   "observability": { "enabled": true }
 }

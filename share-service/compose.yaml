@@ -9,6 +9,12 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       # The port is bound to loopback, so only a proxy on this host reaches it.
       TRUST_PROXY: ${TRUST_PROXY:-1}
+      OBJECT_STORAGE: ${OBJECT_STORAGE:-local}
+      B2_BUCKET_ID: ${B2_BUCKET_ID:-}
+      B2_BUCKET_NAME: ${B2_BUCKET_NAME:-}
+      B2_PREFIX: ${B2_PREFIX:-idea-note-share/}
+      B2_APPLICATION_KEY_ID: ${B2_APPLICATION_KEY_ID:-}
+      B2_APPLICATION_KEY: ${B2_APPLICATION_KEY:-}
     volumes:
       - share-data:/data
     restart: unless-stopped

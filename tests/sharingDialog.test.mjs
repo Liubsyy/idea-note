@@ -14,14 +14,14 @@ const {window}=new JSDOM('<!doctype html><body><div id="root"></div></body>',{ur
 Object.assign(globalThis,{window,document:window.document,IS_REACT_ACT_ENVIRONMENT:true});
 const app={activeFilePath:'/notes/other.md',content:'# Other',openSettings:async()=>{}};
 const store=selector=>selector(app);store.getState=()=>app;
-let config,rows,preparations,published,associations,failList=false,configChanged;
+let config,rows,preparations,published,associations,failList=false,configChanged,loadedPaths;
 const prepared=()=>({document:{format:2,title:'Folder',appearance:{},assets:[],expiresAt:null,entries:[{kind:'directory',path:'empty'},{kind:'markdown',path:'.private.md',content:{markdown:'# Sanitized preview',inputs:{x:{value:'test'}},results:[]}}]},files:[{source:'.private.md',path:'/notes/folder/.private.md',name:'.private.md',size:42,mime:'application/octet-stream',warnings:['hidden'],reviewOnly:true}],folder:{scan:{excluded:[{path:'loop',reason:'cycle'}]}},removedComments:1,contentKey:''});
 const dependencies={
   react:React,'react-dom':ReactDOM,'react/jsx-runtime':jsx,'lucide-react':icons,'@tauri-apps/plugin-opener':{openUrl:async()=>{}},
   '../i18n/core':{tr:(text,args)=>text.replace(/\{\{(\w+)\}\}/g,(_,key)=>args?.[key]??'')},'../i18n/react':{useLanguage(){}},
   '../store/useAppStore':{useAppStore:store},'../lib/clipboard':{copyText:async()=>{}},'./sharing.css':{},
   '../lib/share/client':{
-    loadShareConfig:async()=>config,listShares:async()=>{if(failList)throw new Error("分享服务不可用");return rows;},watchShareConfig:async callback=>{configChanged=callback;return()=>{};},defaultShareTitle:path=>path.split('/').pop(),serviceUrl:url=>url,
+    loadShareConfig:async(_force,path)=>{loadedPaths.push(path);return config;},listShares:async()=>{if(failList)throw new Error("分享服务不可用");return rows;},watchShareConfig:async callback=>{configChanged=callback;return()=>{};},defaultShareTitle:path=>path.split('/').pop(),serviceUrl:url=>url,
     prepareFolderShare:async(...args)=>{preparations.push(args);return prepared();},
     publishShare:async(value,current,approved)=>{published.push({value,current,approved});return{id:'folder-share',title:'Folder',kind:'folder',status:'active',version:1};},
     setAssociation:async(path,id,service,kind)=>{associations.push({path,id,service,kind});config.associations[path]={id,service,kind};},
@@ -33,7 +33,7 @@ const button=label=>[...document.querySelectorAll('button')].find(button=>button
 const click=async element=>{assert.ok(element);await React.act(async()=>element.click());};
 async function mount(failure=false){
   failList=failure;
-  config={url:'https://share.test',key:'key',associations:{}};rows=[];preparations=[];published=[];associations=[];
+  config={url:'https://share.test',key:'key',associations:{}};rows=[];preparations=[];published=[];associations=[];loadedPaths=[];
   const root=createRoot(document.getElementById('root'));
   await React.act(async()=>root.render(jsx.jsx(exports.ShareDialog,{folderPath:'/notes/folder',onClose(){}})));
   return async()=>{await React.act(async()=>root.unmount());};
@@ -41,7 +41,7 @@ async function mount(failure=false){
 test('folder dialog reviews every note, exclusions and sensitive paths; options reset preview and publication binds the folder',async()=>{
   const cleanup=await mount();
   try{
-    assert.ok(button('当前文件夹'));
+    assert.ok(button('当前文件夹'));assert.equal(loadedPaths[0],'/notes/folder');
     const options=document.querySelectorAll('.sharing-option input');assert.equal(options.length,2);assert.ok([...options].every(input=>!input.checked));
     await click(button('预览待分享内容'));
     assert.equal(preparations[0][0],'/notes/folder');assert.deepEqual(JSON.parse(JSON.stringify(preparations[0][3])),{includeHidden:false,includeSymlinks:false});
@@ -90,5 +90,20 @@ test('a successful background configuration refresh clears a previous loading er
     await React.act(async()=>configChanged());
     assert.equal(document.querySelector('[role="alert"]'),null);
     assert.equal(button('预览待分享内容').disabled,false);
+  }finally{await cleanup();}
+});
+
+
+test('a pulled relative-path binding shows the original link and updates that share',async()=>{
+  const cleanup=await mount();
+  try{
+    config.associations['/notes/folder']={service:config.url,id:'existing-folder',kind:'folder'};
+    rows=[{id:'existing-folder',title:'Original title',kind:'folder',status:'active',version:7,updatedAt:1,bytes:42}];
+    await click(document.querySelector('button[title="刷新"]'));
+    assert.match(document.querySelector('.sharing-link').textContent,/https:\/\/share.test\/share\/existing-folder/);
+    await click(button('预览待分享内容'));await click(document.querySelector('.sharing-confirm input'));
+    await click(button('更新分享'));
+    assert.equal(published[0].current.id,'existing-folder');
+    assert.equal(published[0].current.version,7);
   }finally{await cleanup();}
 });

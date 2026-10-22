@@ -10,7 +10,7 @@ const TABLES = {
   settings: ['id','json'], audit: ['id','actor','action','target','at'],
 };
 const objectKey = key => /^(documents|assets)\/[a-f0-9]{32}$/.test(key);
-export async function exportBackup(db, objects) {
+export async function backupSnapshot(db) {
   // One read snapshot prevents simultaneous publication from pairing different
   // revisions. D1 batch executes statements in the same transaction.
   const tables=await db.snapshot(Object.keys(TABLES));
@@ -24,7 +24,11 @@ export async function exportBackup(db, objects) {
   const keys=[...originalKeys.keys()];
   // Reject inconsistent snapshots before starting the archive response.
   for(const share of tables.shares)if(!tables.stages.some(s=>s.id===share.stage_id))throw new Error('Backup snapshot changed; retry');
-  const manifest=strToU8(JSON.stringify({format:'idea-note-share-backup',version:1,tables}));
+  return { manifest: {format:'idea-note-share-backup',version:1,tables}, objects: keys.map(key => ({ key, storageKey: originalKeys.get(key) })) };
+}
+export async function exportBackup(db, objects) {
+  const snapshot = await backupSnapshot(db), keys = snapshot.objects;
+  const manifest=strToU8(JSON.stringify(snapshot.manifest));
   let next=0,done=false,zip;
   const stream=new ReadableStream({
     start(controller){zip=new Zip((error,data)=>{if(error)controller.error(error);else controller.enqueue(data);});
@@ -32,7 +36,7 @@ export async function exportBackup(db, objects) {
     async pull(controller){
       if(done)return;
       try{
-        if(next<keys.length){const key=keys[next++],bytes=await objects.get(originalKeys.get(key));if(!bytes)throw new Error('Backup resource missing');const entry=new ZipPassThrough('objects/'+key);zip.add(entry);entry.push(bytes,true);}
+        if(next<keys.length){const {key,storageKey}=keys[next++],bytes=await objects.get(storageKey);if(!bytes)throw new Error('Backup resource missing');const entry=new ZipPassThrough('objects/'+key);zip.add(entry);entry.push(bytes,true);}
         else{done=true;zip.end();controller.close();}
       }catch(error){done=true;controller.error(error);}
     },

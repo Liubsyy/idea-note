@@ -46,8 +46,8 @@ test('folder navigation opens README, expands paths, updates URLs, handles histo
   const cleanup=await render();
   try{
     assert.equal(mounts.at(-1).document.markdown,'README.md');
-    assert.equal(link('README.md').getAttribute('aria-current'),'page');
-    await click(link('sub'));await click(link('笔记.md'));
+    assert.equal(link('README').getAttribute('aria-current'),'page');
+    await click(link('sub'));await click(link('笔记'));
     assert.equal(new URLSearchParams(locationOf().search).get('file'),'sub/笔记.md');
     assert.equal(mounts.at(-1).document.markdown,'sub/笔记.md');assert.equal(destroyed,1);
     await React.act(async()=>mounts.at(-1).navigate('README.md','#intro'));
@@ -56,7 +56,7 @@ test('folder navigation opens README, expands paths, updates URLs, handles histo
     await React.act(async()=>window.dispatchEvent(new window.PopStateEvent('popstate')));
     assert.equal(mounts.at(-1).document.markdown,'sub/笔记.md');
     await click(document.querySelector('.folder-toggle'));assert.ok(document.querySelector('.folder-sidebar.open'));
-    await click(link('README.md'));assert.equal(document.querySelector('.folder-sidebar.open'),null);
+    await click(link('README'));assert.equal(document.querySelector('.folder-sidebar.open'),null);
   }finally{await cleanup();}
 });
 const locationOf=()=>window.location;
@@ -64,7 +64,7 @@ const locationOf=()=>window.location;
 test('direct links, missing files, empty folders, image preview, escaped text and download fallback',async()=>{
   let cleanup=await render(snapshot,'?file=sub%2F%E7%AC%94%E8%AE%B0.md');
   assert.equal(link('sub').getAttribute('aria-expanded'),'true');assert.equal(mounts.at(-1).document.markdown,'sub/笔记.md');await cleanup();
-  cleanup=await render(snapshot,'?file=../private');assert.match(document.querySelector('.folder-content').textContent,/文件不存在/);assert.ok(link('README.md'));await cleanup();
+  cleanup=await render(snapshot,'?file=../private');assert.match(document.querySelector('.folder-content').textContent,/文件不存在/);assert.ok(link('README'));await cleanup();
   cleanup=await render({...snapshot,entries:[{kind:'directory',path:'empty'}]});assert.match(document.querySelector('.folder-content').textContent,/此文件夹为空/);await click(link('empty'));assert.ok(document.querySelector('.folder-empty'));await cleanup();
   cleanup=await render(snapshot,'?file=pic.svg');assert.equal(document.querySelector('.shared-asset img').getAttribute('src'),asset);await cleanup();
   cleanup=await render(snapshot,'?file=unsafe.html');assert.match(document.querySelector('.shared-asset pre').textContent,/<script>/);assert.equal(document.querySelector('.shared-asset script'),null);assert.equal(window.evil,undefined);await cleanup();

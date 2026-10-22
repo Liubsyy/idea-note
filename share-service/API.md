@@ -99,10 +99,14 @@ During the 24-hour grace period an administrator can restore a revoked share wit
 | PUT | `/admin/settings` | `{allowCreate,allowUpdate,allowRead,maxAssetBytes,maxShareBytes}` |
 | POST | `/admin/cleanup` | Run cleanup now (see Retention) |
 | GET | `/admin/backup` | Stream stored ZIP entries: manifest plus objects |
+| GET | `/admin/backup/manifest` | Consistent metadata snapshot as `{manifest,objects:[{key,storageKey}]}` for incremental export |
+| GET | `/admin/backup/objects/:storageKey` | One binary object, administrator cookie required; supports `restore/:id/` prefixes |
 | POST | `/admin/restore/start` | Begin restore into empty instance; returns `{id}` |
 | PUT | `/admin/restore/:id/objects/:kind/:objectId` | Stage one binary `assets` or `documents` entry |
 | POST | `/admin/restore/:id/commit` | Submit manifest; atomically apply metadata after resources |
 | DELETE | `/admin/restore/:id` | Abort restore and remove staged objects |
 | POST | `/admin/restore` | Small-archive compatibility endpoint; ZIP request body |
+
+The dashboard uses `/admin/backup/manifest` followed by one `/admin/backup/objects/:storageKey` request per object, then creates the same stored ZIP format in the browser. This avoids the [Workers Free external-request limit](https://developers.cloudflare.com/workers/platform/limits/#subrequests) when B2 holds more than 50 objects. The legacy single-request `/admin/backup` remains available for Node and small Worker exports; it is subject to platform subrequest limits. Missing snapshot resources fail the export rather than producing a complete-looking archive; restart it if publication or cleanup changed resources during export.
 
 Archives use `manifest.json` with `{format:"idea-note-share-backup",version:1,tables}` and `objects/assets/:id`, `objects/documents/:id`. Exports use uncompressed ZIP entries for bounded-memory streaming. The browser uses per-object restore; the compatibility ZIP endpoint is also subject to your hosting provider's request-size limit. Only empty-instance restore is supported; credentials and sessions are never imported.

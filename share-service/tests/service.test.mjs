@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import { readFile } from 'node:fs/promises';
-import { sqliteDatabase, d1Database, r2Objects } from '../server/storage.mjs';
+import { sqliteDatabase, d1Database } from '../server/storage.mjs';
 import { createService } from '../server/service.mjs';
 const origin='https://share.test', password='test-admin-password-very-long';
 const sample=(assets=[])=>({format:1,title:'Example',markdown:'# Hello\n\nWorld',expiresAt:null,assets,appearance:{},inputs:{},results:[]});
 async function fixture(adapter='sqlite') {
-  const sqlite=new DatabaseSync(':memory:');sqlite.exec(await readFile(new URL('../migrations/0001_initial.sql',import.meta.url),'utf8'));
+  const sqlite=new DatabaseSync(':memory:');for(const file of ['0001_initial.sql','0002_share_kind.sql'])sqlite.exec(await readFile(new URL('../migrations/'+file,import.meta.url),'utf8'));
   const raw=sqliteDatabase(sqlite), map=new Map();
   const objects={put:async(k,b)=>map.set(k,{bytes:new Uint8Array(b),uploaded:Date.now()}),get:async k=>map.get(k)?.bytes||null,delete:async k=>map.delete(k),list:async()=>[...map].map(([key,o])=>({key,uploaded:o.uploaded}))};
   const db=adapter==='d1'?d1Database({prepare(sql){return{bind(...args){return {first:()=>raw.get(sql,args),all:async()=>({results:await raw.all(sql,args)}),run:async()=>({meta:await raw.run(sql,args)}),sql,args};}};},batch:async statements=>statements.every(s=>s.sql.startsWith('SELECT')) ? Promise.all(statements.map(async s=>({results:await raw.all(s.sql,s.args)}))) : (await raw.batch(statements.map(s=>[s.sql,s.args]))).map(meta=>({meta}))}):raw;
@@ -31,7 +31,7 @@ for(const adapter of ['sqlite','d1'])test(`${adapter}: publish, anonymous read, 
   assert.equal((await f.request('public/'+first.id)).status,200);assert.equal((await f.request(`public/${first.id}/assets/${asset.id}`)).status,200);
   // Readers never learn the publisher; the publisher and the admin still do.
   assert.equal(Object.hasOwn(await(await f.request('public/'+first.id)).json(),'owner'),false);assert.equal(first.owner,p.id);
-  assert.equal((await(await f.admin('shares')).json())[0].owner,p.id);
+  assert.equal((await(await f.admin('shares')).json())[0].owner,p.id);assert.equal(first.kind,'note');assert.equal((await(await f.admin('shares')).json())[0].kind,'note');
   const {result}=await f.publish(p.key,first,{...sample(),markdown:'# Updated'});assert.equal(result.status,200);const updated=await result.json();assert.equal(updated.id,first.id);assert.equal(updated.version,2);
   assert.equal((await f.request(`public/${first.id}/assets/${asset.id}`)).status,404);
   assert.equal((await (await f.request('public/'+first.id)).json()).document.markdown,'# Updated');
@@ -166,6 +166,18 @@ test('aborting a restore removes staging objects and allows a fresh restore',asy
   assert.equal((await f.admin('restore/start','POST')).status,201);assert.equal(f.map.size,0);f.sqlite.close();
 });
 
+test('bounded restore abort releases the gate and cleanup reclaims deferred objects',async()=>{
+  const f=await fixture(),job=await(await f.admin('restore/start','POST')).json();
+  for(const char of ['a','b','c'])assert.equal((await f.admin(`restore/${job.id}/objects/assets/${char.repeat(32)}`,'PUT',new Uint8Array([1]))).status,200);
+  const limited=createService({db:f.db,objects:f.objects,adminPassword:password,cleanupObjectLimit:1});
+  const response=await limited.fetch(new Request(`${origin}/api/v1/admin/restore/${job.id}`,{method:'DELETE',headers:{Origin:origin,Cookie:f.cookie,'X-Share-CSRF':'1'}}));
+  assert.equal(response.status,200);assert.equal(f.map.size,2);
+  assert.equal((await f.admin('restore/start','POST')).status,201);
+  for(const value of f.map.values())value.uploaded=0;
+  await limited.cleanup();assert.equal(f.map.size,1);
+  await limited.cleanup();assert.equal(f.map.size,0);f.sqlite.close();
+});
+
 for(const adapter of ['sqlite','d1'])test(`${adapter}: folder validation, ownership, type compatibility, quotas and backup`,async()=>{
   const f=await fixture(adapter),p=await f.create(),auth={Authorization:'Bearer '+p.key};
   const stage=await(await f.request('uploads','POST',{},auth)).json();
@@ -188,6 +200,9 @@ for(const adapter of ['sqlite','d1'])test(`${adapter}: folder validation, owners
   const target=await fixture(adapter==='sqlite'?'d1':'sqlite');
   assert.equal((await target.admin('restore','POST',new Uint8Array(await(await f.admin('backup')).arrayBuffer()))).status,200);
   const restored=(await(await target.request('public/'+share.id)).json()).document;assert.deepEqual(restored,doc);
+  // Backups carry no kind; the admin list fills it in from the document once.
+  assert.equal((await target.db.get('SELECT kind FROM shares WHERE id=?',[share.id])).kind,null);
+  assert.equal((await(await target.admin('shares')).json())[0].kind,'folder');assert.equal((await target.db.get('SELECT kind FROM shares WHERE id=?',[share.id])).kind,'folder');
   assert.equal((await target.request(`public/${share.id}/assets/${uploaded.id}`)).status,200);
   const settings=(await(await f.admin('overview')).json()).settings;await f.admin('settings','PUT',{...settings,maxAssetBytes:1,maxShareBytes:1});
   const limited=await f.publish(p.key,share,{...doc,assets:[],entries:[]});assert.equal(limited.result.status,413);

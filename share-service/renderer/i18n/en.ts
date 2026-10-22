@@ -10,6 +10,9 @@ export default {
 
   "{{0}}（点击打开）": "{{0}} (click to open)",
   "分享文件夹": "Share folder",
+  "分享笔记": "Share note",
+  "笔记": "Note",
+  "文件夹": "Folder",
   "当前文件夹": "Current folder",
   "包含隐藏文件和目录": "Include hidden files and folders",
   "包含符号链接指向的内容": "Include symbolic link targets",

@@ -31,16 +31,16 @@ function FolderBrowser({document,shareId,adminPreview}:{document:FolderDocument;
   },[document]);
   function rows(parent:string,depth=0):React.ReactNode {
     return (children.get(parent)||[]).map(item=>item.kind==='directory'?<li key={item.path}>
-      <button className="folder-row" style={{paddingLeft:12+depth*16}} aria-expanded={expanded.has(item.path)} onClick={()=>setExpanded(previous=>{const next=new Set(previous);if(next.has(item.path))next.delete(item.path);else next.add(item.path);return next;})}>
+      <button className="folder-row" style={{paddingLeft:10+depth*24}} aria-expanded={expanded.has(item.path)} onClick={()=>setExpanded(previous=>{const next=new Set(previous);if(next.has(item.path))next.delete(item.path);else next.add(item.path);return next;})}>
         {expanded.has(item.path)?<ChevronDown size={14}/>:<ChevronRight size={14}/>}<Folder size={16}/><span>{item.path.split('/').pop()}</span>
-      </button>{expanded.has(item.path)&&<ul>{children.get(item.path)?.length?rows(item.path,depth+1):<li className="folder-empty">{tr('此文件夹为空')}</li>}</ul>}
-    </li>:<li key={item.path}><a className={`folder-row ${selected===item.path?'selected':''}`} style={{paddingLeft:30+depth*16}} aria-current={selected===item.path?'page':undefined} href={folderFileUrl(shareId,item.path)} onClick={event=>{if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;event.preventDefault();navigate(item.path);}}>{item.kind==='markdown'?<FileText size={16}/>:<File size={16}/>}<span>{item.path.split('/').pop()}</span></a></li>);
+      </button>{expanded.has(item.path)&&<ul>{children.get(item.path)?.length?rows(item.path,depth+1):<li className="folder-empty" style={{paddingLeft:56+depth*24}}>{tr('此文件夹为空')}</li>}</ul>}
+    </li>:<li key={item.path}><a className={`folder-row ${selected===item.path?'selected':''}`} style={{paddingLeft:32+depth*24}} aria-current={selected===item.path?'page':undefined} href={folderFileUrl(shareId,item.path)} onClick={event=>{if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;event.preventDefault();navigate(item.path);}}>{item.kind==='markdown'?<FileText size={16}/>:<File size={16}/>}<span>{item.kind==='markdown'?item.path.split('/').pop()!.replace(/\.(md|markdown)$/i,''):item.path.split('/').pop()}</span></a></li>);
   }
   const noFiles=!document.entries.some(entry=>entry.kind!=='directory');
   return <div className="folder-browser">
     <button className="folder-toggle" aria-expanded={open} aria-controls="share-directory" onClick={()=>setOpen(!open)}><Menu size={16}/>{tr('目录')}</button>
-    <aside id="share-directory" className={`folder-sidebar ${open?'open':''}`}><strong>{document.title}</strong><nav aria-label={tr('文件夹目录')}><ul>{rows('')}</ul></nav></aside>
-    <main className="folder-content"><div className="folder-breadcrumb">{selected||document.title}</div>
+    <aside id="share-directory" className={`folder-sidebar ${open?'open':''}`}>{adminPreview&&<strong>{document.title}</strong>}<nav aria-label={tr('文件夹目录')}><ul>{rows('')}</ul></nav></aside>
+    <main className="folder-content">
       {note?<NoteViewer document={note} shareId={shareId} adminPreview={adminPreview} navigate={navigate}/>:entry?.kind==='file'?<AssetViewer key={entry.path} entry={entry} shareId={shareId} adminPreview={adminPreview}/>:<div className="empty"><p>{tr(noFiles?'此文件夹为空':'文件不存在')}</p></div>}
     </main>
   </div>;

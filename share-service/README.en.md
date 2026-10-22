@@ -16,7 +16,7 @@ ADMIN_PASSWORD='a-long-random-administrator-password' npm start --workspace idea
 
 Open `http://localhost:8787/admin`, sign in, and issue a publishing key. In Idea Note, open **Settings → Share service**, enter `http://localhost:8787` and the key, then use **Share** in the Markdown toolbar. Remote services require HTTPS; HTTP is accepted for localhost development.
 
-Run `npm run test:sharing` from the repository root for automated verification. Cloudflare tests use the local workerd simulator without signing in or creating cloud resources.
+Run `npm run test:sharing` from the repository root for automated verification. Cloudflare tests use local workerd and a fake B2 API without signing in or creating cloud resources.
 
 For frontend hot reload, keep the backend running and execute `npm run dev --workspace idea-note-share-service`; visit port 1430. Do not configure a conflicting `PUBLIC_ORIGIN` during local frontend development.
 
@@ -24,27 +24,32 @@ To use a standalone copy, run `npm ci && npm run build` inside that copied direc
 
 ## Cloudflare
 
-Uses Workers, Static Assets, D1, and a private R2 bucket.
+Uses Workers, Static Assets, D1, and private Backblaze B2 storage. R2 is not required. D1 holds metadata; B2 holds documents and attachments.
+
+Create a **Private** B2 bucket without Object Lock and record its Bucket ID and Bucket Name. Create a bucket-restricted **Read and Write** application key; save its `keyID` and `applicationKey`. Required capabilities: `listFiles`, `readFiles`, `writeFiles`, `deleteFiles`. Optionally restrict its name prefix to `idea-note-share/`. This adapter uses the [B2 Native API](https://www.backblaze.com/apidocs/b2-authorize-account), so no S3 endpoint, region, master key, public download domain, or browser CORS configuration is needed. Keep the bucket private: the service checks share visibility before downloading objects. Credentials belong only in server-side environment variables or Wrangler secrets.
 
 ```sh
 cd share-service
 npm run build
 npx wrangler login
 npx wrangler d1 create idea-note-share
-npx wrangler r2 bucket create idea-note-share
 ```
 
-Replace `database_id` in `wrangler.jsonc` with the returned D1 ID. Keep resource names synchronized with the configuration. Do not enable public R2 access.
+Replace `database_id` in `wrangler.jsonc` with the returned D1 ID, and set `vars.B2_BUCKET_ID` and `vars.B2_BUCKET_NAME`. `B2_PREFIX` defaults to `idea-note-share/`. Give every instance a separate prefix or bucket, so cleanup cannot delete another instance's files. Prefixes must be relative folders ending in `/`, with letters, digits, underscores or hyphens in each segment.
 
 ```sh
 npx wrangler secret put ADMIN_PASSWORD
+npx wrangler secret put B2_APPLICATION_KEY_ID
+npx wrangler secret put B2_APPLICATION_KEY
 npm run migrate:remote
 npm run deploy
 ```
 
 Use a random administrator password of at least 12 characters. The secret stays in the runtime environment and is never bundled into browser assets. Use the resulting Worker origin directly or bind a custom domain.
 
-For local Cloudflare development, configure `ADMIN_PASSWORD` in `.dev.vars`, then run `npm run migrate:local` and `npm run dev:cloudflare`. Local resources are isolated from production. The hourly scheduled handler runs cleanup; see Behavior for what it deletes. Login rate limiting uses the `CF-Connecting-IP` header Cloudflare provides, so no proxy setting is needed.
+For local Cloudflare development, copy `.dev.vars.example` to `.dev.vars` and fill in the password and B2 settings, then run `npm run migrate:local` and `npm run dev:cloudflare`. **D1 is local, but B2 still accesses real cloud storage**: use a separate development bucket or prefix. `.dev.vars` is ignored by Git. Automated tests fake B2 completely. Hourly cleanup processes at most 10 object names per Worker run and reclaims any backlog on subsequent runs, permanently removing historical versions and hide markers. Login rate limiting uses Cloudflare's `CF-Connecting-IP` header.
+
+For an existing R2/local-disk installation, export a backup from the old service first, deploy a new instance with an empty D1/SQLite database and B2 prefix, and restore through the dashboard before switching the domain. Changing storage settings alone does not move existing files; never point the old database at an empty bucket.
 
 ## Docker or Node
 
@@ -57,6 +62,8 @@ docker compose up --build -d
 
 The default port is exposed on loopback only. Put an HTTPS reverse proxy in front of it. Keep the `share-data` volume when updating containers.
 
+To use B2 on Node/Docker, set `OBJECT_STORAGE=b2` and fill in `B2_BUCKET_ID`, `B2_BUCKET_NAME`, `B2_PREFIX`, `B2_APPLICATION_KEY_ID`, and `B2_APPLICATION_KEY` in `.env`; Compose forwards these settings. SQLite remains in `share-data`, while documents and attachments go to B2. The default `OBJECT_STORAGE=local` uses local disk. Direct Node deployment accepts the same environment variables.
+
 Direct Node deployment:
 
 ```sh
@@ -67,11 +74,13 @@ ADMIN_PASSWORD='a-long-random-password' DATA_DIR=/path/to/data PUBLIC_ORIGIN=htt
 
 Docker Compose defaults to `TRUST_PROXY=1`: the port is bound to the host's loopback address, so only a reverse proxy on the same host can reach it and trusting one proxy is safe. If you publish the port directly, set it to `0`. When running Node directly, `TRUST_PROXY` is unset by default, and administrator login rate limiting then uses the TCP peer address. Behind a reverse proxy that address is the proxy itself, so every visitor shares one limit and anyone can lock the administrator out by entering wrong passwords. Set `TRUST_PROXY` to the number of proxies in front of the service: `1` for a single nginx or Caddy, `2` for Cloudflare in front of nginx. The service then counts that many entries back from the end of `X-Forwarded-For` and ignores everything further left, which the client could have forged. The proxy must append to the header, for example nginx `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`. Set `TRUST_PROXY` only when the port is reachable through the proxy alone; otherwise direct clients can forge addresses to evade the limit. The service logs a warning once if it receives `X-Forwarded-For` while `TRUST_PROXY` is unset.
 
-The initial SQLite schema is applied idempotently at startup. Future schema changes should add numbered SQL migrations and update the Node migration runner.
+The initial SQLite schema is applied idempotently at startup. Future schema changes should add numbered SQL migrations and update the Node migration runner. `0002_share_kind.sql` records whether a share is a note or a folder: existing Cloudflare deployments must run `npm run migrate:remote` before deploying this version, while Node applies it at startup. Older shares get their kind filled in the first time the admin list loads them.
 
 ## Behavior
 
 Public links use `https://your-domain/share/shareID` and remain unchanged when a share is updated.
+
+The desktop app stores Git-project associations in the tracked `.ideanote/shares.json` at the repository root, keyed by the normalized `origin` remote and repository-relative path. Commit and sync this file, and configure the same service and publishing key on another computer to update the original links. The legacy `.idea-note/shares.json` is migrated automatically, with existing bindings at the new path taking precedence. Legacy associations migrate when sharing is opened; directories without a supported remote retain device-local associations. Keys remain on the device. Folder publication always excludes both `.ideanote` and the legacy `.idea-note` metadata directories.
 
 Publishing keys are scoped to stable publisher IDs. Resetting a key preserves its shares. Disabling or expiring a key prevents writes while existing links remain readable. Administrators can take individual shares or all of a publisher's shares down.
 
@@ -89,9 +98,9 @@ Administrator sessions last eight hours and use HttpOnly, SameSite cookies, with
 
 ## Backup and migration
 
-Download a versioned ZIP from **Backups**. It includes shares, resources, publisher IDs, key digests, settings, and activity logs. It excludes administrator credentials, sessions, and desktop-local file associations.
+Download a versioned ZIP from **Backups**. It includes shares, resources, publisher IDs, key digests, settings, and activity logs. It excludes administrator credentials, sessions, and desktop-local file associations. The dashboard fetches a consistent metadata snapshot and then one resource per request before generating the ZIP, avoiding the Workers Free limit of 50 external requests per invocation. Browsers supporting the file-save API write directly to the selected file; other browsers assemble the ZIP in memory. Use a browser with direct file writing for large backups.
 
-Sign in to an **empty** target instance and restore the archive. Exports stream objects individually; the browser restores individual files and atomically commits metadata, avoiding one giant upload through Cloudflare. Individual resources are limited to 100 MiB and the manifest to 16 MiB. Interrupted staging sessions expire after 24 hours. New key issuance is blocked during restoration.
+Sign in to an **empty** target instance and restore the archive. The browser restores individual files and atomically commits metadata, avoiding one giant upload through Cloudflare. Individual resources are limited to 100 MiB and the manifest to 16 MiB. Aborting on Workers immediately removes at most 10 objects and frees the restore gate; remaining private objects are collected after 24 hours. Interrupted staging sessions expire after 24 hours. New key issuance is blocked during restoration.
 
 Cloudflare and Node backups are interchangeable. Preserve the domain when switching instances to keep existing links. Configure the target administrator password separately.
 
@@ -108,7 +117,7 @@ cargo check --manifest-path src-tauri/Cargo.toml
 cargo test --manifest-path src-tauri/Cargo.toml sharing::tests
 ```
 
-Service tests cover publication, isolation, quotas, version conflicts, revocation, attachment delivery, and backup restore. Integration tests use actual local workerd D1/R2 and file-backed Node SQLite, including bidirectional migration. Local port access is required. In a standalone copy, use `npm test`.
+Service tests cover publication, isolation, quotas, version conflicts, revocation, attachment delivery, and backup restore. B2 tests cover binary checksums, token refresh, pagination, permanent version deletion, and errors. Integration tests use local workerd D1, a fake B2 API, and file-backed Node SQLite with bidirectional migration. The production Worker bundle test intercepts outbound requests to validate the B2 protocol without credentials or R2. Local port access is required. In a standalone copy, use `npm test`.
 
 ## Folder sharing
 

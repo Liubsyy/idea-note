@@ -11,7 +11,6 @@ export function d1Database(binding) {
       .map(r => ({ changes: r.meta.changes })),
   };
 }
-
 export function sqliteDatabase(db) {
   db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
   return {
@@ -30,27 +29,6 @@ export function sqliteDatabase(db) {
         db.exec('COMMIT');
         return results;
       } catch (error) { db.exec('ROLLBACK'); throw error; }
-    },
-  };
-}
-
-export function r2Objects(bucket) {
-  return {
-    put: async (key, bytes) => { await bucket.put(key, bytes); },
-    get: async (key) => {
-      const object = await bucket.get(key);
-      return object ? new Uint8Array(await object.arrayBuffer()) : null;
-    },
-    delete: async (key) => { await bucket.delete(key); },
-    deleteMany: async keys => { for (let at=0; at<keys.length; at+=1000) await bucket.delete(keys.slice(at,at+1000)); },
-    list: async () => {
-      const keys = []; let cursor;
-      do {
-        const page = await bucket.list({ cursor });
-        keys.push(...page.objects.map(o => ({ key: o.key, uploaded: o.uploaded.getTime() })));
-        cursor = page.truncated ? page.cursor : undefined;
-      } while (cursor);
-      return keys;
     },
   };
 }

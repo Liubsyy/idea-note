@@ -638,7 +638,8 @@
 .cm-scroller.cm-resource-selection .cm-content {
   caret-color: transparent;
 }
-.cm-mod-down .cm-md-resource {
+.cm-mod-down .cm-md-resource,
+.cm-md-resource[role="link"] {
   cursor: pointer;
 }
 .cm-md-resource-file {

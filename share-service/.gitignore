@@ -2,8 +2,10 @@ node_modules/
 dist/
 data/
 .wrangler/
+wrangler.private.jsonc
 .dev.vars
 .dev.vars.*
+!.dev.vars.example
 .env
 .env.*
 !.env.example

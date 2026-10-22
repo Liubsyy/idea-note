@@ -23,23 +23,27 @@ export interface PreparedShare { document: ShareSnapshot; folder?: PreparedFolde
 const CONFIG_EVENT='idea-note-share-config';
 let config: ShareConfig | null=null;
 let saving=Promise.resolve();
-export async function loadShareConfig(force=false):Promise<ShareConfig> {
-  if(config&&!force)return config;
-  const data=JSON.parse(await invoke<string>('share_config_load'));
-  return config={url:data.url||'',key:data.key||'',associations:data.associations||{}};
+let configPath: string | null=null;
+export async function loadShareConfig(force=false,path?:string):Promise<ShareConfig> {
+  const state=useAppStore.getState();
+  const context=path??state.activeFilePath??state.workspacePath??null;
+  if(config&&!force&&configPath===context)return config;
+  const data=JSON.parse(await invoke<string>('share_config_load',{path:context}));
+  const result:ShareConfig={url:data.url||'',key:data.key||'',associations:data.associations||{}};
+  configPath=context;config=result;
+  return result;
 }
 export async function saveShareConfig(value:ShareConfig):Promise<void> {
-  // Native save merges per-path updates under a lock; another window cannot
-  // overwrite associations while settings changes the service credentials.
+  // Save credentials only. Project associations are stored separately by native code.
   saving=saving.catch(()=>{}).then(async()=>{
-    await invoke('share_config_save',{json:JSON.stringify(value)}); config=value; await emit(CONFIG_EVENT);
+    await invoke('share_config_save',{json:JSON.stringify({url:value.url,key:value.key})}); config=null; await emit(CONFIG_EVENT);
   });
   return saving;
 }
 export async function setAssociation(path:string,id:string,service:string,kind:'note'|'folder'='note') {
   const remote=await shareRequest<{document:ShareSnapshot}>(`shares/${id}/document`);
   if((remote.document.format===2?'folder':'note')!==kind)throw new Error(tr('分享类型不匹配'));
-  await invoke('share_association_set',{path,id,service,kind}); await loadShareConfig(true); await emit(CONFIG_EVENT);
+  await invoke('share_association_set',{path,id,service,kind}); await loadShareConfig(true,path); await emit(CONFIG_EVENT);
 }
 export async function remapShareAssociations(from:string,to:string) { await invoke('share_associations_remap',{from,to}); config=null; await emit(CONFIG_EVENT); }
 export async function watchShareConfig(callback:()=>void) {return listen(CONFIG_EVENT,()=>{config=null;callback();});}
@@ -77,8 +81,9 @@ export async function shareRequest<T>(path:string,init?:RequestInit,provided?:Sh
   }
   return data as T;
 }
-export async function listShares():Promise<RemoteShare[]> {
-  const rows=await shareRequest<RemoteShare[]>('shares'),config=await loadShareConfig();
+export async function listShares(provided?:ShareConfig):Promise<RemoteShare[]> {
+  const config=provided||await loadShareConfig();
+  const rows=await shareRequest<RemoteShare[]>('shares',undefined,config);
   if(!Array.isArray(rows)||rows.some(share=>!share||typeof share.id!=='string'||typeof share.title!=='string'||typeof share.status!=='string'||!Number.isFinite(share.version)||!Number.isFinite(share.bytes)||!Number.isFinite(share.updatedAt)))throw new Error(tr('分享服务返回的分享列表格式不正确，请确认服务地址和版本。'));
   return rows.map(share=>{
     const binding=Object.values(config.associations).find(binding=>binding.service===config.url&&binding.id===share.id);

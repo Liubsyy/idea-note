@@ -5,6 +5,7 @@ import { resolve, dirname, join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Readable } from 'node:stream';
 import { sqliteDatabase } from './storage.mjs';
+import { b2Objects } from './b2.mjs';
 import { createService } from './service.mjs';
 import { forwardedClient, trustedProxyHops } from './address.mjs';
 
@@ -36,12 +37,17 @@ export async function fileObjects(directory) {
     },
   };
 }
-export async function nodeService({ dataDir, password, distDir, origins = [] }) {
+export async function nodeService({ dataDir, password, distDir, origins = [], storage = {} }) {
+  const mode = storage.OBJECT_STORAGE || 'local';
+  if (!['local', 'b2'].includes(mode)) throw new Error('OBJECT_STORAGE must be local or b2');
+  const remoteObjects = mode === 'b2' ? b2Objects(storage) : null;
   await mkdir(dataDir, { recursive: true });
   const sqlite = new DatabaseSync(join(dataDir, 'share.sqlite'));
   sqlite.exec(await readFile(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8'));
+  // SQLite has no ADD COLUMN IF NOT EXISTS, so check before applying.
+  if (!sqlite.prepare("SELECT 1 FROM pragma_table_info('shares') WHERE name='kind'").get()) sqlite.exec(await readFile(new URL('../migrations/0002_share_kind.sql', import.meta.url), 'utf8'));
   const mime = { '.html':'text/html; charset=utf-8', '.js':'text/javascript', '.css':'text/css', '.woff2':'font/woff2', '.svg':'image/svg+xml', '.png':'image/png' };
-  const service = createService({ db: sqliteDatabase(sqlite), objects: await fileObjects(join(dataDir, 'objects')), adminPassword: password, allowedOrigins: origins,
+  const service = createService({ db: sqliteDatabase(sqlite), objects: remoteObjects || await fileObjects(join(dataDir, 'objects')), adminPassword: password, allowedOrigins: origins,
     staticFetch: async request => {
       if (!['GET','HEAD'].includes(request.method)) return new Response('Method not allowed', { status: 405 });
       const pathname = decodeURIComponent(new URL(request.url).pathname);
@@ -72,7 +78,7 @@ export function requestListener(service, { publicOrigin, hops = 0 } = {}) {
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT || 8787), hops = trustedProxyHops(process.env.TRUST_PROXY);
-  const service = await nodeService({ dataDir: resolve(process.env.DATA_DIR || './data'), password: process.env.ADMIN_PASSWORD, distDir: fileURLToPath(new URL('../dist/', import.meta.url)), origins: (process.env.ALLOWED_ORIGINS || '').split(',').filter(Boolean) });
+  const service = await nodeService({ dataDir: resolve(process.env.DATA_DIR || './data'), password: process.env.ADMIN_PASSWORD, distDir: fileURLToPath(new URL('../dist/', import.meta.url)), origins: (process.env.ALLOWED_ORIGINS || '').split(',').filter(Boolean), storage: process.env });
   const server = createServer(requestListener(service, { publicOrigin: process.env.PUBLIC_ORIGIN, hops }));
   server.listen(port, '0.0.0.0', () => console.log(`Idea Note Share listening on port ${port}`));
   const timer = setInterval(() => service.cleanup().catch(console.error), 3600000); timer.unref();

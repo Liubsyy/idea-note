@@ -23,11 +23,11 @@ function load(path,dependencies,globals={}) {
 // The desktop resolvePath/isInside, so path checks run against the real rules.
 const sources=load('../src/lib/inputs/sources.ts',{'../../../share-service/renderer/lib/inputs/sources.ts':sharedSources,'../../i18n/core.ts':{tr:s=>s},'../fs':{...fs,readFile:async()=>''}});
 // `links` maps symlink paths to their targets, like the native canonicalize.
-function loadClient({app,runs={records:[]},files,links=new Map(),config,service,scan}) {
+function loadClient({app,runs={records:[]},files,links=new Map(),config,service,scan,loadConfig}) {
   const invoke=async(command,args)=>{
     if(command==='share_folder_scan')return structuredClone(typeof scan==='function'?scan(args):scan);
     if(command==='share_association_set'){config.associations[args.path]={id:args.id,service:args.service,kind:args.kind};return;}
-    if(command==='share_config_load')return JSON.stringify(config);
+    if(command==='share_config_load')return JSON.stringify(loadConfig?loadConfig(args):config);
     if(command==='share_resource_stat'){const path=links.get(args.path)??args.path;assert.ok(files.has(path),'must exist');return{size:files.get(path).length,path,root:links.get(args.root)??args.root};}
     if(command==='share_resource_read'){assert.ok(!links.has(args.path),'reads only reviewed real paths');return Array.from(files.get(args.path));}
     throw new Error('Unexpected native command '+command);
@@ -41,7 +41,7 @@ function loadClient({app,runs={records:[]},files,links=new Map(),config,service,
   },{URL,Request,TextEncoder,Uint8Array,structuredClone,Map,Set,Date,document:{documentElement:{classList:{contains:()=>false}}},getComputedStyle:()=>({getPropertyValue:()=>''})});
 }
 async function shareService() {
-  const sqlite=new DatabaseSync(':memory:');sqlite.exec(readFileSync(new URL('../share-service/migrations/0001_initial.sql',import.meta.url),'utf8'));
+  const sqlite=new DatabaseSync(':memory:');for(const file of ['0001_initial.sql','0002_share_kind.sql'])sqlite.exec(readFileSync(new URL('../share-service/migrations/'+file,import.meta.url),'utf8'));
   const objects=new Map(),service=createService({db:sqliteDatabase(sqlite),adminPassword:'desktop-integration-password',objects:{put:async(k,b)=>objects.set(k,new Uint8Array(b)),get:async k=>objects.get(k)||null,delete:async k=>objects.delete(k),list:async()=>[]}});
   const send=(path,method='GET',data,headers={})=>service.fetch(new Request('https://share.test/api/v1/'+path,{method,headers:{Origin:'https://share.test',...headers},body:data===undefined?undefined:JSON.stringify(data)}));
   const login=await send('admin/login','POST',{password:'desktop-integration-password'}),cookie=login.headers.get('set-cookie').split(';')[0];
@@ -235,4 +235,22 @@ test('sharing rejects malformed service settings and unexpected list responses b
     const invalid=loadClient({app:{},files:new Map(),config:{url:'http://localhost:8787',key:'test',associations:{}},service:{fetch:async()=>new Response(JSON.stringify(value))}});
     await assert.rejects(()=>invalid.listShares(),/分享列表格式不正确/);
   }
+});
+
+
+test('share config follows the current file or explicit folder and refreshes pulled bindings',async()=>{
+  const app={activeFilePath:'/first/A.md',workspacePath:'/first'};
+  let pulled='original';
+  const calls=[];
+  const client=loadClient({app,files:new Map(),loadConfig:({path})=>{
+    calls.push(path);
+    return {url:'https://share.test',key:'device-only',associations:{[path]:{id:pulled,service:'https://share.test',kind:'note'}}};
+  }});
+  assert.equal((await client.loadShareConfig()).associations['/first/A.md'].id,'original');
+  app.activeFilePath='/second/A.md';
+  assert.equal((await client.loadShareConfig()).associations['/second/A.md'].id,'original');
+  assert.deepEqual(calls,['/first/A.md','/second/A.md']);
+  pulled='updated-by-other-device';
+  assert.equal((await client.loadShareConfig(true)).associations['/second/A.md'].id,pulled);
+  assert.ok((await client.loadShareConfig(true,'/folder-share')).associations['/folder-share']);
 });

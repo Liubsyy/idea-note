@@ -1,5 +1,5 @@
-//! Share credentials and associations live outside notebooks. All windows use
-//! this serialized persistence boundary rather than racing whole JSON blobs.
+//! Credentials stay on this device; Git share associations live in the repo.
+//! All windows use this serialized persistence boundary.
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -32,9 +32,19 @@ fn save(app: &AppHandle, value: &Value) -> Result<(), String> {
     fs::rename(&temp, &path).map_err(|e| e.to_string())
 }
 #[tauri::command]
-pub fn share_config_load(app: AppHandle) -> Result<String, String> {
-    let _guard = CONFIG_LOCK.lock().map_err(|e| e.to_string())?;
-    Ok(load(&app)?.to_string())
+pub async fn share_config_load(app: AppHandle, path: Option<String>) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = CONFIG_LOCK.lock().map_err(|e| e.to_string())?;
+        let mut local = load(&app)?;
+        let before = local.clone();
+        let associations = match path {
+            Some(path) => crate::share_associations::load(&mut local, &path)?,
+            None => local["associations"].clone(),
+        };
+        if local != before { save(&app, &local)?; }
+        local["associations"] = associations;
+        Ok(local.to_string())
+    }).await.map_err(|e| e.to_string())?
 }
 #[tauri::command]
 pub fn share_config_save(app: AppHandle, json: String) -> Result<(), String> {
@@ -47,29 +57,24 @@ pub fn share_config_save(app: AppHandle, json: String) -> Result<(), String> {
     save(&app, &value)
 }
 #[tauri::command]
-pub fn share_association_set(app: AppHandle, path: String, id: String, service: String, kind: Option<String>) -> Result<(), String> {
-    let _guard = CONFIG_LOCK.lock().map_err(|e| e.to_string())?;
-    let mut value = load(&app)?;
-    let kind = kind.unwrap_or_else(|| "note".into());
-    if kind != "note" && kind != "folder" { return Err("Invalid share target".into()); }
-    value["associations"][path] = json!({"id":id,"service":service,"kind":kind});
-    save(&app, &value)
-}
-fn remap_associations(value: &mut Value, from: &str, to: &str) {
-    let Some(associations) = value.get_mut("associations").and_then(Value::as_object_mut) else { return; };
-    let changes: Vec<_> = associations.iter().filter_map(|(path, association)| {
-        if path == from || path.strip_prefix(from).is_some_and(|suffix| suffix.starts_with('/') || suffix.starts_with('\\')) {
-            Some((path.clone(), format!("{to}{}", &path[from.len()..]), association.clone()))
-        } else { None }
-    }).collect();
-    for (old, new, association) in changes { associations.remove(&old); associations.insert(new, association); }
+pub async fn share_association_set(app: AppHandle, path: String, id: String, service: String, kind: Option<String>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = CONFIG_LOCK.lock().map_err(|e| e.to_string())?;
+        let mut value = load(&app)?;
+        let kind = kind.unwrap_or_else(|| "note".into());
+        if kind != "note" && kind != "folder" { return Err("Invalid share target".into()); }
+        crate::share_associations::set(&mut value, &path, json!({"id":id,"service":service,"kind":kind}))?;
+        save(&app, &value)
+    }).await.map_err(|e| e.to_string())?
 }
 #[tauri::command]
-pub fn share_associations_remap(app: AppHandle, from: String, to: String) -> Result<(), String> {
-    let _guard = CONFIG_LOCK.lock().map_err(|e| e.to_string())?;
-    let mut value = load(&app)?;
-    remap_associations(&mut value, &from, &to);
-    save(&app, &value)
+pub async fn share_associations_remap(app: AppHandle, from: String, to: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = CONFIG_LOCK.lock().map_err(|e| e.to_string())?;
+        let mut value = load(&app)?;
+        crate::share_associations::remap(&mut value, &from, &to)?;
+        save(&app, &value)
+    }).await.map_err(|e| e.to_string())?
 }
 const MAX_RESOURCE_BYTES: u64 = 100 * 1024 * 1024;
 /// Resolve symlinks so attachment checks see the file that would really be
@@ -104,7 +109,7 @@ pub fn share_resource_read(path: String) -> Result<Vec<u8>, String> {
 fn scan_folder(path: &str, include_hidden: bool, include_symlinks: bool) -> Result<Value, String> {
     let root = fs::canonicalize(path).map_err(|e| format!("{path}: {e}"))?;
     if !root.is_dir() { return Err("Not a directory".into()); }
-    if root.file_name().is_some_and(|n| matches!(n.to_str(),Some(".git" | ".svn" | ".hg"))) { return Err("Cannot share version-control internals".into()); }
+    if root.components().any(|c| matches!(c.as_os_str().to_str(),Some(".git" | ".svn" | ".hg" | ".ideanote" | ".idea-note"))) { return Err("Cannot share version-control or application metadata".into()); }
     let mut entries = Vec::new();
     let mut excluded = Vec::new();
     let mut ancestors = HashSet::from([root.clone()]);
@@ -123,7 +128,7 @@ fn walk_folder(dir: &Path, prefix: &str, root: &Path, hidden: bool, symlinks: bo
     for entry in children {
         let name = entry.file_name().into_string().map_err(|_| "Filename is not valid Unicode")?;
         let relative = if prefix.is_empty() { name.clone() } else { format!("{prefix}/{name}") };
-        let reason = if matches!(name.as_str(), ".git" | ".svn" | ".hg" | ".DS_Store") { Some("system") }
+        let reason = if matches!(name.as_str(), ".git" | ".svn" | ".hg" | ".ideanote" | ".idea-note" | ".DS_Store") { Some("system") }
             else if !hidden && name.starts_with('.') { Some("hidden") }
             else if !symlinks && entry.file_type().map_err(|e| e.to_string())?.is_symlink() { Some("symlink") }
             else { None };
@@ -139,7 +144,7 @@ fn walk_folder(dir: &Path, prefix: &str, root: &Path, hidden: bool, symlinks: bo
         let hidden_target = real.strip_prefix(root).unwrap_or(&real).components()
             .any(|c| c.as_os_str().to_string_lossy().starts_with('.'));
         let system_target = real.strip_prefix(root).unwrap_or(&real).components()
-            .any(|c| matches!(c.as_os_str().to_str(),Some(".git" | ".svn" | ".hg" | ".DS_Store")));
+            .any(|c| matches!(c.as_os_str().to_str(),Some(".git" | ".svn" | ".hg" | ".ideanote" | ".idea-note" | ".DS_Store")));
         if system_target || (!hidden && hidden_target) {
             excluded.push(json!({"path":relative,"reason":if system_target {"system"} else {"hidden"}})); continue;
         }
@@ -186,15 +191,25 @@ mod tests {
         fs::write(dir.path().join(".env"), "secret").unwrap();
         fs::create_dir(dir.path().join(".git")).unwrap();
         fs::write(dir.path().join(".git/config"), "private").unwrap();
+        fs::create_dir(dir.path().join(".idea-note")).unwrap();
+        fs::write(dir.path().join(".idea-note/shares.json"), "private metadata").unwrap();
+        fs::create_dir(dir.path().join(".ideanote")).unwrap();
+        fs::write(dir.path().join(".ideanote/shares.json"), "share metadata").unwrap();
+        fs::write(dir.path().join(".ideanote/vault.json"), "encrypted vault").unwrap();
         let path = dir.path().to_str().unwrap();
         let scan = scan_folder(path, false, false).unwrap();
         let names: Vec<_> = scan["entries"].as_array().unwrap().iter().map(|e| e["relative"].as_str().unwrap()).collect();
         assert_eq!(names, ["empty", "sub", "sub/笔记.md", "a.txt"]);
         assert_eq!(scan["entries"][2]["text"], "# 笔记");
-        assert_eq!(scan["excluded"].as_array().unwrap().len(), 2);
+        assert_eq!(scan["excluded"].as_array().unwrap().len(), 4);
         let hidden = scan_folder(path, true, false).unwrap();
         assert!(hidden["entries"].as_array().unwrap().iter().any(|e| e["relative"] == ".env" && e["warnings"] == json!(["hidden"])));
-        assert!(!hidden["entries"].as_array().unwrap().iter().any(|e| e["relative"] == ".git"));
+        assert!(!hidden["entries"].as_array().unwrap().iter().any(|e| matches!(e["relative"].as_str(), Some(".git" | ".ideanote" | ".idea-note"))));
+        for metadata in [".ideanote", ".idea-note"] {
+            assert!(scan_folder(dir.path().join(metadata).to_str().unwrap(), true, true).is_err());
+            fs::create_dir(dir.path().join(metadata).join("nested")).unwrap();
+            assert!(scan_folder(dir.path().join(metadata).join("nested").to_str().unwrap(), true, true).is_err());
+        }
         fs::write(dir.path().join("a.txt"), "changed").unwrap();
         assert_ne!(scan, scan_folder(path, false, false).unwrap());
         fs::remove_file(dir.path().join("a.txt")).unwrap();
@@ -212,12 +227,19 @@ mod tests {
         fs::create_dir(root.join(".git")).unwrap();
         fs::write(root.join(".git/config"), "private").unwrap();
         symlink(root.join(".git"), root.join("git-alias")).unwrap();
+        fs::create_dir(root.join(".ideanote")).unwrap();
+        fs::write(root.join(".ideanote/vault.json"), "encrypted vault").unwrap();
+        symlink(root.join(".ideanote"), root.join("metadata-alias")).unwrap();
+        symlink(root.join(".ideanote/vault.json"), root.join("vault-alias.json")).unwrap();
         symlink(dir.path().join("outside"), root.join("linked")).unwrap();
         let path = root.to_str().unwrap();
         assert!(scan_folder(path, false, false).unwrap()["entries"].as_array().unwrap().is_empty());
         let scan = scan_folder(path, true, true).unwrap();
         assert!(scan["excluded"].as_array().unwrap().iter().any(|e| e["reason"] == "cycle"));
         assert!(scan["excluded"].as_array().unwrap().iter().any(|e| e["path"] == "git-alias" && e["reason"] == "system"));
+        for alias in ["metadata-alias", "vault-alias.json"] {
+            assert!(scan["excluded"].as_array().unwrap().iter().any(|e| e["path"] == alias && e["reason"] == "system"));
+        }
         assert!(scan["entries"].as_array().unwrap().iter().any(|e| e["relative"] == "linked/a.md" && e["warnings"].as_array().unwrap().contains(&json!("outside"))));
         symlink(dir.path().join("missing"), root.join("broken")).unwrap();
         assert!(scan_folder(path, false, true).is_err());
@@ -227,14 +249,14 @@ mod tests {
     #[test]
     fn remaps_windows_folder_paths_without_matching_siblings() {
         let mut value = json!({"associations":{r"C:\notes\a\n.md":{"id":"1"},r"C:\notes\ab\x.md":{"id":"2"}}});
-        remap_associations(&mut value, r"C:\notes\a", r"D:\archive\a");
+        crate::share_associations::remap(&mut value, r"C:\notes\a", r"D:\archive\a").unwrap();
         assert_eq!(value["associations"][r"D:\archive\a\n.md"]["id"], "1");
         assert_eq!(value["associations"][r"C:\notes\ab\x.md"]["id"], "2");
     }
     #[test]
     fn remaps_only_the_moved_subtree() {
         let mut value = json!({"associations":{"/a/n.md":{"id":"1"},"/ab/x.md":{"id":"2"},"/a":{"id":"3"}}});
-        remap_associations(&mut value,"/a","/b");
+        crate::share_associations::remap(&mut value,"/a","/b").unwrap();
         assert_eq!(value["associations"]["/b/n.md"]["id"],"1");
         assert_eq!(value["associations"]["/b"]["id"],"3");
         assert_eq!(value["associations"]["/ab/x.md"]["id"],"2");

@@ -43,8 +43,8 @@ export function ShareDialog({onClose,folderPath}:{onClose():void;folderPath?:str
   const approve=(path:string,yes:boolean)=>{if(!prepared)return;const paths=new Set(approved);if(yes)paths.add(path);else paths.delete(path);setApproval({prepared,paths});};
   const refresh=async()=>{
     setReady(false);
-    const cfg=await loadShareConfig(true);setConfig(cfg);
-    if(cfg.url&&cfg.key){const rows=await listShares();setShares(rows);const binding=cfg.associations[path];setCurrent(binding?.service===cfg.url&&(binding.kind||'note')===kind?rows.find(s=>s.id===binding.id&&(!s.kind||s.kind===kind)):undefined);}
+    const cfg=await loadShareConfig(true,path);setConfig(cfg);
+    if(cfg.url&&cfg.key){const rows=await listShares(cfg);setShares(rows);const binding=cfg.associations[path];setCurrent(binding?.service===cfg.url&&(binding.kind||'note')===kind?rows.find(s=>s.id===binding.id&&(!s.kind||s.kind===kind)):undefined);}
     else{setShares([]);setCurrent(undefined);}
     setReady(true);setError('');
   };

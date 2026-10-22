@@ -57,7 +57,7 @@ fn git_candidates() -> Vec<String> {
 }
 
 /// Locate the git binary once.
-fn git_binary() -> Result<String, String> {
+pub(crate) fn git_binary() -> Result<String, String> {
     static GIT: OnceLock<Option<String>> = OnceLock::new();
     GIT.get_or_init(|| {
         git_candidates().into_iter().find(|bin| {
