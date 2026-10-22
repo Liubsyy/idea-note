@@ -15,7 +15,6 @@ export function ShareQrDialog({share,onClose}:{share:{id:string;title:string};on
       <h2>{share.title}</h2>
       <QRCodeSVG value={url} size={224} level="M" marginSize={4} bgColor="#ffffff" fgColor="#000000" role="img" title={tr('分享链接二维码')}/>
       <p>{tr('使用手机扫码打开分享')}</p>
-      <a href={url} target="_blank" rel="noreferrer">{url}</a>
       <button autoFocus onClick={onClose}>{tr('关闭')}</button>
     </section>
   </dialog>;

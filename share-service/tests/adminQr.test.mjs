@@ -8,6 +8,7 @@ import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import * as jsx from 'react/jsx-runtime';
 import { QRCodeSVG } from 'qrcode.react';
+import * as icons from 'lucide-react';
 
 const {window}=new JSDOM('<!doctype html><body><div id="root"></div></body>',{url:'https://custom-share.test/admin?session=private#shares'});
 Object.assign(globalThis,{window,document:window.document,IS_REACT_ACT_ENVIRONMENT:true});
@@ -16,6 +17,7 @@ window.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
 window.HTMLDialogElement.prototype.close=function(){this.open=false;};
 let rows,qrValues,initial,requests;
 const dependencies={
+  'lucide-react':icons,
   react:React,'react/jsx-runtime':jsx,
   'react-dom/client':{createRoot:()=>({render:element=>{initial=element;}})},
   'qrcode.react':{QRCodeSVG:props=>{qrValues.push(props.value);return jsx.jsx(QRCodeSVG,props);}},
@@ -67,7 +69,7 @@ test('admin notes and folders generate local QR codes for public URLs on the cur
       assert.equal(dialog.open,true);
       assert.equal(dialog.getAttribute('aria-label'),'分享链接二维码');
       assert.equal(qrValues.at(-1),url);
-      assert.equal(dialog.querySelector('a').href,url);
+      assert.equal(dialog.querySelector('a'),null);
       assert.equal(dialog.querySelector('svg[role="img"] title').textContent,'分享链接二维码');
       assert.ok(dialog.querySelectorAll('svg path').length>=2);
       await click(button('关闭',dialog));

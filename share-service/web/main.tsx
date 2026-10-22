@@ -2,6 +2,7 @@ import { restoreArchive } from "./restore";
 import { downloadBackup } from "./backup";
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { QrCode } from 'lucide-react';
 import type { ShareSnapshot } from '../renderer/folder';
 import { SharedViewer } from './FolderBrowser';
 import { ShareQrDialog } from './ShareQrDialog';
@@ -23,14 +24,15 @@ function ReadingPage() {
   const id = location.pathname.split('/')[2];
   const [data, setData] = useState<Share & {document: ShareSnapshot}>();
   const [error, setError] = useState('');
+  const [showQr,setShowQr]=useState(false);
   useEffect(() => { void api<Share & {document: ShareSnapshot}>('public/' + id).then(setData).catch(e => setError(e.message)); }, [id]);
   useEffect(() => { if (data) document.title = `${data.title} · Idea Note`; }, [data]);
   const folder = data !== undefined && data.document.format !== 1;
   return <><header className={folder ? 'masthead folder-masthead' : 'masthead'}><a href="/">Idea Note <span>Share</span></a><span>{tr('文档分享')}</span></header>
     {error ? <main className="empty"><h1>{tr('分享暂不可用')}</h1><p>{error}</p></main> : data ? <>
-      <div className={folder ? 'document-heading folder-heading' : 'document-heading'}><div><h1>{data.title}</h1><p>{tr('更新于')} {date(data.updatedAt)}</p></div></div>
+      <div className={folder ? 'document-heading folder-heading' : 'document-heading'}><div className="document-heading-title"><div className="document-title-row"><h1>{data.title}</h1><button type="button" className="document-qr-button" aria-label={tr('二维码')} title={tr('二维码')} aria-haspopup="dialog" aria-expanded={showQr} onClick={()=>setShowQr(true)}><QrCode size={17} aria-hidden="true"/></button></div><p>{tr('更新于')} {date(data.updatedAt)}</p></div></div>
       <SharedViewer document={data.document} shareId={id} />
-      <footer>Idea Note · {tr('只读分享')}</footer></> : <main className="empty">{tr('正在加载…')}</main>}</>;
+      <footer>Idea Note · {tr('只读分享')}</footer>{showQr&&<ShareQrDialog share={{id,title:data.title}} onClose={()=>setShowQr(false)}/>}</> : <main className="empty">{tr('正在加载…')}</main>}</>;
 }
 // The admin preview renders on its own page, framed by the console: a share's
 // CSS then reaches only this page, which has no admin controls to cover or
