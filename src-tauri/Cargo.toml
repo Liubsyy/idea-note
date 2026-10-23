@@ -1,6 +1,6 @@
 [package]
 name = "idea-note"
-version = "1.2.8"
+version = "1.3.0"
 description = "Idea Note - a Typora-like Markdown notebook"
 authors = ["liubsyy"]
 edition = "2021"
