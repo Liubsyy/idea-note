@@ -140,9 +140,27 @@ function imageNode(data: string | string[], onSettle?: () => void): HTMLElement 
  * interactive component needs a sandboxed iframe and a message channel, which
  * is a much bigger promise than this feature makes.
  */
-function htmlNode(text: string, onSettle?: () => void): HTMLElement {
-  const wrap = el("div", "cm-run-render-html");
-  wrap.innerHTML = sanitizeHtml(text);
+function setOutputHtml(wrap: HTMLElement, text: string, onSettle?: () => void): void {
+  // Parse in an inert template: raw script output must never enter live DOM.
+  // DOMPurify treats a Windows drive (C:/ or C:\\) as an unknown URL scheme,
+  // so resolve those image paths before sanitizing. Other sources still pass
+  // through the normal URL filter before the resource resolver sees them.
+  const template = document.createElement("template");
+  template.innerHTML = text;
+  template.content.querySelectorAll("img").forEach((img) => {
+    const raw = img.getAttribute("src");
+    if (!raw) return;
+    // markdown-it percent-encodes backslashes and non-ASCII path segments.
+    let path = raw;
+    try {
+      path = decodeURI(raw);
+    } catch {
+      /* Keep malformed percent escapes as literal filename characters. */
+    }
+    if (/^[a-z]:[\\/]/i.test(path.trim()))
+      img.setAttribute("src", toDisplaySrc(raw));
+  });
+  wrap.innerHTML = sanitizeHtml(template.innerHTML);
   wrap.querySelectorAll("img").forEach((img) => {
     const raw = img.getAttribute("src");
     if (raw) img.src = toDisplaySrc(raw);
@@ -151,6 +169,11 @@ function htmlNode(text: string, onSettle?: () => void): HTMLElement {
       img.addEventListener("error", onSettle);
     }
   });
+}
+
+function htmlNode(text: string, onSettle?: () => void): HTMLElement {
+  const wrap = el("div", "cm-run-render-html");
+  setOutputHtml(wrap, text, onSettle);
   return wrap;
 }
 
@@ -175,13 +198,9 @@ function mermaidNode(text: string, onSettle?: () => void): HTMLElement {
 // renders a script's output, not a note.
 const md = new MarkdownIt({ html: true, linkify: true, breaks: false });
 
-function markdownNode(text: string): HTMLElement {
+function markdownNode(text: string, onSettle?: () => void): HTMLElement {
   const wrap = el("div", "cm-run-render-markdown");
-  wrap.innerHTML = sanitizeHtml(md.render(text));
-  wrap.querySelectorAll("img").forEach((img) => {
-    const raw = img.getAttribute("src");
-    if (raw) img.src = toDisplaySrc(raw);
-  });
+  setOutputHtml(wrap, md.render(text), onSettle);
   return wrap;
 }
 
@@ -216,7 +235,7 @@ export function renderOutput(
       host.replaceChildren(imageNode(result.data, onSettle));
       break;
     case "markdown":
-      host.replaceChildren(markdownNode(result.data));
+      host.replaceChildren(markdownNode(result.data, onSettle));
       break;
   }
 }
