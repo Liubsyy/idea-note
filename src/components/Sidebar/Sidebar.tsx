@@ -25,6 +25,7 @@ import {
   Download,
   FileDown,
   ChevronDown,
+  Combine,
 } from "lucide-react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { getVersion } from "@tauri-apps/api/app";
@@ -60,6 +61,7 @@ import { ZoomScrollbar, scrollbarReservesGutter } from "./ZoomScrollbar";
 import { isMac } from "../../lib/platform";
 import { relativePathWithinWorkspace } from "../../lib/workspacePath";
 import { getRepoRoot, ignoreUntracked } from "../../lib/git";
+import { mergeAllProjectWindows, useProjectTabs } from "../../lib/projectTabs";
 
 type BrowseSidebarMode = Exclude<SidebarMode, "search">;
 
@@ -136,7 +138,8 @@ export function Sidebar() {
   const openWorkspace = useAppStore((s) => s.openWorkspace);
   const requestOpenWorkspace = useAppStore((s) => s.requestOpenWorkspace);
   const requestOpenWorkspaceAt = useAppStore((s) => s.requestOpenWorkspaceAt);
-  const closeWorkspace = useAppStore((s) => s.closeWorkspace);
+  const closeProjectTab = useAppStore((s) => s.closeProjectTab);
+  const { windowCount } = useProjectTabs();
   const closeAllWorkspaces = useAppStore((s) => s.closeAllWorkspaces);
   const recentWorkspaces = useAppStore((s) => s.recentWorkspaces);
   const sidebarMode = useAppStore((s) => s.sidebarMode);
@@ -529,12 +532,23 @@ export function Sidebar() {
                 {workspacePath && (
                   <MenuItem
                     onClick={() => {
-                      void closeWorkspace();
+                      void closeProjectTab();
                       setWsMenuOpen(false);
                     }}
                   >
                     <span className="flex items-center gap-2">
                       <FolderX size={14} /> {" "}{tr("关闭当前项目")}</span>
+                  </MenuItem>
+                )}
+                {windowCount > 1 && (
+                  <MenuItem
+                    onClick={() => {
+                      void mergeAllProjectWindows();
+                      setWsMenuOpen(false);
+                    }}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Combine size={14} /> {" "}{tr("合并所有窗口")}</span>
                   </MenuItem>
                 )}
                 {workspacePath && (

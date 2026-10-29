@@ -13,7 +13,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 
 import { lockNow } from "./lib/crypto/commands";
-import { VAULT_LOCK_REQUEST } from "./store/useVaultStore";
+import { VAULT_LOCK_REQUEST, useVaultStore } from "./store/useVaultStore";
 import { Sidebar } from "./components/Sidebar/Sidebar";
 import { Toolbar } from "./components/Editor/Toolbar";
 import { EditorModeTabs } from "./components/Editor/EditorModeTabs";
@@ -40,6 +40,7 @@ import { HistoryModal } from "./components/HistoryModal";
 import { ManualSyncDialog } from "./components/ManualSyncDialog";
 import { BranchManagerModal } from "./components/BranchManagerModal";
 import { AppToast } from "./components/Toast";
+import { MergeDropOverlay, ProjectRail, PROJECT_RAIL_WIDTH } from "./components/ProjectRail";
 import {
   isDraftPath,
   PRESENTATION_SCALE_DEFAULT,
@@ -61,6 +62,19 @@ import { getActiveView, getSearchView } from "./lib/codemirror/activeView";
 import { handleEditorDrop } from "./lib/attachments";
 import { setFileDropCursor } from "./lib/codemirror/fileDropCursor";
 import { isWindows } from "./lib/platform";
+import {
+  activateProjectTab,
+  currentProjectGroup,
+  cycleProjectTab,
+  loadProjectTabsSession,
+  PROJECT_TAB_CLOSE_EVENT,
+  PROJECT_TAB_REUSED_EVENT,
+  projectGroupOf,
+  registerProjectTab,
+  updateProjectTab,
+  useProjectTabs,
+  waitForProjectTab,
+} from "./lib/projectTabs";
 import { createSidebarDropFeedback, sidebarDropTarget } from "./lib/sidebarDrop";
 
 const MIN_W = 180;
@@ -74,6 +88,44 @@ const EDITOR_MIN_W = 180;
 async function openExternalFile(path: string) {
   if (await pathIsDir(path)) return;
   await useAppStore.getState().openFile(path);
+}
+
+/** Reopen the previous run's project tabs, one window per group. This window
+ *  takes the first group's first project; every other group gets a new
+ *  window. The rest of each group loads as background tabs (one at a time, so
+ *  the rail keeps its order) and the tab that was in front comes forward.
+ *  False when there was nothing beyond a single project to restore. */
+async function restoreProjectTabs(): Promise<boolean> {
+  const groups: { workspaces: string[]; active: string | null }[] = [];
+  const seen = new Set<string>();
+  for (const g of await loadProjectTabsSession()) {
+    const workspaces: string[] = [];
+    for (const p of g.workspaces) {
+      // A project saved twice (opened twice before dedupe) comes back once.
+      if (seen.has(p) || !(await pathIsDir(p))) continue;
+      seen.add(p);
+      workspaces.push(p);
+    }
+    if (workspaces.length) groups.push({ workspaces, active: g.active });
+  }
+  if (groups.length === 0 || (groups.length === 1 && groups[0].workspaces.length < 2)) return false;
+
+  const store = useAppStore.getState();
+  const fillGroup = async (group: string | null, rest: string[], active: string | null) => {
+    if (!group) return;
+    for (const p of rest) await store.openNewTab(p, { show: p === active, group });
+  };
+  const [first, ...others] = groups;
+  const own = store.openWorkspaceAt(first.workspaces[0]);
+  await fillGroup(currentProjectGroup(), first.workspaces.slice(1), first.active);
+  for (const g of others) {
+    const label = await store.openNewWindow(g.workspaces[0]);
+    if (!label) continue;
+    await waitForProjectTab(label);
+    await fillGroup(projectGroupOf(label), g.workspaces.slice(1), g.active);
+  }
+  await own;
+  return true;
 }
 
 /** Close the active tab (or a folder listing). Once none is left the editor
@@ -173,16 +225,21 @@ function App() {
   }, []);
 
   // What to show on launch: a workspace handed over in the URL (a folder sent
-  // to a new window), the last workspace (original window only), or an empty
-  // project (extra "main-N" windows opened blank).
+  // to a new window or tab), the last project tabs or workspace (original
+  // window only), or an empty project (extra "main-N" windows opened blank).
+  // Joining the project tab list comes first; a tab opened with `show` comes
+  // forward right away and shows its loading state.
   useEffect(() => {
     const win = getCurrentWindow();
     void (async () => {
-      const ws = new URLSearchParams(window.location.search).get("ws");
+      const params = new URLSearchParams(window.location.search);
+      const ws = params.get("ws");
+      await registerProjectTab(params.get("group"), ws);
+      if (params.get("show") === "1") void activateProjectTab(win.label);
       if (ws) {
         await useAppStore.getState().openWorkspaceAt(ws);
       } else if (win.label === "main") {
-        await restoreWorkspace();
+        if (!(await restoreProjectTabs())) await restoreWorkspace();
       }
       // Once the workspace (if any) has loaded, open files the app was launched
       // to open via the OS "Open With" menu — as new tabs in that workspace, or
@@ -195,6 +252,62 @@ function App() {
       }
     })();
   }, [restoreWorkspace]);
+
+  // Keep this window's rail entry current: which project it holds, and
+  // whether a dialog is waiting on the user (a dot on its tab when hidden).
+  useEffect(() => {
+    const report = () => {
+      const s = useAppStore.getState();
+      const attention =
+        !!s.confirm || !!s.prompt || !!s.gitCredentialPrompt || !!useVaultStore.getState().unlockRequest;
+      updateProjectTab(s.workspacePath, attention);
+    };
+    const offApp = useAppStore.subscribe(report);
+    const offVault = useVaultStore.subscribe(report);
+    report();
+    return () => {
+      offApp();
+      offVault();
+    };
+  }, []);
+
+  // Something tried to open this window's project again and was sent here.
+  useEffect(() => {
+    const label = getCurrentWindow().label;
+    const un = listen<{ target: string }>(PROJECT_TAB_REUSED_EVENT, ({ payload }) => {
+      if (payload.target !== label) return;
+      const ws = useAppStore.getState().workspacePath;
+      useAppStore.getState().showToast(
+        tr("「{{0}}」已经打开，已切换到该标签", { 0: ws ? basename(ws) : "" }),
+      );
+    });
+    return () => {
+      un.then((fn) => fn());
+    };
+  }, []);
+
+  // Another tab's rail menu asked this window to close its project.
+  useEffect(() => {
+    const label = getCurrentWindow().label;
+    const un = listen<{ target: string }>(PROJECT_TAB_CLOSE_EVENT, ({ payload }) => {
+      if (payload.target === label) void useAppStore.getState().closeProjectTab();
+    });
+    return () => {
+      un.then((fn) => fn());
+    };
+  }, []);
+
+  // Ctrl+Tab / Ctrl+Shift+Tab cycle project tabs (also on macOS, where ⌘
+  // stays with the editor).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Tab" || !e.ctrlKey || e.metaKey || e.altKey) return;
+      e.preventDefault();
+      cycleProjectTab(e.shiftKey ? -1 : 1);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
 
   // Files opened via "Open With" while the app is already running arrive as an
   // "open-files" event from the Rust side. Handle them in the primary window.
@@ -335,11 +448,13 @@ function App() {
     return () => clearInterval(id);
   }, [workspacePath, gitSyncReady, syncConfig.autoSync, syncConfig.intervalMin]);
 
+  const projectTabs = useProjectTabs();
   const [width, setWidth] = useState(260);
   const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
   const narrow = viewportWidth < 768;
   const [isDragging, setIsDragging] = useState(false);
   const dragging = useRef(false);
+  const railWidthRef = useRef(0);
 
   // F5 enters presentation from anywhere in the editor. While presenting, a
   // capture-phase handler owns Escape/zoom/page navigation so CodeMirror or an
@@ -657,7 +772,7 @@ function App() {
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!dragging.current) return;
-      setWidth(Math.min(MAX_W, Math.max(MIN_W, e.clientX)));
+      setWidth(Math.min(MAX_W, Math.max(MIN_W, e.clientX - railWidthRef.current)));
     };
     const onUp = () => {
       if (!dragging.current) return;
@@ -674,7 +789,11 @@ function App() {
     };
   }, []);
 
-  const leftWidth = !narrow && sidebarOpen ? width : 0;
+  // The project rail sits left of the sidebar while 2+ projects are tabbed;
+  // everything measured from the window's left edge includes it.
+  const railWidth = !presentationActive && projectTabs.tabs.length >= 2 ? PROJECT_RAIL_WIDTH : 0;
+  railWidthRef.current = railWidth;
+  const leftWidth = railWidth + (!narrow && sidebarOpen ? width : 0);
 
   // When both independent right-side panels are open, preserve a usable editor
   // instead of letting their saved widths squeeze it to zero. At the minimum
@@ -787,6 +906,9 @@ function App() {
       <AppToast />
 
       <div className="relative flex min-h-0 flex-1">
+      {railWidth > 0 && (
+        <ProjectRail tabs={projectTabs.tabs} activeLabel={projectTabs.activeLabel} />
+      )}
       {/* Sidebar. Desktop: width collapses to 0 so the editor reclaims the
           space; the inner wrapper keeps a fixed width so content doesn't reflow
           mid-animation. Narrow: slides in/out as an overlay drawer. */}
@@ -799,6 +921,7 @@ function App() {
           }
           style={{
             width: narrow ? width : sidebarOpen ? width : 0,
+            left: narrow ? railWidth : undefined,
             transform: narrow
               ? `translateX(${sidebarOpen ? 0 : -width}px)`
               : undefined,
@@ -964,6 +1087,7 @@ function App() {
       <HistoryModal />
       <ManualSyncDialog />
       <BranchManagerModal />
+      <MergeDropOverlay />
     </div>
   );
 }

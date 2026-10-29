@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.1
+
+**简体中文**
+
+- 新增项目标签：多个项目可在同一窗口中通过左侧竖栏切换，支持拖出为新窗口、拖动合并、一键合并所有窗口，并在打开时自动去重。
+
+**English**
+
+- Added project tabs: switch between projects in one window from the left rail, drag a tab out into a new window or onto another to merge, merge all windows at once, and reopen an already-open project instead of duplicating it.
+
 ## 1.3.0
 
 **简体中文**

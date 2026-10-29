@@ -4,7 +4,8 @@
 // only editor window and quits the app — and, as a menu key equivalent, it
 // swallows ⌘W before the page sees it. This rebuilds the same menu with
 // "Close Window" moved to ⇧⌘W, leaving ⌘W free for the frontend's rebindable
-// close-tab shortcut (设置 › 快捷键).
+// close-tab shortcut (设置 › 快捷键). The Window menu also carries "Merge All
+// Windows", gathering every project window into the focused one's tabs.
 
 use tauri::menu::{
     AboutMetadata, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID,
@@ -13,6 +14,7 @@ use tauri::menu::{
 use tauri::{AppHandle, Manager, Runtime};
 
 const CLOSE_WINDOW_ID: &str = "close-window";
+const MERGE_ALL_ID: &str = "merge-all-windows";
 
 pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let pkg_info = app.package_info();
@@ -84,6 +86,8 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
                 &[
                     &PredefinedMenuItem::minimize(app, None)?,
                     &PredefinedMenuItem::maximize(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &MenuItem::with_id(app, MERGE_ALL_ID, "Merge All Windows", true, None::<&str>)?,
                 ],
             )?,
             &Submenu::with_id_and_items(app, HELP_SUBMENU_ID, "Help", true, &[])?,
@@ -92,14 +96,18 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 }
 
 pub fn handle_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
-    if event.id().as_ref() != CLOSE_WINDOW_ID {
+    let id = event.id().as_ref();
+    if id != CLOSE_WINDOW_ID && id != MERGE_ALL_ID {
         return;
     }
     let focused = app
         .webview_windows()
         .into_values()
         .find(|w| w.is_focused().unwrap_or(false));
-    if let Some(window) = focused {
+    let Some(window) = focused else { return };
+    if id == CLOSE_WINDOW_ID {
         let _ = window.close();
+    } else if crate::project_tabs::is_project_window(window.label()) {
+        let _ = crate::project_tabs::merge_all(app, window.label());
     }
 }

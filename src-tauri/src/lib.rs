@@ -18,6 +18,7 @@ mod menu;
 mod open_with;
 mod print;
 mod proc;
+mod project_tabs;
 mod search;
 mod share_associations;
 mod sharing;
@@ -27,6 +28,7 @@ mod tree;
 use code_run::CodeRunState;
 use crypto::Vault;
 use open_with::PendingOpenFiles;
+use project_tabs::ProjectTabs;
 use terminal::TerminalState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -60,8 +62,8 @@ pub fn run() {
         if paths.is_empty() {
             return;
         }
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.set_focus();
+        if app.get_webview_window("main").is_some() {
+            project_tabs::reveal(app, "main");
         }
         let queued = app
             .try_state::<PendingOpenFiles>()
@@ -87,13 +89,16 @@ pub fn run() {
     // Persist and restore window size/position across launches (desktop only).
     // DECORATIONS is excluded: chrome is fixed per platform by the config
     // (Windows runs undecorated with custom controls), and a stale saved
-    // `decorations: true` must not bring the native title bar back.
+    // `decorations: true` must not bring the native title bar back. VISIBLE is
+    // excluded too: background project tabs are hidden windows, and one saved
+    // hidden must not come back invisible on the next launch.
     #[cfg(desktop)]
     let builder = builder.plugin(
         tauri_plugin_window_state::Builder::default()
             .with_state_flags(
                 tauri_plugin_window_state::StateFlags::all()
-                    - tauri_plugin_window_state::StateFlags::DECORATIONS,
+                    - tauri_plugin_window_state::StateFlags::DECORATIONS
+                    - tauri_plugin_window_state::StateFlags::VISIBLE,
             )
             .build(),
     );
@@ -127,7 +132,9 @@ pub fn run() {
                 use tauri::Manager;
                 window.state::<html_preview::PreviewState>().remove_owner(window.label());
             }
+            project_tabs::on_window_event(window, event);
         })
+        .manage(ProjectTabs::default())
         .manage(TerminalState::default())
         .manage(CodeRunState::default())
         .manage(tree::NoteSearchState::default())
@@ -138,6 +145,17 @@ pub fn run() {
             html_preview::create_preview_session,
             html_preview::close_preview_session,
             open_with::take_pending_open_files,
+            project_tabs::project_tabs_register,
+            project_tabs::project_tabs_update,
+            project_tabs::project_tabs_activate,
+            project_tabs::project_tabs_detach,
+            project_tabs::project_tabs_move,
+            project_tabs::project_tabs_drop,
+            project_tabs::project_tabs_hover,
+            project_tabs::project_tabs_merge_all,
+            project_tabs::project_tabs_find,
+            project_tabs::project_tabs_snapshot,
+            project_tabs::project_tabs_session,
             tree::list_dir,
             tree::list_directory,
             tree::list_notes_index,
@@ -216,6 +234,17 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
+            // Quitting tears windows down one by one; keep the saved project
+            // tabs as they were instead of shrinking them with each close.
+            if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
+                use tauri::Manager;
+                app_handle.state::<ProjectTabs>().set_exiting();
+            }
+            // Dock click while every project window is hidden or closed.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { has_visible_windows: false, .. } = event {
+                project_tabs::reopen(app_handle);
+            }
             // macOS "Open With" / file-association launches arrive as Apple
             // "Opened" events. Forward the file paths to the frontend; if no
             // window exists yet (the app was launched *to* open the file),
@@ -237,6 +266,11 @@ pub fn run() {
                     .try_state::<PendingOpenFiles>()
                     .is_some_and(|pending| pending.queue_if_not_ready(&paths));
                 if !queued {
+                    // The file opens in the primary window, which may be a
+                    // background project tab: bring it to the front first.
+                    if app_handle.get_webview_window("main").is_some() {
+                        project_tabs::reveal(app_handle, "main");
+                    }
                     let _ = app_handle.emit("open-files", paths);
                 }
             }

@@ -1474,5 +1474,17 @@ export default {
   "**计算结果**\n\n- 金额：500000 元": "**Result**\n\n- Amount: 500000 CNY",
   "金额 = ": "Amount = ",
   "Hello, 组件！": "Hello, component！",
-  "绑定的数据已经解析好了，下面先返回一份示例结果": "Bound data has been parsed; the following returns a sample result"
+  "绑定的数据已经解析好了，下面先返回一份示例结果": "Bound data has been parsed; the following returns a sample result",
+  "在哪个标签打开「{{0}}」？": "Where should “{{0}}” be opened?",
+  "当前标签": "Current tab",
+  "新标签": "New tab",
+  "等待你的操作": "Waiting for you",
+  "在新标签中打开项目": "Open project in a new tab",
+  "拆分到独立窗口": "Move to new window",
+  "关闭项目": "Close project",
+  "松开以在新窗口中打开，或拖到其他窗口上合并": "Release to open in a new window, or drop on another window to merge",
+  "松开以合并到「{{0}}」所在窗口": "Release to merge into the “{{0}}” window",
+  "松开以合并到此窗口": "Release to merge into this window",
+  "合并所有窗口": "Merge all windows",
+  "「{{0}}」已经打开，已切换到该标签": "“{{0}}” is already open; switched to its tab"
 };

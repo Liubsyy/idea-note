@@ -15,6 +15,12 @@ import {
 } from "../lib/codemirror/activeFormats";
 import { isWindows } from "../lib/platform";
 import {
+  currentProjectGroup,
+  projectTabCount,
+  revealOpenProject,
+  waitForProjectTab,
+} from "../lib/projectTabs";
+import {
   FileNode,
   listDirectory,
   listNotesIndex,
@@ -530,6 +536,9 @@ interface AppState {
   openWorkspaceAt: (path: string) => Promise<void>;
   /** Close the current workspace, returning to the empty "no workspace" state. */
   closeWorkspace: () => Promise<void>;
+  /** Close the current project; as one of several project tabs, the tab
+   *  (window) goes too once the project is closed. */
+  closeProjectTab: () => Promise<void>;
   /** Close the workspace in every open window (broadcasts to all mains). */
   closeAllWorkspaces: () => Promise<void>;
   /** Reopen the last workspace from localStorage on app start. */
@@ -641,11 +650,22 @@ interface AppState {
    * argument the new window starts as an empty project, otherwise it opens
    * the given workspace folder.
    */
-  openNewWindow: (workspacePath?: string) => Promise<void>;
-  /** Pick a folder, then ask current-vs-new window and open it there. */
+  /** Resolves to the new window's label, or null when `workspacePath` was
+   *  already open somewhere and that tab came forward instead. */
+  openNewWindow: (workspacePath?: string) => Promise<string | null>;
+  /**
+   * Open a project tab: another editor window joined to this window's tab
+   * group (or `group`), stacked on the same frame. `show: false` loads it in
+   * the background; the promise resolves once the new window has registered.
+   */
+  openNewTab: (workspacePath?: string, options?: { show?: boolean; group?: string }) => Promise<void>;
+  /** Pick a folder, then ask current-vs-new tab and open it there. */
   requestOpenWorkspace: () => Promise<void>;
-  /** Ask current-vs-new window, then open `path` there. */
+  /** Ask current-vs-new tab, then open `path` there; when some tab already
+   *  has `path` open, switch to it instead. */
   requestOpenWorkspaceAt: (path: string) => void;
+  /** The current-vs-new tab question itself (no open-elsewhere check). */
+  askOpenWorkspaceAt: (path: string) => void;
   /** Select a theme by id (built-in or custom). */
   setTheme: (themeId: string) => void;
   /** Create a custom theme cloned from `sourceId`, select it, and return its id. */
@@ -1604,6 +1624,41 @@ async function captureDiskStat(path: string): Promise<void> {
     useAppStore.setState({ diskStat: st });
 }
 
+/**
+ * Create another editor window and return its label. Every non-"settings"
+ * window renders the full app (main.tsx branches on the label), so a fresh
+ * "main-N" label is all it needs. Reuse the lowest free N so the window-state
+ * plugin restores the position a closed window of that slot was last left at.
+ * The URL carries what App.tsx should do on start: `ws` (workspace to open),
+ * `group` (project tab group to join) and `show` (bring the tab forward once
+ * registered). Without `ws` the window starts as an empty project (App.tsx
+ * only restores the last workspace in the original "main"). Tabs start hidden:
+ * Rust shows them on the group's frame when activated.
+ */
+async function createEditorWindow(query: Record<string, string>, visible: boolean): Promise<string> {
+  const taken = new Set((await getAllWebviewWindows()).map((w) => w.label));
+  let n = 2;
+  while (taken.has(`main-${n}`)) n++;
+  const label = `main-${n}`;
+  const search = new URLSearchParams(query).toString();
+  new WebviewWindow(label, {
+    url: search ? `index.html?${search}` : "index.html",
+    title: "Idea Note",
+    width: 960,
+    height: 640,
+    minWidth: 640,
+    minHeight: 420,
+    visible,
+    // Same chrome as the config's main window: macOS hides the title under
+    // the traffic-light overlay, Windows drops decorations entirely and the
+    // TitleBar component draws its own window controls.
+    ...(isWindows
+      ? { decorations: false }
+      : { titleBarStyle: "overlay" as const, hiddenTitle: true }),
+  });
+  return label;
+}
+
 let workspaceRequest = 0;
 let workspaceQueue: Promise<void> = Promise.resolve();
 let workspaceController: AbortController | null = null;
@@ -1705,6 +1760,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   openWorkspace: async () => {
     const path = await pickWorkspace();
     if (!path) return;
+    if (await revealOpenProject(path)) return;
     await get().openWorkspaceAt(path);
   },
 
@@ -1856,6 +1912,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
 
+  closeProjectTab: async () => {
+    // Same unsaved-changes flow as closeWorkspace, so the window only goes
+    // once the project is really closed (a cancelled prompt keeps both).
+    if (get().isDirty) {
+      confirmUnsavedClose(get, async (saveFirst) => {
+        if (saveFirst) {
+          await get().save();
+          if (get().isDirty) return; // save cancelled
+        } else {
+          set({ isDirty: false });
+        }
+        await get().closeProjectTab();
+      });
+      return;
+    }
+    await get().closeWorkspace();
+    if (get().workspacePath || projectTabCount() < 2) return;
+    await getCurrentWindow().close();
+  },
+
   closeAllWorkspaces: async () => {
     // Leave only the current window: close every other open window (other mains
     // and the settings window), then drop this window's own workspace. Closing
@@ -1878,15 +1954,22 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   requestOpenWorkspaceAt: (path) => {
+    // Already open in some tab or window: go there instead of asking.
+    void revealOpenProject(path).then((open) => {
+      if (!open) get().askOpenWorkspaceAt(path);
+    });
+  },
+
+  askOpenWorkspaceAt: (path) => {
     set({
       confirm: {
         title: tr("打开项目"),
-        message: tr("在哪个窗口打开「{{0}}」？", { 0: basename(path) }),
-        confirmLabel: tr("当前窗口"),
+        message: tr("在哪个标签打开「{{0}}」？", { 0: basename(path) }),
+        confirmLabel: tr("当前标签"),
         tone: "primary",
         onConfirm: () => get().openWorkspaceAt(path),
-        altLabel: tr("新窗口"),
-        onAlt: () => get().openNewWindow(path),
+        altLabel: tr("新标签"),
+        onAlt: () => get().openNewTab(path),
       },
     });
   },
@@ -3017,31 +3100,27 @@ export const useAppStore = create<AppState>((set, get) => ({
   closeHistory: () => set({ history: null }),
 
   openNewWindow: async (workspacePath) => {
-    // Every non-"settings" window renders the full app (main.tsx branches on
-    // the label), so a fresh "main-N" label is all a new editor window needs.
-    // Reuse the lowest free N so the window-state plugin restores the position
-    // a closed window of that slot was last left at. The workspace to open
-    // travels in the URL; without one the window starts as an empty project
-    // (App.tsx only restores the last workspace in the original "main").
-    const taken = new Set((await getAllWebviewWindows()).map((w) => w.label));
-    let n = 2;
-    while (taken.has(`main-${n}`)) n++;
-    new WebviewWindow(`main-${n}`, {
-      url: workspacePath
-        ? `index.html?ws=${encodeURIComponent(workspacePath)}`
-        : "index.html",
-      title: "Idea Note",
-      width: 960,
-      height: 640,
-      minWidth: 640,
-      minHeight: 420,
-      // Same chrome as the config's main window: macOS hides the title under
-      // the traffic-light overlay, Windows drops decorations entirely and the
-      // TitleBar component draws its own window controls.
-      ...(isWindows
-        ? { decorations: false }
-        : { titleBarStyle: "overlay" as const, hiddenTitle: true }),
-    });
+    if (workspacePath && (await revealOpenProject(workspacePath))) return null;
+    return createEditorWindow(workspacePath ? { ws: workspacePath } : {}, true);
+  },
+
+  openNewTab: async (workspacePath, options) => {
+    if (workspacePath && (await revealOpenProject(workspacePath))) return;
+    const group = options?.group ?? currentProjectGroup();
+    // Without the tab backend (plain browser) a tab degrades to a window.
+    if (!group) {
+      await get().openNewWindow(workspacePath);
+      return;
+    }
+    const label = await createEditorWindow(
+      {
+        ...(workspacePath ? { ws: workspacePath } : {}),
+        group,
+        ...(options?.show === false ? {} : { show: "1" }),
+      },
+      false,
+    );
+    await waitForProjectTab(label);
   },
 
   openSettings: async (tab) => {
@@ -3879,8 +3958,10 @@ if (!isSettingsWindow) {
   }).catch(() => {});
 
   listen<{ target: string; path: string }>(WORKSPACE_OPEN_EVENT, ({ payload }) => {
-    if (payload.target === myLabel)
-      void useAppStore.getState().openWorkspaceAt(payload.path);
+    if (payload.target !== myLabel) return;
+    void revealOpenProject(payload.path).then((open) => {
+      if (!open) void useAppStore.getState().openWorkspaceAt(payload.path);
+    });
   }).catch(() => {});
 
   listen<{ workspace: string }>(GIT_ATTACHED_EVENT, ({ payload }) => {
