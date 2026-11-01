@@ -16,6 +16,8 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 
 import { isDraftPath, useAppStore } from "../../store/useAppStore";
 import { fileStat, pathIsDir } from "../fs";
+import { findMarkdownAnchorLine } from "../markdownAnchors";
+import { getActiveView } from "./activeView";
 
 const EXTERNAL = /^(https?|mailto|tel):/i;
 
@@ -88,7 +90,17 @@ export async function openLinkTarget(raw: string): Promise<void> {
     await openUrl(`https://${target}`);
     return;
   }
-  if (target.startsWith("#")) return; // in-document anchors: not supported
+  if (target.startsWith("#")) {
+    const view = getActiveView();
+    if (!view) return;
+    const line = findMarkdownAnchorLine(view.state.doc.toString(), target);
+    if (line !== null) {
+      // As with the outline panel, leave selection/focus alone so live preview
+      // doesn't reveal heading source or disturb the user's editing position.
+      view.dispatch({ effects: EditorView.scrollIntoView(view.state.doc.line(line).from, { y: "start" }) });
+    }
+    return;
+  }
   const hash = target.indexOf("#");
   if (hash >= 0) target = target.slice(0, hash);
   if (!target) return;
